@@ -1,6 +1,6 @@
 # Joe Bot
 
-Query optimization assistant
+Query optimization assistant.
 
 ## Build & Run
 `go build -o bin/joe
@@ -17,9 +17,9 @@ In order to use Joe in Slack, you need to configure a new Slack App and add it t
 3. Add Bot User
   * Use "Joe Bot" as Display Name and "joe-bot" as the default username
 4. Run Joe Bot with Access Token from "OAuth & Permissions" Feature and Verification Token from "Basic Information" page
-5. Enable Incoming Webhooks Feature.
+5. Enable Incoming Webhooks Feature
   * Press "Add New Webhook to Workspace" and select a previously created channel to post token
-6. Enable Event Subscriptions Feature.
+6. Enable Event Subscriptions Feature
   * Specify Request URL (URL will be verified by Slack API)
-  * Add "app_mention" and "message.channels" to "Subscribe to Bot Events".
+  * Add "app_mention" and "message.channels" to "Subscribe to Bot Events"
 7. Invite "Joe Bot" to "#db-lab" channel
