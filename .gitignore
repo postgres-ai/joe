@@ -1,8 +1,8 @@
 .DS_Store
 
 /bin/
+/joe-run/
+.air.conf
 
 # Deploy contains Kubernetes configs with secrets, remove from .gitignore when generalized.
 /deploy/
-
-.air.conf
