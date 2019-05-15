@@ -7,12 +7,11 @@ AWS_INSTANCE_NAME="${AWS_INSTANCE/\./_}"
 #  --debug \
 
 $(pwd)/joe.sh \
-  --aws-keypair-name xxx \
-  --aws-ssh-key-path file:///xxx \
+  --aws-keypair-name anatoly \
+  --aws-ssh-key-path ~/.ssh/anatoly.pem \
   --aws-ec2-type "$AWS_INSTANCE" \
+  --aws-block-duration 360 \
   --aws-zone "a" \
   --pg-version 9.6 \
   --stop-session \
-  --db-ebs-volume-id "vol-xxx" 2>&1 | tee joe-stop.log
-
-
+  --db-ebs-volume-id "vol-08ae661f3be3e4b46" 2>&1 | tee joe-start.log

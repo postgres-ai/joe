@@ -10,8 +10,8 @@ $(pwd)/joe.sh \
   --aws-keypair-name xxx \
   --aws-ssh-key-path file:///xxx \
   --aws-ec2-type "$AWS_INSTANCE" \
+  --aws-block-duration 360 \
   --aws-zone "a" \
   --pg-version 9.6 \
   --start-session \
   --db-ebs-volume-id "vol-xxx" 2>&1 | tee joe-start.log
-

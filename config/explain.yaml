@@ -1,0 +1,21 @@
+# 2019 © Anatoly Stansler anatoly@postgres.ai
+# 2019 © Postgres.ai
+
+# Meta information and params for Joe's tips.
+
+params:
+  buffersReadBigMax: 100
+  buffersHitBigMax: 1000
+tips:
+  - code: "SEQSCAN_USED"
+    name: "SeqScan used"
+    description: "Try adding indexes"
+    detailsUrl: "https://blog.makandra.com/2016/03/postgresql-query-optimization/"
+  - code: "BUFFERS_READ_BIG"
+    name: "Buffers read too big"
+    description: "Query process to much data"
+    detailsUrl: "http://momjian.us/main/writings/pgsql/hw_performance/"
+  - code: "BUFFERS_HIT_BIG"
+    name: "Buffers hit too big"
+    description: "Query process to much data"
+    detailsUrl: "http://momjian.us/main/writings/pgsql/hw_performance/"
