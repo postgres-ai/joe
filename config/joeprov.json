@@ -1,0 +1,13 @@
+{
+    "AwsConfiguration": {
+        "AwsInstanceType": "i3.large",
+        "AwsRegion": "us-east-1",
+        "AwsZone": "a",
+        "AwsKeyName": "awskey3",
+        "AwsBlockDurationMinutes": 60, 
+        "AwsKeyPath": "/home/xxx/.ssh/xxx.pem"
+    },
+    "EbsVolumeId": "vol-xxx",
+    "Debug": false,
+    "PgVersion": "9.6"
+}
