@@ -2,10 +2,10 @@
 #
 VERBOSE_OUTPUT_REDIRECT=" > /dev/null 2>&1"
 STDERR_DST="/dev/null"
-INSTACE_KEEP_ALIVE=3600 # 1 hour
+INSTACE_KEEP_ALIVE=3600000 # 1000 hours
 JOE_CUR_DIR=$(pwd)/joe-run
-DEBUG=false
-NO_OUTPUT=true
+DEBUG=true
+NO_OUTPUT=false
 CURRENT_TS=$(date +%Y%m%d_%H%M%S%N_%Z)
 DOCKER_MACHINE=""
 CONTAINER_ID=""
@@ -109,7 +109,7 @@ while [ $# -gt 0 ]; do
       DB_NAME="$2"; shift 2 ;;
     --less-output )
       DEBUG=false
-      NO_OUTPUT=true
+      NO_OUTPUT=false
       VERBOSE_OUTPUT_REDIRECT=" > /dev/null 2>&1"
       shift ;;
 
