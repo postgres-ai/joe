@@ -1,15 +1,26 @@
+<a href="https://postgres.ai"><img src="https://img.shields.io/badge/Postgres-AI-orange.svg" alt="Postgres.AI" /></a>
+
 # Joe Bot
+<img width="200" src="https://gitlab.com/postgres-ai-team/joe/uploads/e49a12a9584b5d6fae2fb017e70b0995/Screen_Shot_2019-05-15_at_18.43.05.png" align="right">
 
 Query optimization assistant.
 
-## Build & Run
-`go build -o bin/joe
-./bin/joe --host="localhost" --dbname="db" --token="xoxb-XXXXXX" --verification-token="XXXXXX"`
+### Build & Run
+```bash
+go build -o bin/joe 
+./bin/joe \
+  --host="localhost" \
+  --dbname="db" \
+  --token="xoxb-XXXXXX" \
+  --verification-token="XXXXXX"
+```
 
-## Deploy to Kubernetes
-`PROJECT_ID=project-id bash push.sh`
+### Deploy to Kubernetes
+```bash
+PROJECT_ID=project-id bash push.sh
+```
 
-## Set Up a Slack App
+### Set Up a Slack App
 In order to use Joe in Slack, you need to configure a new Slack App and add it to your Workspace. Joe Bot should be available with public URL calls from Slack.
 1. Create "#db-lab" channel in your Slack Workspace (You can use another channel name)
 2. [Create a new Slack App](https://api.slack.com/apps?new_app=1)
