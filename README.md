@@ -15,11 +15,6 @@ go build -o bin/joe
   --verification-token="XXXXXX"
 ```
 
-### Deploy to Kubernetes
-```bash
-PROJECT_ID=project-id bash push.sh
-```
-
 ### Set Up a Slack App
 In order to use Joe in Slack, you need to configure a new Slack App and add it to your Workspace. Joe Bot should be available with public URL calls from Slack.
 1. Create "#db-lab" channel in your Slack Workspace (You can use another channel name)
