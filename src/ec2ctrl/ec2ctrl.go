@@ -1,7 +1,8 @@
-﻿/*
+/*
 EC2 Instances Control Wrapper
 
 2019 © Dmitry Udalov dmius@postgres.ai
+2019 © Postgres.ai
 Based on source of docker-machine cli tool
 
 https://docs.aws.amazon.com/sdk-for-go/api/service/ec2/
@@ -66,12 +67,12 @@ var RegionDetails map[string]*Region = map[string]*Region{
 }
 
 type Ec2Configuration struct {
-	AwsInstanceType         string
-	AwsRegion               string
-	AwsZone                 string
-	AwsBlockDurationMinutes int64
-	AwsKeyName              string
-	AwsKeyPath              string
+	AwsInstanceType         string `yaml:"awsInstanceType"`
+	AwsRegion               string `yaml:"awsRegion"`
+	AwsZone                 string `yaml:"awsZone"`
+	AwsBlockDurationMinutes int64  `yaml:"awsBlockDurationMinutes"`
+	AwsKeyName              string `yaml:"awsKeyName"`
+	AwsKeyPath              string `yaml:"awsKeyPath"`
 }
 
 type Ec2Ctrl struct {
@@ -693,9 +694,9 @@ func (e *Ec2Ctrl) WaitInstanceForSsh() error {
 // Attach EC2 volume to EC2 instance by specified isntance and volume ids
 func (e *Ec2Ctrl) AttachInstanceVolume(instanceId string, ebsVolumeId string, mountPoint string) (bool, error) {
 	input := &ec2.AttachVolumeInput{
-		Device:      aws.String(mountPoint),
-		InstanceId:  aws.String(instanceId),
-		EbsVolumeId: aws.String(ebsVolumeId),
+		Device:     aws.String(mountPoint),
+		InstanceId: aws.String(instanceId),
+		VolumeId:   aws.String(ebsVolumeId),
 	}
 
 	result, err := e.GetEc2Client().AttachVolume(input)

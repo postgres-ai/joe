@@ -2,6 +2,8 @@
 Provision wrapper
 
 2019 © Dmitry Udalov dmius@postgres.ai
+2019 © Anatoly Stansler anatoly@postgres.ai
+2019 © Postgres.ai
 */
 
 package provision
@@ -71,7 +73,8 @@ func NewProvision(conf ProvisionConfiguration) *Provision {
 	return provision
 }
 
-func ValidateConfiguration(config ProvisionConfiguration) bool {
+func IsValidConfig(config ProvisionConfiguration) bool {
+	fmt.Printf("Config: %v\n", config)
 	result := true
 	if config.AwsConfiguration.AwsInstanceType == "" {
 		log.Err("Wrong configuration AwsInstanceType value.")
@@ -535,6 +538,20 @@ func (j *Provision) StopSession() (bool, error) {
 	j.CloseSshTunnel()
 	j.sessionId = ""
 	return j.WriteState()
+}
+
+func (j *Provision) ResetSession() error {
+	_, err := j.DockerRollbackZfsSnapshot()
+	if err != nil {
+		return fmt.Errorf("Unable to rollback database. %v", err)
+	}
+
+	err = j.DockerCreateDbUser()
+	if err != nil {
+		return fmt.Errorf("Unable to update rolled back database. %v", err)
+	}
+
+	return nil
 }
 
 // Create test user
