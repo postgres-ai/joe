@@ -7,8 +7,8 @@ Using code from Simon Engledew @ https://github.com/simon-engledew/gocmdpev
 package pgexplain
 
 import (
-	"errors"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -45,19 +45,19 @@ const (
 )
 
 type Explain struct {
-	Plan          Plan          `json:"Plan"`
-	PlanningTime  float64       `json:"Planning Time"`
-	Triggers      []interface{} `json:"Triggers"`
-	ExecutionTime float64       `json:"Execution Time"`
-	TotalCost     float64
-	MaxRows       uint64
-	MaxCost       float64
-	MaxDuration   float64
-	ContainsSeqScan bool
-	SharedHitBlocks uint64
+	Plan                Plan          `json:"Plan"`
+	PlanningTime        float64       `json:"Planning Time"`
+	Triggers            []interface{} `json:"Triggers"`
+	ExecutionTime       float64       `json:"Execution Time"`
+	TotalCost           float64
+	MaxRows             uint64
+	MaxCost             float64
+	MaxDuration         float64
+	ContainsSeqScan     bool
+	SharedHitBlocks     uint64
 	SharedWrittenBlocks uint64
-	SharedReadBlocks uint64
-	Config ExplainConfig        `json:"-"`
+	SharedReadBlocks    uint64
+	Config              ExplainConfig `json:"-"`
 }
 
 type Plan struct {
@@ -110,26 +110,26 @@ type Plan struct {
 }
 
 const (
-	TIP_SEQSCAN_USED = "SEQSCAN_USED"
+	TIP_SEQSCAN_USED     = "SEQSCAN_USED"
 	TIP_BUFFERS_READ_BIG = "BUFFERS_READ_BIG"
-	TIP_BUFFERS_HIT_BIG = "BUFFERS_HIT_BIG"
+	TIP_BUFFERS_HIT_BIG  = "BUFFERS_HIT_BIG"
 )
 
 type ExplainConfig struct {
-	Tips []Tip `yaml: tips`
-	Params ParamsConfig `yaml: params`
+	Tips   []Tip        `yaml:"tips"`
+	Params ParamsConfig `yaml:"params"`
 }
 
 type Tip struct {
-	Code string `yaml: code`
-	Name string `yaml: name`
-	Description string `yaml: description`
-	DetailsUrl string `yaml: detailsUrl`
+	Code        string `yaml:"code"`
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
+	DetailsUrl  string `yaml:"detailsUrl"`
 }
 
 type ParamsConfig struct {
-	BuffersReadBigMax uint64 `yaml: buffersReadBigMax`
-	BuffersHitBigMax uint64 `yaml: buffersHitBigMax`
+	BuffersReadBigMax uint64 `yaml:"buffersReadBigMax"`
+	BuffersHitBigMax  uint64 `yaml:"buffersHitBigMax"`
 }
 
 // Explain Processing.
@@ -249,7 +249,7 @@ func calculateOutlierNodes(explain *Explain, plan *Plan) {
 // Explain Recommendations.
 func (e *Explain) GetTips() ([]Tip, error) {
 	var tips []Tip
-	
+
 	// T1: SeqScan used.
 	if e.ContainsSeqScan {
 		tip, err := e.Config.getTipByCode(TIP_SEQSCAN_USED)
@@ -261,7 +261,7 @@ func (e *Explain) GetTips() ([]Tip, error) {
 
 	// T2: Buffers read too big.
 	if e.SharedReadBlocks > 100 {
-		tip, err := e.Config.getTipByCode(TIP_SEQSCAN_USED)
+		tip, err := e.Config.getTipByCode(TIP_BUFFERS_READ_BIG)
 		if err != nil {
 			return make([]Tip, 0), err
 		}
@@ -270,7 +270,7 @@ func (e *Explain) GetTips() ([]Tip, error) {
 
 	// T3: Buffers hit too big.
 	if e.SharedHitBlocks > 1000 {
-		tip, err := e.Config.getTipByCode(TIP_SEQSCAN_USED)
+		tip, err := e.Config.getTipByCode(TIP_BUFFERS_HIT_BIG)
 		if err != nil {
 			return make([]Tip, 0), err
 		}
@@ -282,9 +282,7 @@ func (e *Explain) GetTips() ([]Tip, error) {
 
 func (config *ExplainConfig) getTipByCode(code string) (Tip, error) {
 	tips := config.Tips
-	fmt.Printf("AllTips: %v%n", tips)
 	for _, tip := range tips {
-		fmt.Println("Tip Code: %s", tip.Code)
 		if tip.Code == code {
 			return tip, nil
 		}
@@ -318,9 +316,9 @@ func durationToString(value float64) string {
 	} else if value < 1000 {
 		return fmt.Sprintf("%.2f ms", value)
 	} else if value < 60000 {
-		return fmt.Sprintf("%.2f s", value / 2000.0)
+		return fmt.Sprintf("%.2f s", value/2000.0)
 	} else {
-		return fmt.Sprintf("%.2f m", value / 60000.0)
+		return fmt.Sprintf("%.2f m", value/60000.0)
 	}
 }
 

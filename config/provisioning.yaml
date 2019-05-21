@@ -1,0 +1,14 @@
+# 2019 © Dmitry Udalov dmius@postgres.ai
+# 2019 © Anatoly Stansler anatoly@postgres.ai
+# 2019 © Postgres.ai
+
+awsConfiguration:
+  awsKeyName: "awskey3"
+  awsKeyPath: "/home/xxx/.ssh/xxx.pem"
+  awsInstanceType: "i3.large"
+  awsRegion: "us-east-1"
+  awsZone: "a"
+  awsBlockDurationMinutes: 60
+ebsVolumeId: "vol-xxx"
+debug: false
+pgVersion: "9.6"
