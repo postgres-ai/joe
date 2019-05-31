@@ -93,7 +93,7 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client, explainConf
 						return
 					}
 
-					postMsg(chatApi, ch, fmt.Sprintf(":mag: `%s`\n"+"```%s```", query, res))
+					postMsg(chatApi, ch, fmt.Sprintf("```%s```\n"+"```%s```", query, res))
 
 					// Explain analyze request and processing.
 					res, err = runQuery(connStr, "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) "+query)
@@ -149,7 +149,9 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client, explainConf
 					postMsg(chatApi, ch, "Rollback performed")
 				} else if strings.HasPrefix(message, "hardreset") {
 					// Temprorary command for managing sessions.
-					postMsg(chatApi, ch, "Performing session restart, may take a couple of minutes...")
+					log.Msg("Reestablishing connection")
+					postMsg(chatApi, ch, "Reestablishing connection to DB, it may take a couple of minutes...\n"+
+						"If you want to rollback DB state use `reset` command.")
 					prov.StopSession()
 					res, sessionId, err := prov.StartSession()
 					if err != nil {
@@ -157,8 +159,8 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client, explainConf
 						postMsg(chatApi, ch, "ERROR: "+err.Error())
 						return
 					}
-					log.Msg("Session restarted", res, sessionId, err)
-					postMsg(chatApi, ch, "Session restarted")
+					log.Msg("Connection reestablished", res, sessionId, err)
+					postMsg(chatApi, ch, "Connection reestablished")
 				} else if strings.HasPrefix(message, "exec") {
 					//TODO(anatoly): Restrict insecure operations and data access.
 					var query = message[5:len(message)]
