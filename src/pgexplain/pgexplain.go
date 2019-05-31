@@ -42,6 +42,7 @@ const (
 	BitmapHeapScan           = "Bitmap Heap Scan"
 	BitmapIndexScan          = "Bitmap Index Scan"
 	CTEScan                  = "CTE Scan"
+	ModifyTable              = "Modify Table"
 )
 
 type Explain struct {
@@ -69,7 +70,7 @@ type Plan struct {
 	ActualTotalTime             float64 `json:"Actual Total Time"`
 	Alias                       string  `json:"Alias"`
 	Costliest                   bool
-	CTEName                     string   `json:"CTE Name"`
+	CteName                     string   `json:"CTE Name"`
 	Filter                      string   `json:"Filter"`
 	GroupKey                    []string `json:"Group Key"`
 	HashCondition               string   `json:"Hash Cond"`
@@ -85,28 +86,39 @@ type Plan struct {
 	LocalReadBlocks             uint64   `json:"Local Read Blocks"`
 	LocalWrittenBlocks          uint64   `json:"Local Written Blocks"`
 	NodeType                    NodeType `json:"Node Type"`
+	Operation                   string   `json:"Operation"`
 	Output                      []string `json:"Output"`
 	ParentRelationship          string   `json:"Parent Relationship"`
 	PlannerRowEstimateDirection EstimateDirection
 	PlannerRowEstimateFactor    float64
-	PlanRows                    uint64 `json:"Plan Rows"`
-	PlanWidth                   uint64 `json:"Plan Width"`
-	RelationName                string `json:"Relation Name"`
-	RowsRemovedByFilter         uint64 `json:"Rows Removed by Filter"`
-	RowsRemovedByIndexRecheck   uint64 `json:"Rows Removed by Index Recheck"`
-	ScanDirection               string `json:"Scan Direction"`
-	Schema                      string `json:"Schema"`
-	SharedDirtiedBlocks         uint64 `json:"Shared Dirtied Blocks"`
-	SharedHitBlocks             uint64 `json:"Shared Hit Blocks"`
-	SharedReadBlocks            uint64 `json:"Shared Read Blocks"`
-	SharedWrittenBlocks         uint64 `json:"Shared Written Blocks"`
+	PlanRows                    uint64   `json:"Plan Rows"`
+	Plans                       []Plan   `json:"Plans"`
+	PlanWidth                   uint64   `json:"Plan Width"`
+	RelationName                string   `json:"Relation Name"`
+	RowsRemovedByFilter         uint64   `json:"Rows Removed by Filter"`
+	RowsRemovedByIndexRecheck   uint64   `json:"Rows Removed by Index Recheck"`
+	ScanDirection               string   `json:"Scan Direction"`
+	Schema                      string   `json:"Schema"`
+	SharedDirtiedBlocks         uint64   `json:"Shared Dirtied Blocks"`
+	SharedHitBlocks             uint64   `json:"Shared Hit Blocks"`
+	SharedReadBlocks            uint64   `json:"Shared Read Blocks"`
+	SharedWrittenBlocks         uint64   `json:"Shared Written Blocks"`
+	SubplanName                 string   `json:"Subplan Name"`
+	SortKey                     []string `json:"Sort Key"`
+	SortMethod                  string   `json:"Sort Method"`
+	SortSpaceUsed               uint64   `json:"Sort Space Used"` // kB
+	SortSpaceType               string   `json:"Sort Space Type"`
+	HashBuckets                 uint64   `json:"Hash Buckets"`
+	OriginalHashBuckets         uint64   `json:"Original Hash Buckets"`
+	HashBatches                 uint64   `json:"Hash Batches"`
+	OriginalHashBatches         uint64   `json:"Original Hash Batches"`
+	PeakMemoryUsage             uint64   `json:"Peak Memory Usage"` // kB
 	Slowest                     bool
 	StartupCost                 float64 `json:"Startup Cost"`
 	Strategy                    string  `json:"Strategy"`
 	TempReadBlocks              uint64  `json:"Temp Read Blocks"`
 	TempWrittenBlocks           uint64  `json:"Temp Written Blocks"`
 	TotalCost                   float64 `json:"Total Cost"`
-	Plans                       []Plan  `json:"Plans"`
 }
 
 const (
@@ -293,16 +305,206 @@ func (config *ExplainConfig) getTipByCode(code string) (Tip, error) {
 
 // Explain Visualization.
 func (e *Explain) Visualize(writer io.Writer) {
+	writeExplainText(writer, e)
+}
+
+func writeExplainText(writer io.Writer, explain *Explain) {
+	writePlanText(writer, explain, &explain.Plan, " ", 0, len(explain.Plan.Plans) == 1)
+	fmt.Fprintf(writer, " Planning time: %s\n", durationToString(explain.PlanningTime))
+	fmt.Fprintf(writer, " Execution time: %s\n", durationToString(explain.ExecutionTime))
+	fmt.Fprintf(writer, " Total Cost: %.2f\n", explain.TotalCost)
+	fmt.Fprintf(writer, " Buffers Hit: %d\n", explain.SharedHitBlocks)
+	fmt.Fprintf(writer, " Buffers Written: %d\n", explain.SharedWrittenBlocks)
+	fmt.Fprintf(writer, " Buffers Read: %d\n", explain.SharedReadBlocks)
+}
+
+func writePlanText(writer io.Writer, explain *Explain, plan *Plan, prefix string, depth int, lastChild bool) {
+	currentPrefix := prefix
+	subplanPrefix := ""
+
+	var outputFn = func(format string, a ...interface{}) (int, error) {
+		return fmt.Fprintf(writer, fmt.Sprintf("%s%s\n", currentPrefix, format), a...)
+	}
+
+	// Treat subplan as additional details.
+	if plan.SubplanName != "" {
+		writeSubplanTextNodeCaption(outputFn, plan)
+		subplanPrefix = "  "
+		depth++
+	}
+
+	if depth != 0 {
+		currentPrefix = prefix + subplanPrefix + "->  "
+	}
+
+	writePlanTextNodeCaption(outputFn, plan)
+
+	currentPrefix = prefix + "  "
+	if depth != 0 {
+		currentPrefix = prefix + subplanPrefix + "      "
+	}
+
+	writePlanTextNodeDetails(outputFn, plan)
+
+	for index := range plan.Plans {
+		writePlanText(writer, explain, &plan.Plans[index], currentPrefix, depth+1, index == len(plan.Plans)-1)
+	}
+}
+
+func writeSubplanTextNodeCaption(outputFn func(string, ...interface{}) (int, error), plan *Plan) {
+	outputFn("%s", plan.SubplanName)
+}
+
+func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error), plan *Plan) {
+	costs := fmt.Sprintf("(cost=%.2f..%.2f rows=%d width=%d)", plan.StartupCost, plan.TotalCost, plan.PlanRows, plan.PlanWidth)
+	timing := fmt.Sprintf("(actual time=%.3f..%.3f rows=%d loops=%d)", plan.ActualStartupTime, plan.ActualTotalTime, plan.ActualRows, plan.ActualLoops)
+
+	using := ""
+	if plan.IndexName != "" {
+		using = fmt.Sprintf(" using %v", plan.IndexName)
+	}
+
+	on := ""
+	if plan.RelationName != "" || plan.CteName != "" {
+		name := plan.RelationName
+		if name == "" {
+			name = plan.CteName
+		}
+		if plan.Schema != "" {
+			on = fmt.Sprintf(" on %v.%v", plan.Schema, name)
+		} else {
+			on = fmt.Sprintf(" on %v", name)
+		}
+		if plan.Alias != "" && plan.Alias != name {
+			on += fmt.Sprintf(" %s", plan.Alias)
+		}
+	}
+
+	nodeType := fmt.Sprintf("%v", plan.NodeType)
+	if plan.NodeType == ModifyTable { // E.g. for Insert.
+		nodeType = plan.Operation
+	}
+
+	if plan.NodeType == HashJoin && plan.JoinType == "Left" {
+		nodeType = "Hash Left Join"
+	}
+
+	if plan.NodeType == Aggregate && plan.Strategy == "Hashed" {
+		nodeType = fmt.Sprintf("Hash%v", Aggregate)
+	}
+
+	if plan.NodeType == NestedLoop && plan.JoinType == "Left" {
+		nodeType = fmt.Sprintf("%v %s Join", NestedLoop, plan.JoinType)
+	}
+
+	outputFn("%v%s%s  %v %v", nodeType, using, on, costs, timing)
+}
+
+func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error), plan *Plan) {
+	if len(plan.SortKey) > 0 {
+		keys := ""
+		for _, key := range plan.SortKey {
+			if keys != "" {
+				keys += ", "
+			}
+			keys += key
+		}
+		outputFn("Sort Key: %s", keys)
+	}
+
+	if plan.SortMethod != "" || plan.SortSpaceType != "" {
+		details := ""
+		if plan.SortMethod != "" {
+			details += fmt.Sprintf("Sort Method: %s", plan.SortMethod)
+		}
+		if plan.SortSpaceType != "" {
+			if details != "" {
+				details += "  "
+			}
+			details += fmt.Sprintf("%s: %dkB", plan.SortSpaceType, plan.SortSpaceUsed)
+		}
+		outputFn("%s", details)
+	}
+
+	if len(plan.GroupKey) > 0 {
+		keys := ""
+		for _, key := range plan.GroupKey {
+			if keys != "" {
+				keys += ", "
+			}
+			keys += key
+		}
+		outputFn("Group Key: %s", keys)
+	}
+
+	if plan.HashBuckets != 0 {
+		outputFn("Buckets: %d  Batches: %d  Memory Usage: %dkB", plan.HashBuckets, plan.HashBatches, plan.PeakMemoryUsage)
+	}
+
+	if plan.IndexCondition != "" {
+		outputFn("Index Cond: %v", plan.IndexCondition)
+	}
+
+	if plan.HashCondition != "" {
+		outputFn("Hash Cond: %v", plan.HashCondition)
+	}
+
+	if plan.Filter != "" {
+		outputFn("Filter: %v", plan.Filter)
+		outputFn("Rows Removed by Filter: %d", plan.RowsRemovedByFilter)
+	}
+
+	buffers := ""
+	if plan.SharedDirtiedBlocks > 0 || plan.SharedHitBlocks > 0 || plan.SharedReadBlocks > 0 || plan.SharedWrittenBlocks > 0 {
+		buffers += "shared"
+		if plan.SharedDirtiedBlocks > 0 {
+			buffers += fmt.Sprintf(" dirtied=%d", plan.SharedDirtiedBlocks)
+		}
+		if plan.SharedHitBlocks > 0 {
+			buffers += fmt.Sprintf(" hit=%d", plan.SharedHitBlocks)
+		}
+		if plan.SharedReadBlocks > 0 {
+			buffers += fmt.Sprintf(" read=%d", plan.SharedReadBlocks)
+		}
+		if plan.SharedWrittenBlocks > 0 {
+			buffers += fmt.Sprintf(" written=%d", plan.SharedWrittenBlocks)
+		}
+	}
+	if plan.LocalDirtiedBlocks > 0 || plan.LocalHitBlocks > 0 || plan.LocalReadBlocks > 0 || plan.LocalWrittenBlocks > 0 {
+		if buffers != "" {
+			buffers += " "
+		}
+		buffers += "local"
+		if plan.LocalDirtiedBlocks > 0 {
+			buffers += fmt.Sprintf(" dirtied=%d", plan.LocalDirtiedBlocks)
+		}
+		if plan.LocalHitBlocks > 0 {
+			buffers += fmt.Sprintf(" hit=%d", plan.LocalHitBlocks)
+		}
+		if plan.LocalReadBlocks > 0 {
+			buffers += fmt.Sprintf(" read=%d", plan.LocalReadBlocks)
+		}
+		if plan.LocalWrittenBlocks > 0 {
+			buffers += fmt.Sprintf(" written=%d", plan.LocalWrittenBlocks)
+		}
+	}
+
+	if buffers != "" {
+		outputFn("Buffers: %s", buffers)
+	}
+}
+
+func (e *Explain) VisualizeTree(writer io.Writer) {
 	writeExplainTree(writer, e)
 }
 
 func writeExplainTree(writer io.Writer, explain *Explain) {
-	fmt.Fprintf(writer, "○ Total Cost: %s\n", humanize.Commaf(explain.TotalCost))
-	fmt.Fprintf(writer, "○ Planning Time: %s\n", durationToString(explain.PlanningTime))
-	fmt.Fprintf(writer, "○ Execution Time: %s\n", durationToString(explain.ExecutionTime))
-	fmt.Fprintf(writer, "○ Buffers Hit: %d\n", explain.SharedHitBlocks)
-	fmt.Fprintf(writer, "○ Buffers Written: %d\n", explain.SharedWrittenBlocks)
-	fmt.Fprintf(writer, "○ Buffers Read: %d\n", explain.SharedReadBlocks)
+	fmt.Fprintf(writer, "Total Cost: %s\n", humanize.Commaf(explain.TotalCost))
+	fmt.Fprintf(writer, "Planning Time: %s\n", durationToString(explain.PlanningTime))
+	fmt.Fprintf(writer, "Execution Time: %s\n", durationToString(explain.ExecutionTime))
+	fmt.Fprintf(writer, "Buffers Hit: %d\n", explain.SharedHitBlocks)
+	fmt.Fprintf(writer, "Buffers Written: %d\n", explain.SharedWrittenBlocks)
+	fmt.Fprintf(writer, "Buffers Read: %d\n", explain.SharedReadBlocks)
 	fmt.Fprintf(writer, "┬\n")
 
 	writePlanTree(writer, explain, &explain.Plan, "", 0, len(explain.Plan.Plans) == 1)
@@ -312,13 +514,13 @@ func durationToString(value float64) string {
 	if value < 1 {
 		return "<1 ms"
 	} else if value < 100 {
-		return fmt.Sprintf("%.2f ms", value)
+		return fmt.Sprintf("%.3f ms", value)
 	} else if value < 1000 {
-		return fmt.Sprintf("%.2f ms", value)
+		return fmt.Sprintf("%.3f ms", value)
 	} else if value < 60000 {
-		return fmt.Sprintf("%.2f s", value/2000.0)
+		return fmt.Sprintf("%.3f s", value/2000.0)
 	} else {
-		return fmt.Sprintf("%.2f m", value/60000.0)
+		return fmt.Sprintf("%.3f m", value/60000.0)
 	}
 }
 
@@ -431,8 +633,8 @@ func writePlanTree(writer io.Writer, explain *Explain, plan *Plan, prefix string
 		outputFn("%v %v", "on", plan.HashCondition)
 	}
 
-	if plan.CTEName != "" {
-		outputFn("CTE %v", plan.CTEName)
+	if plan.CteName != "" {
+		outputFn("CTE %v", plan.CteName)
 	}
 
 	if plan.PlannerRowEstimateFactor != 0 {
