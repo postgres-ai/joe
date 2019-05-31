@@ -82,6 +82,12 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client, explainConf
 				var ch = ev.Channel
 				var message = strings.TrimSpace(ev.Text)
 
+				// Slack escapes some characters
+				// https://api.slack.com/docs/message-formatting#how_to_escape_characters
+				message = strings.ReplaceAll(message, "&amp;", "&")
+				message = strings.ReplaceAll(message, "&lt;", "<")
+				message = strings.ReplaceAll(message, "&gt;", ">")
+
 				if strings.HasPrefix(message, "query") {
 					var query = message[6:len(message)]
 
@@ -186,6 +192,8 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client, explainConf
 }
 
 func runQuery(connStr string, query string) (string, error) {
+	log.Dbg("DB query:", query)
+
 	// TODO(anatoly): Retry mechanic.
 	var result = ""
 
