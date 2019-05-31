@@ -8,6 +8,8 @@ package pgexplain
 import (
 	"bytes"
 	"testing"
+
+	"../util"
 )
 
 func TestVisualize(t *testing.T) {
@@ -44,6 +46,81 @@ func TestVisualize(t *testing.T) {
 			t.Errorf("(%d) got different than expected: \n%s ", i, actual)
 		}
 	}
+}
+
+func TestTips(t *testing.T) {
+	explainConfig := ExplainConfig{
+		Params: ParamsConfig{
+			BuffersReadBigMax: 100,
+			BuffersHitBigMax:  1000,
+		},
+		Tips: []Tip{
+			{
+				Code: "SEQSCAN_USED",
+			},
+			{
+				Code: "BUFFERS_READ_BIG",
+			},
+			{
+				Code: "BUFFERS_HIT_BIG",
+			},
+		},
+	}
+
+	tests := []struct {
+		inputJson     string
+		expectedCodes []string
+	}{
+		{
+			inputJson: `[
+				{
+					"Plan": {
+						"Node Type": "Seq Scan",
+						"Relation Name": "table_1",
+						"Shared Hit Blocks": 10000,
+						"Shared Read Blocks": 315043
+					}
+				}
+			]`,
+			expectedCodes: []string{"SEQSCAN_USED", "BUFFERS_READ_BIG", "BUFFERS_HIT_BIG"},
+		},
+	}
+
+	for i, test := range tests {
+		inputJson := test.inputJson
+		expectedCodes := test.expectedCodes
+
+		explain, err := NewExplain(inputJson, explainConfig)
+		if err != nil {
+			t.Errorf("(%d) explain parsing failed: %v", i, err)
+			t.FailNow()
+		}
+
+		actualTips, err := explain.GetTips()
+		if err != nil {
+			t.Errorf("(%d) tips discover failed: %v", i, err)
+			t.FailNow()
+		}
+
+		actualCodes := getCodes(actualTips)
+
+		if !util.EqualStringSlicesUnordered(actualCodes, expectedCodes) {
+			t.Errorf("(%d) got different than expected: \n%s ", i, actualCodes)
+		}
+	}
+}
+
+func getCodes(tips []Tip) []string {
+	if len(tips) == 0 {
+		return make([]string, 0)
+	}
+
+	codes := make([]string, len(tips))
+	for i, tip := range tips {
+		codes[i] = tip.Code
+	}
+
+	return codes
 }
 
 // Test cases from Postgres 9.6.
