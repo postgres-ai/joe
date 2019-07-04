@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"../chat"
 	"../log"
 	"../pgexplain"
 	"../provision"
@@ -24,11 +25,34 @@ import (
 	"github.com/nlopes/slack/slackevents"
 )
 
+// TODO(anatoly): Use chat package wrapper.
+
 const SHOW_RAW_EXPLAIN = false
+
+const COMMAND_QUERY = "query"
+const COMMAND_EXEC = "exec"
+const COMMAND_RESET = "reset"
+const COMMAND_HARDRESET = "hardreset"
+const COMMAND_HELP = "help"
+
+var commands = []string{COMMAND_QUERY, COMMAND_EXEC, COMMAND_RESET, COMMAND_HARDRESET, COMMAND_HELP}
+
+const MSG_HELP = "• `query` — analyze your query (SELECT, INSERT, DELETE, UPDATE or WITH) and generate recommendations\n" +
+	"• `exec` — execute any query (for example, CREATE INDEX)\n" +
+	"• `reset` — revert the database to the initial state (usually takes less than a minute, :warning: all changes will be lost)\n" +
+	"• `hardreset` — re-provision the database instance (usually takes a couple of minutes, :warning: all changes will be lost)\n" +
+	"• `help` — this message"
+
+const MSG_QUERY_REQ = "Option query required for this command, e.g. `query select 1`"
+
+const RCTN_RUNNING = "hourglass_flowing_sand"
+const RCTN_OK = "white_check_mark"
+const RCTN_ERROR = "x"
 
 // TODO(anatoly): verifToken should be a part of Slack API wrapper.
 // TODO(anatoly): Convert args to struct.
-func RunHttpServer(connStr string, port uint, chatApi *slack.Client, explainConfig pgexplain.ExplainConfig, verifToken string, prov *provision.Provision) {
+func RunHttpServer(connStr string, port uint, chatApi *slack.Client,
+	explainConfig pgexplain.ExplainConfig, verifToken string, prov *provision.Provision) {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		log.Msg("Request received:", html.EscapeString(r.URL.Path))
 
@@ -44,7 +68,8 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client, explainConf
 		log.Dbg("Request body:", body)
 
 		eventsAPIEvent, err := slackevents.ParseEvent(json.RawMessage(body),
-			slackevents.OptionVerifyToken(&slackevents.TokenComparator{VerificationToken: verifToken}))
+			slackevents.OptionVerifyToken(
+				&slackevents.TokenComparator{VerificationToken: verifToken}))
 		if err != nil {
 			log.Err("Event parse error:", err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -88,35 +113,64 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client, explainConf
 				message = strings.ReplaceAll(message, "&lt;", "<")
 				message = strings.ReplaceAll(message, "&gt;", ">")
 
-				if strings.HasPrefix(message, "query") {
-					var query = message[6:len(message)]
+				if len(message) == 0 {
+					return
+				}
+
+				// Message: "command query(optional)".
+				parts := strings.SplitN(message, " ", 2)
+				command := parts[0]
+				query := ""
+				if len(parts) > 1 {
+					query = parts[1]
+				}
+
+				if !contains(commands, command) {
+					return
+				}
+
+				msg, err := chat.NewMessage(ch, chatApi)
+				err = msg.Publish(fmt.Sprintf("```%s %s```", command, query))
+				if err != nil {
+					// TODO(anatoly): Retry.
+					log.Err("Bot: Can't publish a message", err)
+					return
+				}
+
+				runMsg(msg)
+
+				switch command {
+				case COMMAND_QUERY:
+					if query == "" {
+						failMsg(msg, MSG_QUERY_REQ)
+						return
+					}
 
 					// Explain request and show.
 					var res, err = runQuery(connStr, "EXPLAIN (FORMAT TEXT)"+query)
 					if err != nil {
-						log.Err("Query: ", err)
-						postMsg(chatApi, ch, "ERROR: "+err.Error())
+						failMsg(msg, err.Error())
 						return
 					}
 
-					postMsg(chatApi, ch, fmt.Sprintf("```%s```\n"+"```%s```", query, res))
+					msg.Append(fmt.Sprintf("```%s```", res))
 
 					// Explain analyze request and processing.
-					res, err = runQuery(connStr, "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) "+query)
+					res, err = runQuery(connStr,
+						"EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) "+query)
 					if err != nil {
-						log.Err("Query: ", err)
-						postMsg(chatApi, ch, "ERROR: "+err.Error())
+						failMsg(msg, err.Error())
 						return
 					}
 
 					if SHOW_RAW_EXPLAIN {
-						postMsg(chatApi, ch, res)
+						msg.Append(res)
 					}
 
 					explain, err := pgexplain.NewExplain(res, explainConfig)
 					if err != nil {
 						log.Err("Explain parsing: ", err)
-						postMsg(chatApi, ch, "ERROR: "+err.Error())
+						failMsg(msg, err.Error())
 						return
 					}
 
@@ -124,18 +178,20 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client, explainConf
 					tips, err := explain.GetTips()
 					if err != nil {
 						log.Err("Recommendations: ", err)
-						postMsg(chatApi, ch, "ERROR: "+err.Error())
+						failMsg(msg, err.Error())
 						return
 					}
 
 					if len(tips) == 0 {
-						postMsg(chatApi, ch, ":white_check_mark: Looks good")
+						msg.Append(":white_check_mark: Looks good")
 					} else {
-						recommends := "Recommendations:\n"
+						recommends := "*Recommendations:*\n"
 						for _, tip := range tips {
-							recommends += fmt.Sprintf(":red_circle: %s - %s\n", tip.Name, tip.Description)
+							recommends += fmt.Sprintf(
+								":exclamation: %s – %s <example.com|Show details>\n", tip.Name,
+								tip.Description)
 						}
-						postMsg(chatApi, ch, recommends)
+						msg.Append(recommends)
 					}
 
 					// Visualization.
@@ -143,45 +199,58 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client, explainConf
 					explain.Visualize(buf)
 					var vis = buf.String()
 
-					postMsg(chatApi, ch, fmt.Sprintf("```%s```", vis))
-				} else if strings.HasPrefix(message, "reset") {
-					postMsg(chatApi, ch, "Performing rollback of DB state...")
-					err := prov.ResetSession()
-					if err != nil {
-						log.Err("Reset:", err)
-						postMsg(chatApi, ch, "ERROR: "+err.Error())
+					msg.Append(fmt.Sprintf("*Explain Analyze Output:*\n```%s```", vis))
+				case COMMAND_EXEC:
+					if query == "" {
+						failMsg(msg, MSG_QUERY_REQ)
 						return
 					}
-					postMsg(chatApi, ch, "Rollback performed")
-				} else if strings.HasPrefix(message, "hardreset") {
-					// Temprorary command for managing sessions.
-					log.Msg("Reestablishing connection")
-					postMsg(chatApi, ch, "Reestablishing connection to DB, it may take a couple of minutes...\n"+
-						"If you want to rollback DB state use `reset` command.")
-					prov.StopSession()
-					res, sessionId, err := prov.StartSession()
-					if err != nil {
-						log.Err("Hardreset:", res, sessionId, err)
-						postMsg(chatApi, ch, "ERROR: "+err.Error())
-						return
-					}
-					log.Msg("Connection reestablished", res, sessionId, err)
-					postMsg(chatApi, ch, "Connection reestablished")
-				} else if strings.HasPrefix(message, "exec") {
-					//TODO(anatoly): Restrict insecure operations and data access.
-					var query = message[5:len(message)]
-					postMsg(chatApi, ch, fmt.Sprintf(":rocket: `%s`", query))
 
 					start := time.Now()
 					var _, err = runQuery(connStr, query)
 					elapsed := time.Since(start)
 					if err != nil {
 						log.Err("Exec:", err)
-						postMsg(chatApi, ch, "ERROR: "+err.Error())
+						failMsg(msg, err.Error())
 						return
 					}
-					postMsg(chatApi, ch, fmt.Sprintf("DDL executed. Execution Time: %s", elapsed))
+					msg.Append(fmt.Sprintf("DDL executed. Execution Time: %s", elapsed))
+				case COMMAND_RESET:
+					msg.Append("Performing rollback of DB state...")
+					err := prov.ResetSession()
+					if err != nil {
+						log.Err("Reset:", err)
+						failMsg(msg, err.Error())
+						return
+					}
+					msg.Append("Rollback performed")
+				case COMMAND_HARDRESET:
+					// Temprorary command for managing sessions.
+					log.Msg("Reestablishing connection")
+					msg.Append("Reestablishing connection to DB," +
+						"it may take a couple of minutes...\n" +
+						"If you want to rollback DB state use `reset` command.")
+
+					prov.StopSession()
+
+					// TODO(anatoly): Temp hack. Remove after provisioning fix.
+					// "Can't attach pancake drive" bug.
+					time.Sleep(2 * time.Second)
+					prov.StopSession()
+
+					res, sessionId, err := prov.StartSession()
+					if err != nil {
+						log.Err("Hardreset:", res, sessionId, err)
+						failMsg(msg, err.Error())
+						return
+					}
+					log.Msg("Connection reestablished", res, sessionId, err)
+					msg.Append("Connection reestablished")
+				case COMMAND_HELP:
+					msg.Append(MSG_HELP)
 				}
+
+				okMsg(msg)
 			}
 		}
 	})
@@ -189,6 +258,20 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client, explainConf
 	log.Msg("Server listening on", port)
 	err := http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
 	log.Err("HTTP server error:", err)
+}
+
+// TODO(anatoly): Retries, error processing.
+func runMsg(msg *chat.Message) {
+	msg.ChangeReaction(RCTN_RUNNING)
+}
+
+func okMsg(msg *chat.Message) {
+	msg.ChangeReaction(RCTN_OK)
+}
+
+func failMsg(msg *chat.Message, text string) {
+	msg.Append(fmt.Sprintf("ERROR: %s", text))
+	msg.ChangeReaction(RCTN_ERROR)
 }
 
 func runQuery(connStr string, query string) (string, error) {
@@ -225,6 +308,11 @@ func runQuery(connStr string, query string) (string, error) {
 	return result, nil
 }
 
-func postMsg(chatApi *slack.Client, ch string, msg string) {
-	chatApi.PostMessage(ch, slack.MsgOptionText(msg, false))
+func contains(list []string, s string) bool {
+	for _, item := range list {
+		if s == item {
+			return true
+		}
+	}
+	return false
 }

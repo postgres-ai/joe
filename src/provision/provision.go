@@ -346,13 +346,13 @@ func (j *Provision) DockerMovePostgresPgData() (bool, error) {
 }
 
 // Create ZFS snapshot on drive attached by AttachZfsPancake
-func (j *Provision) DockerCreateZfsSnapshot() (bool, error) {
+func (j *Provision) DockerCreateZfsSnapshot(name string) (bool, error) {
 	log.Dbg("Create database snapshot")
 	var result bool
 	var err error
 	result, err = j.DockerStopPostgres()
 	if result == true && err == nil {
-		out, cerr := j.ec2ctrl.RunInstanceSshCommand("sudo zfs snapshot -r zpool@init_db", j.config.Debug)
+		out, cerr := j.ec2ctrl.RunInstanceSshCommand("sudo zfs snapshot -r zpool@" + name, j.config.Debug)
 		if cerr != nil {
 			return false, fmt.Errorf("Can't create zfs shanpshot. %s, %v", out, cerr)
 		}
@@ -368,7 +368,7 @@ func (j *Provision) DockerRollbackZfsSnapshot() (bool, error) {
 	var err error
 	result, err = j.DockerStopPostgres()
 	if result == true && err == nil {
-		out, cerr := j.ec2ctrl.RunInstanceSshCommand("sudo zfs rollback -f -r zpool@init_db", j.config.Debug)
+		out, cerr := j.ec2ctrl.RunInstanceSshCommand("sudo zfs rollback -f -r zpool@db_state_1", j.config.Debug)
 		if cerr != nil {
 			return false, fmt.Errorf("Can't rollback zfs shanpshot. %s, %v", out, cerr)
 		}
@@ -560,12 +560,20 @@ func (j *Provision) DockerCreateDbUser() error {
 	sql := "select 1 from pg_catalog.pg_roles where rolname = '" + TEST_USER + "'"
 	out, err := j.DockerRunCommand("psql -Upostgres -d postgres -t -c \"" + sql + "\"")
 	out = strings.Trim(out, "\n ")
-	if out != "1" && err == nil {
-		sql = "CREATE ROLE " + TEST_USER + " LOGIN password '" + TEST_USER + "' superuser;"
-		out, err = j.dockerRunCommand("psql -Upostgres -d postgres -t -c \""+sql+"\"", false)
 
-		log.Dbg("Create test user", out, err)
+	if err != nil {
+		return err
 	}
+
+	if out == "1" {
+		log.Dbg("Test user already exists")
+		return nil
+	}
+
+	sql = "CREATE ROLE " + TEST_USER + " LOGIN password '" + TEST_USER + "' superuser;"
+	out, err = j.dockerRunCommand("psql -Upostgres -d postgres -t -c \""+sql+"\"", false)
+	log.Dbg("Create test user", out, err)
+
 	return err
 }
 

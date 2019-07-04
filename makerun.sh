@@ -1,5 +1,5 @@
 #!/bin/bash
-clear
+
 go get github.com/aws/aws-sdk-go/aws
 go get github.com/aws/aws-sdk-go/aws/awserr
 go get github.com/aws/aws-sdk-go/aws/session
