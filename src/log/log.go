@@ -83,3 +83,7 @@ func Dbg(v ...interface{}) {
 func Err(v ...interface{}) {
 	log.Println(">>> ERROR: " + prepareMessage(v...))
 }
+
+func Fatal(v ...interface{}) {
+	log.Fatal(">>> ERROR: " + prepareMessage(v...))
+}

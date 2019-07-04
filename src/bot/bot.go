@@ -31,11 +31,19 @@ const SHOW_RAW_EXPLAIN = false
 
 const COMMAND_QUERY = "query"
 const COMMAND_EXEC = "exec"
+const COMMAND_SNAPSHOT = "snapshot"
 const COMMAND_RESET = "reset"
 const COMMAND_HARDRESET = "hardreset"
 const COMMAND_HELP = "help"
 
-var commands = []string{COMMAND_QUERY, COMMAND_EXEC, COMMAND_RESET, COMMAND_HARDRESET, COMMAND_HELP}
+var commands = []string{
+	COMMAND_QUERY,
+	COMMAND_EXEC,
+	COMMAND_SNAPSHOT,
+	COMMAND_RESET,
+	COMMAND_HARDRESET,
+	COMMAND_HELP,
+}
 
 const MSG_HELP = "• `query` — analyze your query (SELECT, INSERT, DELETE, UPDATE or WITH) and generate recommendations\n" +
 	"• `exec` — execute any query (for example, CREATE INDEX)\n" +
@@ -215,8 +223,23 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client,
 						return
 					}
 					msg.Append(fmt.Sprintf("DDL executed. Execution Time: %s", elapsed))
+				case COMMAND_SNAPSHOT:
+					if query == "" {
+						failMsg(msg, MSG_QUERY_REQ)
+						return
+					}
+
+					_, err = prov.CreateZfsSnapshot(query)
+					if err != nil {
+						log.Err("Snapshot: ", err)
+						failMsg(msg, err.Error())
+						return
+					}
 				case COMMAND_RESET:
 					msg.Append("Performing rollback of DB state...")
+
+					// TODO(anatoly): ZFS rollback deletes newer snapshots. Users will be able
+					// to jump across snapshots if we solve it.
 					err := prov.ResetSession()
 					if err != nil {
 						log.Err("Reset:", err)
