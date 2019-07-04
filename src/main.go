@@ -94,7 +94,7 @@ func main() {
 	prov.StopSession()
 	res, sessionId, err := prov.StartSession()
 	if err != nil {
-		log.Err("Start session error", res, sessionId, err)
+		log.Fatal("Start session error", res, sessionId, err)
 	} else {
 		log.Msg("Session started", res, sessionId, err)
 	}

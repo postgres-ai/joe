@@ -34,6 +34,7 @@ const (
 	STATE_FILE       = "joestate.json"
 	TEST_USER        = "testuser"
 	SSH_TUNNEL_PORT  = "10799"
+	DEFAULT_SNAPSHOT = "db_state_1"
 )
 
 type ProvisionState struct {
@@ -346,15 +347,15 @@ func (j *Provision) DockerMovePostgresPgData() (bool, error) {
 }
 
 // Create ZFS snapshot on drive attached by AttachZfsPancake
-func (j *Provision) DockerCreateZfsSnapshot(name string) (bool, error) {
+func (j *Provision) CreateZfsSnapshot(name string) (bool, error) {
 	log.Dbg("Create database snapshot")
 	var result bool
 	var err error
 	result, err = j.DockerStopPostgres()
 	if result == true && err == nil {
-		out, cerr := j.ec2ctrl.RunInstanceSshCommand("sudo zfs snapshot -r zpool@" + name, j.config.Debug)
+		out, cerr := j.ec2ctrl.RunInstanceSshCommand("sudo zfs snapshot -r zpool@"+name, j.config.Debug)
 		if cerr != nil {
-			return false, fmt.Errorf("Can't create zfs shanpshot. %s, %v", out, cerr)
+			return false, fmt.Errorf("Can't create ZFS snapshot: %s, %v", out, cerr)
 		}
 		result, err = j.DockerStartPostgres()
 	}
@@ -362,13 +363,13 @@ func (j *Provision) DockerCreateZfsSnapshot(name string) (bool, error) {
 }
 
 // Rollback to ZFS snapshot on drive attached by AttachZfsPancake
-func (j *Provision) DockerRollbackZfsSnapshot() (bool, error) {
+func (j *Provision) DockerRollbackZfsSnapshot(snapshot string) (bool, error) {
 	log.Dbg("Rollback database to snapshot")
 	var result bool
 	var err error
 	result, err = j.DockerStopPostgres()
 	if result == true && err == nil {
-		out, cerr := j.ec2ctrl.RunInstanceSshCommand("sudo zfs rollback -f -r zpool@db_state_1", j.config.Debug)
+		out, cerr := j.ec2ctrl.RunInstanceSshCommand("sudo zfs rollback -f -r zpool@"+snapshot, j.config.Debug)
 		if cerr != nil {
 			return false, fmt.Errorf("Can't rollback zfs shanpshot. %s, %v", out, cerr)
 		}
@@ -495,7 +496,12 @@ func (j *Provision) StartWorkingInstance() (bool, error) {
 }
 
 // Start test session
-func (j *Provision) StartSession() (bool, string, error) {
+func (j *Provision) StartSession(options ...string) (bool, string, error) {
+	snapshot := DEFAULT_SNAPSHOT
+	if len(options) > 0 && len(options[0]) > 0 {
+		snapshot = options[0]
+	}
+
 	if j.sessionId != "" {
 		return false, j.sessionId, fmt.Errorf("Session already started")
 	}
@@ -514,7 +520,7 @@ func (j *Provision) StartSession() (bool, string, error) {
 			return false, "", fmt.Errorf("Can't start working instance. %v", err)
 		}
 	}
-	_, err := j.DockerRollbackZfsSnapshot()
+	_, err := j.DockerRollbackZfsSnapshot(snapshot)
 	if err != nil {
 		return false, "", fmt.Errorf("Can't rollback database. %v", err)
 	}
@@ -540,8 +546,13 @@ func (j *Provision) StopSession() (bool, error) {
 	return j.WriteState()
 }
 
-func (j *Provision) ResetSession() error {
-	_, err := j.DockerRollbackZfsSnapshot()
+func (j *Provision) ResetSession(options ...string) error {
+	snapshot := DEFAULT_SNAPSHOT
+	if len(options) > 0 {
+		snapshot = options[0]
+	}
+
+	_, err := j.DockerRollbackZfsSnapshot(snapshot)
 	if err != nil {
 		return fmt.Errorf("Unable to rollback database. %v", err)
 	}
