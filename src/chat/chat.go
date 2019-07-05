@@ -19,7 +19,7 @@ const ERROR_NOT_PUBLISHED = "Message not published yet"
 
 type Message struct {
 	ChannelId string
-	Timestamp string // Used as id in Slack API
+	Timestamp string // Used as message id in Slack API.
 	Text      string // Used to accumulate message text to append new parts by edit.
 	Reaction  string // We will support only one reaction for now.
 	ChatApi   *slack.Client

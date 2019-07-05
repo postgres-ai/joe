@@ -28,14 +28,12 @@ import (
 
 const (
 	DOCKER_NAME      = "inside-instance-docker"
-	OS_CMD_PREFIX    = ""
 	PRICE_MULTIPLIER = 1.1
 	STATE_DIR        = "joe-run"
 	STATE_FILE       = "joestate.json"
-	TEST_USER        = "testuser"
-	SSH_TUNNEL_PORT  = "10799"
-	DEFAULT_SNAPSHOT = "db_state_1"
 )
+
+var awsValidDurations = []int64{60, 120, 180, 240, 300, 360}
 
 type ProvisionState struct {
 	InstanceId        string
@@ -49,6 +47,10 @@ type ProvisionConfiguration struct {
 	Debug            bool
 	EbsVolumeId      string
 	PgVersion        string
+	DbUsername       string // Database user will be created with specified credentials.
+	DbPassword       string
+	SshTunnelPort    uint
+	InitialSnapshot  string
 }
 
 type Provision struct {
@@ -74,45 +76,58 @@ func NewProvision(conf ProvisionConfiguration) *Provision {
 	return provision
 }
 
+// Check validity of a configuration and show a message for each violation.
 func IsValidConfig(config ProvisionConfiguration) bool {
-	fmt.Printf("Config: %v\n", config)
 	result := true
+
 	if config.AwsConfiguration.AwsInstanceType == "" {
 		log.Err("Wrong configuration AwsInstanceType value.")
 		result = false
 	}
+
 	if ec2ctrl.RegionDetails[config.AwsConfiguration.AwsRegion] == nil {
 		log.Err("Wrong configuration AwsRegion value.")
 		result = false
 	}
+
 	if len(config.AwsConfiguration.AwsZone) != 1 {
 		log.Err("Wrong configuration AwsZone value.")
 		result = false
 	}
-	durations := []int64{60, 120, 180, 240, 300, 360}
-	validDuration := false
-	for i := 0; i < len(durations); i++ {
-		if durations[i] == config.AwsConfiguration.AwsBlockDurationMinutes {
-			validDuration = true
+
+	duration := config.AwsConfiguration.AwsBlockDurationMinutes
+	isValidDuration := false
+	for _, validDuration := range awsValidDurations {
+		if duration == validDuration {
+			isValidDuration = true
 			break
 		}
 	}
-	if validDuration == false {
+	if !isValidDuration {
 		log.Err("Wrong configuration AwsBlockDurationMinutes value.")
 		result = false
 	}
+
 	if config.AwsConfiguration.AwsKeyName == "" {
 		log.Err("Wrong configuration AwsKeyName value.")
 		result = false
 	}
+
 	if config.AwsConfiguration.AwsKeyPath == "" {
 		log.Err("Wrong configuration AwsKeyName value.")
 		result = false
 	}
+
 	if _, err := os.Stat(config.AwsConfiguration.AwsKeyPath); err != nil {
 		log.Err("Wrong configuration AwsKeyName value. File does not exits.")
 		result = false
 	}
+
+	if config.InitialSnapshot == "" {
+		log.Err("Wrong configuration InitialSnapshot value.")
+		result = false
+	}
+
 	return result
 }
 
@@ -363,15 +378,15 @@ func (j *Provision) CreateZfsSnapshot(name string) (bool, error) {
 }
 
 // Rollback to ZFS snapshot on drive attached by AttachZfsPancake
-func (j *Provision) DockerRollbackZfsSnapshot(snapshot string) (bool, error) {
+func (j *Provision) DockerRollbackZfsSnapshot(name string) (bool, error) {
 	log.Dbg("Rollback database to snapshot")
 	var result bool
 	var err error
 	result, err = j.DockerStopPostgres()
 	if result == true && err == nil {
-		out, cerr := j.ec2ctrl.RunInstanceSshCommand("sudo zfs rollback -f -r zpool@"+snapshot, j.config.Debug)
+		out, cerr := j.ec2ctrl.RunInstanceSshCommand("sudo zfs rollback -f -r zpool@"+name, j.config.Debug)
 		if cerr != nil {
-			return false, fmt.Errorf("Can't rollback zfs shanpshot. %s, %v", out, cerr)
+			return false, fmt.Errorf("Can't rollback ZFS snapshot: %s, %v", out, cerr)
 		}
 		result, err = j.DockerStartPostgres()
 	}
@@ -497,7 +512,7 @@ func (j *Provision) StartWorkingInstance() (bool, error) {
 
 // Start test session
 func (j *Provision) StartSession(options ...string) (bool, string, error) {
-	snapshot := DEFAULT_SNAPSHOT
+	snapshot := j.config.InitialSnapshot
 	if len(options) > 0 && len(options[0]) > 0 {
 		snapshot = options[0]
 	}
@@ -532,9 +547,9 @@ func (j *Provision) StartSession(options ...string) (bool, string, error) {
 	if res == false {
 		log.Err("Can't save state")
 	}
-	err = j.CheckSshTunnel()
+	err = j.CreateSshTunnel()
 	if err != nil {
-		return false, "", fmt.Errorf("SSH tunnel created, but check failed: %v", err)
+		return false, "", err
 	}
 	return true, j.sessionId, nil
 }
@@ -547,7 +562,7 @@ func (j *Provision) StopSession() (bool, error) {
 }
 
 func (j *Provision) ResetSession(options ...string) error {
-	snapshot := DEFAULT_SNAPSHOT
+	snapshot := j.config.InitialSnapshot
 	if len(options) > 0 {
 		snapshot = options[0]
 	}
@@ -568,7 +583,7 @@ func (j *Provision) ResetSession(options ...string) error {
 // Create test user
 func (j *Provision) DockerCreateDbUser() error {
 	var err error
-	sql := "select 1 from pg_catalog.pg_roles where rolname = '" + TEST_USER + "'"
+	sql := "select 1 from pg_catalog.pg_roles where rolname = '" + j.config.DbUsername + "'"
 	out, err := j.DockerRunCommand("psql -Upostgres -d postgres -t -c \"" + sql + "\"")
 	out = strings.Trim(out, "\n ")
 
@@ -581,7 +596,7 @@ func (j *Provision) DockerCreateDbUser() error {
 		return nil
 	}
 
-	sql = "CREATE ROLE " + TEST_USER + " LOGIN password '" + TEST_USER + "' superuser;"
+	sql = "CREATE ROLE " + j.config.DbUsername + " LOGIN password '" + j.config.DbPassword + "' superuser;"
 	out, err = j.dockerRunCommand("psql -Upostgres -d postgres -t -c \""+sql+"\"", false)
 	log.Dbg("Create test user", out, err)
 
@@ -604,7 +619,7 @@ func (j *Provision) ExecuteLocalCmd(command string, wait bool) ([]byte, error) {
 }
 
 // Open local SSH tunnel
-func (j *Provision) OpenSshTunnel() bool {
+func (j *Provision) OpenSshTunnel() error {
 	var err error
 	bindir, _ := filepath.Abs(filepath.Dir(os.Args[0]))
 	dir, _ := filepath.Abs(filepath.Dir(bindir))
@@ -612,18 +627,20 @@ func (j *Provision) OpenSshTunnel() bool {
 	cmd := "ssh -o 'StrictHostKeyChecking no' -i " +
 		j.config.AwsConfiguration.AwsKeyPath +
 		" -f -N -M -S " + sockFilePath + " -L " +
-		SSH_TUNNEL_PORT + ":localhost:5432 ubuntu@" + j.instanceIp + " &"
+		strconv.FormatUint(uint64(j.config.SshTunnelPort), 10) + ":localhost:5432" +
+		" ubuntu@" + j.instanceIp + " &"
 	_, err = j.ExecuteLocalCmd(cmd, false)
 	if err == nil {
 		log.Dbg("Opening SSH tunnel " + log.OK)
 	} else {
 		log.Dbg("Opening SSH tunnel " + log.FAIL)
 	}
-	return err == nil
+
+	return err
 }
 
 // Close local SSH tunnel
-func (j *Provision) CloseSshTunnel() bool {
+func (j *Provision) CloseSshTunnel() error {
 	var err error
 	bindir, _ := filepath.Abs(filepath.Dir(os.Args[0]))
 	dir, _ := filepath.Abs(filepath.Dir(bindir))
@@ -635,23 +652,39 @@ func (j *Provision) CloseSshTunnel() bool {
 	} else {
 		log.Dbg("Closing SSH tunnel " + log.FAIL)
 	}
-	return err == nil
+
+	return err
 }
 
 // Check existance and readiness of local SSH tunnel
-func (j *Provision) CheckSshTunnel() error {
-	var outb []byte
-	var err error
-	cmd := "PGPASSWORD=" + TEST_USER + " psql -t -q -h localhost -p " + SSH_TUNNEL_PORT + " --user=" + TEST_USER + " postgres -c \"select '1';\" || echo 0"
-	log.Dbg("Check tunnel...")
-	outb, err = j.ExecuteLocalCmd(cmd, true)
+func (j *Provision) SshTunnelExists() bool {
+	log.Dbg("Checking SSH tunnel...")
+
+	cmd := "PGPASSWORD=" + j.config.DbPassword +
+		" psql -t -q -h localhost -p " + strconv.FormatUint(uint64(j.config.SshTunnelPort), 10) +
+		" --user=" + j.config.DbUsername +
+		" postgres -c \"select '1';\" || echo 0"
+	outb, err := j.ExecuteLocalCmd(cmd, true)
 	out := strings.Trim(string(outb), "\n ")
-	if out != "1" && err == nil {
+
+	if err != nil || out != "1" {
+		log.Err("Check SSH tunnel: %v %s")
+		return false
+	}
+
+	return true
+}
+
+// Establish SSH tunnel
+func (j *Provision) CreateSshTunnel() error {
+	if !j.SshTunnelExists() {
 		j.CloseSshTunnel()
-		if !j.OpenSshTunnel() {
-			return fmt.Errorf("Can't open Ssh tunnel. %v", err)
+		err := j.OpenSshTunnel()
+		if err != nil {
+			return fmt.Errorf("Can't establish SSH tunnel: %v", err)
 		}
 	}
-	log.Dbg("SSH Tunnel is " + log.GREEN + "ready" + log.END)
+
+	log.Dbg("SSH tunnel is " + log.GREEN + "ready" + log.END)
 	return nil
 }

@@ -12,3 +12,4 @@ awsConfiguration:
 ebsVolumeId: "vol-xxx"
 debug: false
 pgVersion: "9.6"
+initialSnapshot: "db_state_1"
