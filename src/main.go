@@ -51,6 +51,7 @@ type ProvisionConfig struct {
 	EbsVolumeId      string                   `yaml:"ebsVolumeId"`
 	Debug            bool                     `yaml:"debug"`
 	PgVersion        string                   `yaml:"pgVersion"`
+	InitialSnapshot  string                   `yaml:"initialSnapshot"`
 }
 
 func main() {
@@ -82,7 +83,11 @@ func main() {
 		AwsConfiguration: provisionConfig.AwsConfiguration,
 		Debug:            provisionConfig.Debug,
 		EbsVolumeId:      provisionConfig.EbsVolumeId,
+		InitialSnapshot:  provisionConfig.InitialSnapshot,
 		PgVersion:        provisionConfig.PgVersion,
+		DbUsername:       opts.DbUser,
+		DbPassword:       opts.DbPassword,
+		SshTunnelPort:    opts.DbPort,
 	}
 	if !provision.IsValidConfig(provConf) {
 		log.Err("Wrong configuration format.")
@@ -143,8 +148,9 @@ func loadProvisionConfig() (ProvisionConfig, error) {
 			AwsRegion:       "us-east-1",
 			AwsZone:         "a",
 		},
-		Debug:     true,
-		PgVersion: "9.6",
+		Debug:           true,
+		PgVersion:       "9.6",
+		InitialSnapshot: "db_state_1",
 	}
 
 	err := loadConfig(&config, "provisioning.yaml")

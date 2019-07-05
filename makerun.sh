@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# 2019 © Anatoly Stansler anatoly@postgres.ai
+# 2019 © Dmitry Udalov dmius@postgres.ai
+# 2019 © Postgres.ai
+
 go get github.com/aws/aws-sdk-go/aws
 go get github.com/aws/aws-sdk-go/aws/awserr
 go get github.com/aws/aws-sdk-go/aws/session
@@ -13,5 +17,19 @@ go get github.com/lib/pq
 go get github.com/tkanos/gonfig
 
 make all
-echo ""
+
+if [ -z ${ENV+x} ]; then
+  echo "Using default variables"
+  export CHAT_TOKEN="xoxb-TOKEN"
+  export CHAT_VERIFICATION_TOKEN="TOKEN"
+  export DB_HOST="localhost"
+  export DB_PORT=10799
+  export DB_USER="postgres"
+  export DB_PASSWORD="postgres"
+  export DB_NAME="postgres"
+  export SERVER_PORT=3000
+else
+  source ./deploy/configs/${ENV}.sh
+fi
+
 ./bin/joe

@@ -9,7 +9,6 @@ COMMIT?=no #$(shell git rev-parse HEAD)
 BRANCH?=no #$(shell git rev-parse --abbrev-ref HEAD)
 
 # Symlink into GOPATH
-GITHUB_USERNAME=dmius
 BUILD_DIR=${GOPATH}/${BINARY}
 
 # Setup the -ldflags option for go build here, interpolate the variable values
@@ -27,7 +26,6 @@ main:
 
 test:
 	go test ./src/
-	go test ./src/fmtutils/
 
 vet:
 	go vet ./src/...
