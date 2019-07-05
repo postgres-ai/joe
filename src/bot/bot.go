@@ -43,6 +43,7 @@ var commands = []string{
 	COMMAND_RESET,
 	COMMAND_HARDRESET,
 	COMMAND_HELP,
+	"splash",
 }
 
 const MSG_HELP = "• `explain` — analyze your query (SELECT, INSERT, DELETE, UPDATE or WITH) and generate recommendations\n" +
@@ -57,6 +58,46 @@ const MSG_QUERY_REQ = "Option query required for this command, e.g. `query selec
 const RCTN_RUNNING = "hourglass_flowing_sand"
 const RCTN_OK = "white_check_mark"
 const RCTN_ERROR = "x"
+
+const MSG_SPLASH = ":empty:\n" +
+":empty:\n" +
+":empty:\n" +
+":empty:\n" +
+":empty:\n" +
+":empty:\n" +
+":empty:\n" +
+":empty:\n" +
+":empty:\n" +
+":empty:\n" +
+":empty:\n" +
+":empty:\n" +
+"```\n" +
+`                                                                                                                 ` + "\n" +
+`                       __                                                                                        ` + "\n" +
+`                      / /___  ___                                                                                ` + "\n" +
+`                 __  / / __ \/ _ \                                                                               ` + "\n" +
+`                / /_/ / /_/ /  __/                                                                               ` + "\n" +
+`                \____/\____/\___/                                                                                ` + "\n" +
+`                                                                                                                 ` + "\n" +
+`                                                       ____                                                      ` + "\n" +
+`                                                      / __ \__  _____  _______  __                               ` + "\n" +
+`                                                     / / / / / / / _ \/ ___/ / / /                               ` + "\n" +
+`                                                    / /_/ / /_/ /  __/ /  / /_/ /                                ` + "\n" +
+`                                                    \________,_/\_____/   \__, /                                 ` + "\n" +
+`                                                                          /___/                                  ` + "\n" +
+`                                                       ____        __  _           _             __  _           ` + "\n" +
+`                                                      / __ \____  / /_(_)_______  (_)___  ____ _/ /_(_)___  ____ ` + "\n" +
+`                                                     / / / / __ \/ __/ / __ ` + "`" + `__ \/ /_  / / __ ` + "`" + `/ __/ / __ \/ __ \` + "\n" +
+`                                                    / /_/ / /_/ / /_/ / / / / / / / / /_/ /_/ / /_/ / /_/ / / / /` + "\n" +
+`                                                    \____/ .___/\__/_/_/ /_/ /_/_/ /___/\__,__\__/_/\____/_/ /_/ ` + "\n" +
+`                                                        /_/                                                      ` + "\n" +
+`                                                                                                                 ` + "\n" +
+"```\n" +
+":empty:\n" +
+":empty:\n" +
+":empty:\n" +
+":empty:\n" +
+":empty:\n"
 
 // TODO(anatoly): verifToken should be a part of Slack API wrapper.
 // TODO(anatoly): Convert args to struct.
@@ -273,6 +314,9 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client,
 					msg.Append("Connection reestablished")
 				case COMMAND_HELP:
 					msg.Append(MSG_HELP)
+				case "splash":
+					msg1, _ := chat.NewMessage(ch, chatApi)
+					_ = msg1.Publish(MSG_SPLASH)
 				}
 
 				okMsg(msg)
