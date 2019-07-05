@@ -29,7 +29,7 @@ import (
 
 const SHOW_RAW_EXPLAIN = false
 
-const COMMAND_QUERY = "query"
+const COMMAND_EXPLAIN = "explain"
 const COMMAND_EXEC = "exec"
 const COMMAND_SNAPSHOT = "snapshot"
 const COMMAND_RESET = "reset"
@@ -37,7 +37,7 @@ const COMMAND_HARDRESET = "hardreset"
 const COMMAND_HELP = "help"
 
 var commands = []string{
-	COMMAND_QUERY,
+	COMMAND_EXPLAIN,
 	COMMAND_EXEC,
 	COMMAND_SNAPSHOT,
 	COMMAND_RESET,
@@ -45,8 +45,9 @@ var commands = []string{
 	COMMAND_HELP,
 }
 
-const MSG_HELP = "• `query` — analyze your query (SELECT, INSERT, DELETE, UPDATE or WITH) and generate recommendations\n" +
+const MSG_HELP = "• `explain` — analyze your query (SELECT, INSERT, DELETE, UPDATE or WITH) and generate recommendations\n" +
 	"• `exec` — execute any query (for example, CREATE INDEX)\n" +
+	"• `snapshot` — create a snapshot of the current database state\n" +
 	"• `reset` — revert the database to the initial state (usually takes less than a minute, :warning: all changes will be lost)\n" +
 	"• `hardreset` — re-provision the database instance (usually takes a couple of minutes, :warning: all changes will be lost)\n" +
 	"• `help` — this message"
@@ -148,7 +149,7 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client,
 				runMsg(msg)
 
 				switch command {
-				case COMMAND_QUERY:
+				case COMMAND_EXPLAIN:
 					if query == "" {
 						failMsg(msg, MSG_QUERY_REQ)
 						return
@@ -161,7 +162,7 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client,
 						return
 					}
 
-					msg.Append(fmt.Sprintf("```%s```", res))
+					msg.Append(fmt.Sprintf("*Plan:*\n```%s```", res))
 
 					// Explain analyze request and processing.
 					res, err = runQuery(connStr,
@@ -190,24 +191,25 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client,
 						return
 					}
 
+					recommends := "*Recommendations:*\n"
 					if len(tips) == 0 {
-						msg.Append(":white_check_mark: Looks good")
+						recommends += ":white_check_mark: Looks good"
 					} else {
-						recommends := "*Recommendations:*\n"
 						for _, tip := range tips {
 							recommends += fmt.Sprintf(
-								":exclamation: %s – %s <example.com|Show details>\n", tip.Name,
-								tip.Description)
+								":exclamation: %s – %s <%s|Show details>\n", tip.Name,
+								tip.Description, tip.DetailsUrl)
 						}
-						msg.Append(recommends)
 					}
+
+					msg.Append(recommends)
 
 					// Visualization.
 					var buf = new(bytes.Buffer)
 					explain.Visualize(buf)
 					var vis = buf.String()
 
-					msg.Append(fmt.Sprintf("*Explain Analyze Output:*\n```%s```", vis))
+					msg.Append(fmt.Sprintf("*Explain Analyze:*\n```%s```", vis))
 				case COMMAND_EXEC:
 					if query == "" {
 						failMsg(msg, MSG_QUERY_REQ)
@@ -250,7 +252,7 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client,
 				case COMMAND_HARDRESET:
 					// Temprorary command for managing sessions.
 					log.Msg("Reestablishing connection")
-					msg.Append("Reestablishing connection to DB," +
+					msg.Append("Reestablishing connection to DB, " +
 						"it may take a couple of minutes...\n" +
 						"If you want to rollback DB state use `reset` command.")
 
