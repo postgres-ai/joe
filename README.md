@@ -25,12 +25,12 @@ team Workspace. Joe Bot should be available with public URL calls from Slack.
     * Use "Joe Bot" as App Name and select a proper team Workspace.
 1. Add Bot User.
     * Use "Joe Bot" as Display Name and "joe-bot" as the default username.
-1. Run Joe Bot with Access Token from "OAuth & Permissions" Feature and Verification Token from "Basic Information" page.
+1. Run Joe Bot with `Bot User OAuth Access Token ("xoxb-TOKEN")` from "OAuth & Permissions" Feature and `Verification Token` from "Basic Information" page (See **Deploy** below).
 1. Enable Incoming Webhooks Feature.
     * Press "Add New Webhook to Workspace" and select a previously created channel to post token.
 1. Enable Event Subscriptions Feature.
     * Specify Request URL (URL will be verified by Slack API) (e.g. http://35.200.200.200:3000, https://joe.dev.domain.com). You would need to run Joe with proper settings before you could verify Request URL.
-    * Add "app_mention" and "message.channels" to "Subscribe to Bot Events".
+    * * Add `app_mention` and `message.channels` to "Subscribe to Bot Events".
 1. Invite "Joe Bot" to "#db-lab" channel.
 
 ### Deploy
