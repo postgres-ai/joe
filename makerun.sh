@@ -4,6 +4,8 @@
 # 2019 © Dmitry Udalov dmius@postgres.ai
 # 2019 © Postgres.ai
 
+set -e
+
 go get github.com/aws/aws-sdk-go/aws
 go get github.com/aws/aws-sdk-go/aws/awserr
 go get github.com/aws/aws-sdk-go/aws/session
