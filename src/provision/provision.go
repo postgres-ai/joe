@@ -47,7 +47,7 @@ type ProvisionConfiguration struct {
 	Debug            bool
 	EbsVolumeId      string
 	PgVersion        string
-	DbUsername       string // Database user will be created with specified credentials.
+	DbUsername       string // Database user will be created with the specified credentials.
 	DbPassword       string
 	SshTunnelPort    uint
 	InitialSnapshot  string
@@ -81,7 +81,7 @@ func IsValidConfig(config ProvisionConfiguration) bool {
 	result := true
 
 	if config.AwsConfiguration.AwsInstanceType == "" {
-		log.Err("Wrong configuration AwsInstanceType value.")
+		log.Err("AwsInstanceType cannot be empty.")
 		result = false
 	}
 
@@ -91,7 +91,7 @@ func IsValidConfig(config ProvisionConfiguration) bool {
 	}
 
 	if len(config.AwsConfiguration.AwsZone) != 1 {
-		log.Err("Wrong configuration AwsZone value.")
+		log.Err("Wrong configuration AwsZone value (must be exactly 1 letter).")
 		result = false
 	}
 
@@ -109,22 +109,22 @@ func IsValidConfig(config ProvisionConfiguration) bool {
 	}
 
 	if config.AwsConfiguration.AwsKeyName == "" {
-		log.Err("Wrong configuration AwsKeyName value.")
+		log.Err("AwsKeyName cannot be empty.")
 		result = false
 	}
 
 	if config.AwsConfiguration.AwsKeyPath == "" {
-		log.Err("Wrong configuration AwsKeyName value.")
+		log.Err("AwsKeyPath cannot be empty.")
 		result = false
 	}
 
 	if _, err := os.Stat(config.AwsConfiguration.AwsKeyPath); err != nil {
-		log.Err("Wrong configuration AwsKeyName value. File does not exits.")
+		log.Err("Wrong configuration AwsKeyPath value. File does not exits.")
 		result = false
 	}
 
 	if config.InitialSnapshot == "" {
-		log.Err("Wrong configuration InitialSnapshot value.")
+		log.Err("InitialSnapshot cannot be empty.")
 		result = false
 	}
 
@@ -134,7 +134,7 @@ func IsValidConfig(config ProvisionConfiguration) bool {
 // Start new EC2 instance
 func (j *Provision) StartInstance() (bool, error) {
 	price := j.ec2ctrl.GetHistoryInstancePrice()
-	log.Msg("Starting instance...")
+	log.Msg("Starting an instance...")
 	price = price * PRICE_MULTIPLIER
 	j.instanceId = ""
 	var err error
@@ -146,11 +146,11 @@ func (j *Provision) StartInstance() (bool, error) {
 	j.instanceIp, err = j.ec2ctrl.GetPublicInstanceIpAddress(j.instanceId)
 	if err != nil {
 		log.Err(err)
-		return false, fmt.Errorf("Unable to get a instance ip. May be instance not started %v.", err)
+		return false, fmt.Errorf("Unable to get the IP of the instance. Check that the instance has started %v.", err)
 	}
-	log.Msg("Instance is ready. Instance id is " + log.YELLOW + j.instanceId + log.END)
+	log.Msg("The instance is ready. Instance id is " + log.YELLOW + j.instanceId + log.END)
 	//-o LogLevel=quiet
-	log.Msg("To connect to instance use: " + log.WHITE +
+	log.Msg("To connect to the instance use: " + log.WHITE +
 		"ssh -o 'StrictHostKeyChecking no' -i " + j.config.AwsConfiguration.AwsKeyPath + " ubuntu@" + j.instanceIp +
 		log.END)
 	return true, nil
@@ -169,7 +169,7 @@ func (j *Provision) GetInstanceId() string {
 // Check existance of instance
 func (j *Provision) InstanceExists() (bool, error) {
 	if j.instanceId == "" {
-		return false, fmt.Errorf("Instance Id not specified.")
+		return false, fmt.Errorf("Instance id not specified.")
 	}
 	return j.ec2ctrl.IsInstanceRunning(j.instanceId)
 }
@@ -196,7 +196,7 @@ func (j *Provision) StartInstanceSsh() (bool, error) {
 		}
 	}
 	j.terminateInstance()
-	return false, fmt.Errorf("Cannot connect to instance via SSH")
+	return false, fmt.Errorf("Cannot connect to the instance using SSH.")
 }
 
 // Attach EC2 drive to instance which ZFS formatted and has database snapshot
@@ -205,31 +205,31 @@ func (j *Provision) AttachZfsPancake() (bool, error) {
 	result := true
 	out, scerr := j.ec2ctrl.RunInstanceSshCommand("sudo apt-get update", j.config.Debug)
 	if scerr != nil {
-		return false, fmt.Errorf("Can't execute `sudo apt-get update`")
+		return false, fmt.Errorf("Cannot execute `sudo apt-get update`.")
 	}
 	out, scerr = j.ec2ctrl.RunInstanceSshCommand("sudo apt-get install -y zfsutils-linux", j.config.Debug)
 	if scerr != nil {
-		return false, fmt.Errorf("Can't execute `sudo apt-get install -y zfsutils-linux`")
+		return false, fmt.Errorf("Cannot execute `sudo apt-get install -y zfsutils-linux`.")
 	}
 	out, scerr = j.ec2ctrl.RunInstanceSshCommand("sudo sh -c \"mkdir /home/storage\"", j.config.Debug)
 	if scerr != nil {
-		return false, fmt.Errorf("Can't execute `sudo sh -c \"mkdir /home/storage\"`")
+		return false, fmt.Errorf("Cannot execute `sudo sh -c \"mkdir /home/storage\"`.")
 	}
 	_, verr := j.ec2ctrl.AttachInstanceVolume(j.instanceId, j.config.EbsVolumeId, "/dev/xvdc")
 	if verr != nil {
-		return false, fmt.Errorf("Cannot attach pancake disk to instance, %v", verr)
+		return false, fmt.Errorf("Cannot attach the persistent disk to the instance, %v.", verr)
 	}
 	out, scerr = j.ec2ctrl.RunInstanceSshCommand("sudo zpool import -R / zpool", j.config.Debug)
 	if scerr != nil {
-		return false, fmt.Errorf("Can't attach ZFS pancake drive")
+		return false, fmt.Errorf("Cannot attach the ZFS drive")
 	}
 	out, scerr = j.ec2ctrl.RunInstanceSshCommand("sudo df -h /home/storage", j.config.Debug)
 	if scerr != nil {
-		return false, fmt.Errorf("Can't execute `sudo df -h /home/storage`")
+		return false, fmt.Errorf("Cannot execute `sudo df -h /home/storage`.")
 	}
-	out, scerr = j.ec2ctrl.RunInstanceSshCommand("grep MemTotal /proc/meminfo | awk '{print $2}'", j.config.Debug)
+	out, scerr = j.ec2ctrl.RunInstanceSshCommand("grep MemTotal /proc/meminfo | awk '{print $2}'.", j.config.Debug)
 	if scerr != nil {
-		return false, fmt.Errorf("Can't execute `grep MemTotal /proc/meminfo | awk '{print $2}'`")
+		return false, fmt.Errorf("Cannot execute `grep MemTotal /proc/meminfo | awk '{print $2}'`.")
 	}
 	out = strings.Trim(out, "\n")
 	memTotalKb, _ := strconv.Atoi(out)
@@ -239,7 +239,7 @@ func (j *Provision) AttachZfsPancake() (bool, error) {
 	}
 	out, scerr = j.ec2ctrl.RunInstanceSshCommand("echo "+strconv.FormatInt(int64(arcSizeB), 10)+" | sudo tee /sys/module/zfs/parameters/zfs_arc_max", j.config.Debug)
 	if scerr != nil {
-		return false, fmt.Errorf("Can't set up zfs_arc_max to /sys/module/zfs/parameters/zfs_arc_max")
+		return false, fmt.Errorf("Cannot set `zfs_arc_max` to `/sys/module/zfs/parameters/zfs_arc_max`.")
 	}
 	return result, nil
 }
@@ -272,12 +272,12 @@ func (j *Provision) StartDocker() (bool, error) {
 	result = result && scerr == nil
 	if scerr != nil {
 		j.terminateInstance()
-		return false, fmt.Errorf("Cannot start docker, %v", scerr)
+		return false, fmt.Errorf("Cannot start Docker, %v.", scerr)
 	}
 	j.dockerContainerId = strings.Trim(out, "\n")
 
 	log.Msg("Docker container hash is  " + log.YELLOW + j.dockerContainerId + log.END)
-	log.Msg("To connect to docker use: " + log.WHITE + "sudo docker exec -it " + DOCKER_NAME + " bash" + log.END)
+	log.Msg("To connect to Docker use: " + log.WHITE + "sudo docker exec -it " + DOCKER_NAME + " bash" + log.END)
 	log.Msg("or:                       " + log.WHITE + "sudo docker exec -i " + j.dockerContainerId + " bash" + log.END)
 	return result, nil
 }
@@ -291,7 +291,7 @@ func (j *Provision) dockerRunCommand(command string, debug bool) (string, error)
 		cmd+"\"", debug)
 }
 
-// Execute bash command inside docker
+// Execute bash command inside Docker
 func (j *Provision) DockerRunCommand(command string) (string, error) {
 	return j.dockerRunCommand(command, j.config.Debug)
 }
@@ -307,12 +307,12 @@ func (j *Provision) DockerStopPostgres() (bool, error) {
 		out, err = j.DockerRunCommand("ps auxww | grep postgres | grep -v \"grep\" 2>/dev/null || echo ''")
 		out = strings.Trim(out, "\n ")
 		if out == "" && err == nil {
-			log.Dbg("Postgres stopped")
+			log.Dbg("Postgres has been stopped.")
 			return true, nil
 		}
 		cnt++
 		if cnt > 1000 && out != "" && err == nil {
-			return false, fmt.Errorf("Cannot stop postgres in 15 minutes.")
+			return false, fmt.Errorf("Postgres could not be stopped in 15 minutes.")
 		}
 		if cnt > 900 { // 15 minutes = 900 seconds
 			out, err = j.DockerRunCommand("sudo killall -s 9 postgres || true")
@@ -323,7 +323,7 @@ func (j *Provision) DockerStopPostgres() (bool, error) {
 	return false, nil
 }
 
-// Start postgres inside docker
+// Start Postgres inside Docker
 func (j *Provision) DockerStartPostgres() (bool, error) {
 	log.Dbg("Starting Postgres...")
 	var cnt int
@@ -334,12 +334,12 @@ func (j *Provision) DockerStartPostgres() (bool, error) {
 		out, err = j.DockerRunCommand("ps auxww | grep postgres | grep -v \"grep\" 2>/dev/null || echo ''")
 		out = strings.Trim(out, "\n ")
 		if out != "" && err == nil {
-			log.Dbg("Postgres started.")
+			log.Dbg("Postgres has been started.")
 			return true, nil
 		}
 		cnt++
 		if cnt > 900 { // 15 minutes = 900 seconds
-			return false, fmt.Errorf("Can't start Postgres in 15 minutes.")
+			return false, fmt.Errorf("Postgres could not be started in 15 minutes.")
 		}
 		out, err = j.DockerRunCommand("sudo pg_ctlcluster " + j.config.PgVersion + " main start || true")
 		time.Sleep(1 * time.Second)
@@ -363,14 +363,14 @@ func (j *Provision) DockerMovePostgresPgData() (bool, error) {
 
 // Create ZFS snapshot on drive attached by AttachZfsPancake
 func (j *Provision) CreateZfsSnapshot(name string) (bool, error) {
-	log.Dbg("Create database snapshot")
+	log.Dbg("Create a database snapshot.")
 	var result bool
 	var err error
 	result, err = j.DockerStopPostgres()
 	if result == true && err == nil {
 		out, cerr := j.ec2ctrl.RunInstanceSshCommand("sudo zfs snapshot -r zpool@"+name, j.config.Debug)
 		if cerr != nil {
-			return false, fmt.Errorf("Can't create ZFS snapshot: %s, %v", out, cerr)
+			return false, fmt.Errorf("Cannot create a ZFS snapshot: %s, %v.", out, cerr)
 		}
 		result, err = j.DockerStartPostgres()
 	}
@@ -378,15 +378,16 @@ func (j *Provision) CreateZfsSnapshot(name string) (bool, error) {
 }
 
 // Rollback to ZFS snapshot on drive attached by AttachZfsPancake
+// TODO @Nikolay add comments for all function signatures (desc, params, returning type)
 func (j *Provision) DockerRollbackZfsSnapshot(name string) (bool, error) {
-	log.Dbg("Rollback database to snapshot")
+	log.Dbg("Rollback the state of the database to the specified snapshot.")
 	var result bool
 	var err error
 	result, err = j.DockerStopPostgres()
 	if result == true && err == nil {
 		out, cerr := j.ec2ctrl.RunInstanceSshCommand("sudo zfs rollback -f -r zpool@"+name, j.config.Debug)
 		if cerr != nil {
-			return false, fmt.Errorf("Can't rollback ZFS snapshot: %s, %v", out, cerr)
+			return false, fmt.Errorf("Cannot rollback to the ZFS snapshot: %s, %v.", out, cerr)
 		}
 		result, err = j.DockerStartPostgres()
 	}
@@ -404,14 +405,14 @@ func (j *Provision) ReadState() (bool, error) {
 	state := ProvisionState{}
 	err := gonfig.GetConf(j.getStateFilePath(), &state)
 	if err != nil {
-		log.Err("ReadState: Can't read state file.", err)
-		return false, fmt.Errorf("Can't read state file. %v", err)
+		log.Err("ReadState: Cannot read state file.", err)
+		return false, fmt.Errorf("Cannot read state file. %v", err)
 	}
 
 	if state.InstanceId != j.instanceId {
 		if j.instanceId != "" {
-			log.Err("ReadState: State read, but current instance id differ from read instance id.")
-			return false, fmt.Errorf("State read, but current instance id differ from read instance id.")
+			log.Err("ReadState: State read, but current instance id differs from the read instance id.")
+			return false, fmt.Errorf("State read, but current instance id differs from the read instance id.")
 		}
 		res, err := j.ec2ctrl.IsInstanceRunning(state.InstanceId)
 		if res == true {
@@ -420,8 +421,8 @@ func (j *Provision) ReadState() (bool, error) {
 			res, err = j.StartInstanceSsh()
 			if res != true && err != nil {
 				j.terminateInstance()
-				log.Err("ReadState:  Can't connect to instance via SSH.", err)
-				return false, fmt.Errorf("Can't connect to instance via SSH. %v", err)
+				log.Err("ReadState:  Cannot connect to the instance using SSH.", err)
+				return false, fmt.Errorf("Cannot connect to the instance using SSH. %v", err)
 			}
 			j.dockerContainerId = state.DockerContainerId
 			out, derr := j.DockerRunCommand("echo 1")
@@ -431,12 +432,12 @@ func (j *Provision) ReadState() (bool, error) {
 				return true, nil
 			} else {
 				j.terminateInstance()
-				log.Err("ReadState: Can't connect to docker.", out, derr)
-				return false, fmt.Errorf("Can't connect to docker. %s %v", out, derr)
+				log.Err("ReadState: Cannot connect to Docker.", out, derr)
+				return false, fmt.Errorf("Cannot connect to Docker. %s %v", out, derr)
 			}
 		}
 	} else {
-		log.Dbg("ReadState: saves instance id is equal current instance id", state.InstanceId, j.instanceId)
+		log.Dbg("ReadState: saved instance id is equal to the current instance id", state.InstanceId, j.instanceId)
 	}
 	return false, err
 }
@@ -474,38 +475,38 @@ func (j *Provision) StartWorkingInstance() (bool, error) {
 	log.Dbg("Creating instance:", result, err)
 	if err != nil {
 		j.terminateInstance()
-		return false, fmt.Errorf("Can't start instance. %v", err)
+		return false, fmt.Errorf("Cannot start instance. %v", err)
 	}
 	// Check instance existing
 	result, err = j.StartInstanceSsh()
 	log.Dbg("Start SSH:", result, err)
 	if err != nil {
 		j.terminateInstance()
-		return false, fmt.Errorf("Can't get SSH access to instance. %v", err)
+		return false, fmt.Errorf("Cannot get an SSH access to the instance. %v", err)
 	}
 	result, err = j.AttachZfsPancake()
 	log.Dbg("Attach ZFS pancake drive:", result, err)
 	if err != nil {
 		j.terminateInstance()
-		return false, fmt.Errorf("Can't attach pancake drive. %v", err)
+		return false, fmt.Errorf("Cannot attach the disk. %v", err)
 	}
 	result, err = j.StartDocker()
 	log.Dbg("Start docker:", result, err)
 	if err != nil {
 		j.terminateInstance()
-		return false, fmt.Errorf("Can't start docker. %v", err)
+		return false, fmt.Errorf("Cannot start Docker. %v", err)
 	}
 	out, err = j.DockerRunCommand("echo 1")
 	out = strings.Trim(out, "\n")
 	if out != "1" || err != nil {
 		j.terminateInstance()
-		return false, fmt.Errorf("Can't get access to docker. %v", err)
+		return false, fmt.Errorf("Cannot get an access to Docker. %v", err)
 	}
 	result, err = j.DockerMovePostgresPgData()
 	log.Dbg("Move PGdata pointer:", result, err)
 	if err != nil {
 		j.terminateInstance()
-		return false, fmt.Errorf("Can't move data to pancake drive. %v", err)
+		return false, fmt.Errorf("Cannot move data to the disk. %v", err)
 	}
 	return true, nil
 }
@@ -518,7 +519,7 @@ func (j *Provision) StartSession(options ...string) (bool, string, error) {
 	}
 
 	if j.sessionId != "" {
-		return false, j.sessionId, fmt.Errorf("Session already started")
+		return false, j.sessionId, fmt.Errorf("Session has been started already.")
 	}
 	j.sessionId = strconv.FormatInt(time.Now().UnixNano(), 10)
 	// check instance existance
@@ -532,20 +533,20 @@ func (j *Provision) StartSession(options ...string) (bool, string, error) {
 	if j.instanceId == "" {
 		res, err := j.StartWorkingInstance()
 		if !res || err != nil {
-			return false, "", fmt.Errorf("Can't start working instance. %v", err)
+			return false, "", fmt.Errorf("Cannot start the working instance. %v", err)
 		}
 	}
 	_, err := j.DockerRollbackZfsSnapshot(snapshot)
 	if err != nil {
-		return false, "", fmt.Errorf("Can't rollback database. %v", err)
+		return false, "", fmt.Errorf("Cannot rollback the state of the database. %v", err)
 	}
 	err = j.DockerCreateDbUser()
 	if err != nil {
-		return false, "", fmt.Errorf("Can't create database user. %v", err)
+		return false, "", fmt.Errorf("Cannot create a database user. %v", err)
 	}
 	res, _ := j.WriteState()
 	if res == false {
-		log.Err("Can't save state")
+		log.Err("Cannot save the state.")
 	}
 	err = j.CreateSshTunnel()
 	if err != nil {
@@ -569,12 +570,12 @@ func (j *Provision) ResetSession(options ...string) error {
 
 	_, err := j.DockerRollbackZfsSnapshot(snapshot)
 	if err != nil {
-		return fmt.Errorf("Unable to rollback database. %v", err)
+		return fmt.Errorf("Unable to rollback database. %v", err) // TODO @NikolayS: why "unable" here but "cannot" above?
 	}
 
 	err = j.DockerCreateDbUser()
 	if err != nil {
-		return fmt.Errorf("Unable to update rolled back database. %v", err)
+		return fmt.Errorf("Unable to update rolled back database. %v", err) // TODO @NikolayS: improve wording here
 	}
 
 	return nil
@@ -681,7 +682,7 @@ func (j *Provision) CreateSshTunnel() error {
 		j.CloseSshTunnel()
 		err := j.OpenSshTunnel()
 		if err != nil {
-			return fmt.Errorf("Can't establish SSH tunnel: %v", err)
+			return fmt.Errorf("Cannot establish an SSH tunnel: %v", err)
 		}
 	}
 
