@@ -17,6 +17,12 @@ go get gopkg.in/yaml.v2
 go get github.com/nlopes/slack
 go get github.com/lib/pq
 go get github.com/tkanos/gonfig
+go get github.com/dustin/go-humanize
+go get github.com/mitchellh/go-wordwrap
+go get golang.org/x/net/http2
+go get golang.org/x/crypto/ssh/terminal
+go get golang.org/x/tools/go/buildutil
+go get golang.org/x/sync/errgroup
 
 make all
 
