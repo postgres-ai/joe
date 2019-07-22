@@ -37,6 +37,6 @@ team Workspace. Joe Bot should be available with public URL calls from Slack.
 Deploy Joe instance in your infrastructure. You would need to:
 1. Update configuration in `makerun.sh` and `config/provisioning.yaml`.
 1. Make a publicly accessible HTTP server port specified in the configuration for Slack Events Request URL.
-1. Build and run Joe `bash ./makerun.sh`.
+1. Build and run Joe `bash ./makerun.sh`.  (or, with log: `./makerun.sh 2>&1 | tee -a joe.log`).
 
 Joe will automatically provision AWS EC2 or GCP GCE instance of Postgres.
