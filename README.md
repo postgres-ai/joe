@@ -12,6 +12,7 @@ for query optimization and the ability to rollback.
 
 
 ## Install
+
 ### ZFS Store
 Create a ZFS store (AWS EBS or GCP persistent disk) with a production Postgres
 dump or archive (e.g. WAL-G archive). Specify its name and params in Joe
@@ -37,6 +38,28 @@ team Workspace. Joe Bot should be available with public URL calls from Slack.
 Deploy Joe instance in your infrastructure. You would need to:
 1. Update configuration in `makerun.sh` and `config/provisioning.yaml`.
 1. Make a publicly accessible HTTP server port specified in the configuration for Slack Events Request URL.
-1. Build and run Joe `bash ./makerun.sh`.  (or, with log: `./makerun.sh 2>&1 | tee -a joe.log`).
+1. Build and run Joe `bash ./makerun.sh` (or, with log: `./makerun.sh 2>&1 | tee -a joe.log`).
 
 Joe will automatically provision AWS EC2 or GCP GCE instance of Postgres.
+
+### Requirements
+
+Golang is required.
+
+In some cases, standard Ubuntu package might not work. Then do this:
+
+```bash
+## uninstall the package and then download and install it as described at
+## https://golang.org/doc/install?download=go1.12.7.linux-amd64.tar.gz
+wget https://dl.google.com/go/go1.12.7.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.12.7.linux-amd64.tar.gz
+echo 'echo 'GOPATH="$HOME/joe/"' >> ~/.bashrc' >> ~/.bashrc
+echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+bash --login
+```
+
+On macOS:
+
+```bash
+brew install golang
+```
