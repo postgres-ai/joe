@@ -122,13 +122,21 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client,
 				message = strings.ReplaceAll(message, "&lt;", "<")
 				message = strings.ReplaceAll(message, "&gt;", ">")
 
+				// Smart quotes could be substituted automatically on macOS.
+				// Replace smart quotes (“...”) with straight quotes ("...").
+				message = strings.ReplaceAll(message, "“", "\"")
+				message = strings.ReplaceAll(message, "”", "\"")
+				message = strings.ReplaceAll(message, "‘", "'")
+				message = strings.ReplaceAll(message, "’", "'")
+
 				if len(message) == 0 {
 					return
 				}
 
 				// Message: "command query(optional)".
 				parts := strings.SplitN(message, " ", 2)
-				command := parts[0]
+				command := strings.ToLower(parts[0])
+
 				query := ""
 				if len(parts) > 1 {
 					query = parts[1]
@@ -156,7 +164,7 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client,
 					}
 
 					// Explain request and show.
-					var res, err = runQuery(connStr, "EXPLAIN (FORMAT TEXT)"+query)
+					var res, err = runQuery(connStr, "EXPLAIN (FORMAT TEXT) "+query)
 					if err != nil {
 						failMsg(msg, err.Error())
 						return
@@ -231,6 +239,11 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client,
 						return
 					}
 
+					// TODO(anatoly): Refactor.
+					if prov.IsLocal() {
+						failMsg(msg, "`snapshot` command is not available in current mode.")
+					}
+
 					_, err = prov.CreateZfsSnapshot(query)
 					if err != nil {
 						log.Err("Snapshot: ", err)
@@ -250,11 +263,18 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client,
 					}
 					msg.Append("Rollback performed")
 				case COMMAND_HARDRESET:
+					// TODO(anatoly): Refactor
+					if prov.IsLocal() {
+						failMsg(msg, "`hardreset` command is not available in `local` mode.")
+					}
+
 					// Temprorary command for managing sessions.
 					log.Msg("Reestablishing connection")
 					msg.Append("Reestablishing connection to DB, " +
 						"it may take a couple of minutes...\n" +
 						"If you want to rollback DB state use `reset` command.")
+
+					// TODO(anatoly): Remove temporary hack.
 
 					prov.StopSession()
 
@@ -310,12 +330,14 @@ func runQuery(connStr string, query string) (string, error) {
 		log.Err("DB connection:", err)
 		return "", err
 	}
+	defer db.Close()
 
 	rows, err := db.Query(query)
 	if err != nil {
 		log.Err("DB query:", err)
 		return "", err
 	}
+	defer rows.Close()
 
 	for rows.Next() {
 		var s string

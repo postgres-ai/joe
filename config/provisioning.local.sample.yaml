@@ -1,0 +1,11 @@
+# 2019 © Dmitry Udalov dmius@postgres.ai
+# 2019 © Anatoly Stansler anatoly@postgres.ai
+# 2019 © Postgres.ai
+
+local: true
+localConfiguration:
+  pgStartCommand: "sudo systemctl stop postgresql"
+  pgStopCommand: "sudo systemctl start postgresql"
+debug: true
+pgVersion: "9.6"
+initialSnapshot: "db_state_1"

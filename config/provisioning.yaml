@@ -10,6 +10,6 @@ awsConfiguration:
   awsZone: "a"
   awsBlockDurationMinutes: 60
 ebsVolumeId: "vol-xxx"
-debug: false
+debug: true
 pgVersion: "9.6"
 initialSnapshot: "db_state_1"

@@ -654,6 +654,7 @@ func (e *Ec2Ctrl) RunInstanceSshCommand(command string, showStatus bool) (string
 	if client == nil {
 		return "", fmt.Errorf("Instance SSH client not available yet.")
 	}
+	log.Dbg("EC2 SSH command: "+command)
 	output, err := client.Output(command)
 	if err != nil {
 		if showStatus {
