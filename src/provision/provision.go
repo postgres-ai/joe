@@ -31,6 +31,8 @@ const (
 	PRICE_MULTIPLIER = 1.1
 	STATE_DIR        = "joe-run"
 	STATE_FILE       = "joestate.json"
+	PG_PROCESS_CHECK = "ps ax | grep postgres | grep -v \"grep\" | " +
+		"awk '{print $5}' | grep \"postgres:\" 2>/dev/null || echo ''"
 )
 
 var awsValidDurations = []int64{60, 120, 180, 240, 300, 360}
@@ -42,15 +44,22 @@ type ProvisionState struct {
 	SessionId         string
 }
 
+type LocalConfiguration struct {
+	PgStartCommand string `yaml:"pgStartCommand"`
+	PgStopCommand  string `yaml:"pgStopCommand"`
+}
+
 type ProvisionConfiguration struct {
-	AwsConfiguration ec2ctrl.Ec2Configuration
-	Debug            bool
-	EbsVolumeId      string
-	PgVersion        string
-	DbUsername       string // Database user will be created with the specified credentials.
-	DbPassword       string
-	SshTunnelPort    uint
-	InitialSnapshot  string
+	AwsConfiguration   ec2ctrl.Ec2Configuration
+	LocalConfiguration LocalConfiguration
+	Debug              bool
+	EbsVolumeId        string
+	PgVersion          string
+	DbUsername         string // Database user will be created with the specified credentials.
+	DbPassword         string
+	SshTunnelPort      uint
+	InitialSnapshot    string
+	Local              bool
 }
 
 type Provision struct {
@@ -79,6 +88,10 @@ func NewProvision(conf ProvisionConfiguration) *Provision {
 // Check validity of a configuration and show a message for each violation.
 func IsValidConfig(config ProvisionConfiguration) bool {
 	result := true
+
+	if config.Local {
+		return true
+	}
 
 	if config.AwsConfiguration.AwsInstanceType == "" {
 		log.Err("AwsInstanceType cannot be empty.")
@@ -205,15 +218,15 @@ func (j *Provision) AttachZfsPancake() (bool, error) {
 	result := true
 	out, scerr := j.ec2ctrl.RunInstanceSshCommand("sudo apt-get update", j.config.Debug)
 	if scerr != nil {
-		return false, fmt.Errorf("Cannot execute `sudo apt-get update`.")
+		return false, scerr
 	}
 	out, scerr = j.ec2ctrl.RunInstanceSshCommand("sudo apt-get install -y zfsutils-linux", j.config.Debug)
 	if scerr != nil {
-		return false, fmt.Errorf("Cannot execute `sudo apt-get install -y zfsutils-linux`.")
+		return false, scerr
 	}
 	out, scerr = j.ec2ctrl.RunInstanceSshCommand("sudo sh -c \"mkdir /home/storage\"", j.config.Debug)
 	if scerr != nil {
-		return false, fmt.Errorf("Cannot execute `sudo sh -c \"mkdir /home/storage\"`.")
+		return false, scerr
 	}
 	_, verr := j.ec2ctrl.AttachInstanceVolume(j.instanceId, j.config.EbsVolumeId, "/dev/xvdc")
 	if verr != nil {
@@ -221,15 +234,15 @@ func (j *Provision) AttachZfsPancake() (bool, error) {
 	}
 	out, scerr = j.ec2ctrl.RunInstanceSshCommand("sudo zpool import -R / zpool", j.config.Debug)
 	if scerr != nil {
-		return false, fmt.Errorf("Cannot attach the ZFS drive")
+		return false, scerr
 	}
 	out, scerr = j.ec2ctrl.RunInstanceSshCommand("sudo df -h /home/storage", j.config.Debug)
 	if scerr != nil {
-		return false, fmt.Errorf("Cannot execute `sudo df -h /home/storage`.")
+		return false, scerr
 	}
-	out, scerr = j.ec2ctrl.RunInstanceSshCommand("grep MemTotal /proc/meminfo | awk '{print $2}'.", j.config.Debug)
+	out, scerr = j.ec2ctrl.RunInstanceSshCommand("grep MemTotal /proc/meminfo | awk '{print $2}'", j.config.Debug)
 	if scerr != nil {
-		return false, fmt.Errorf("Cannot execute `grep MemTotal /proc/meminfo | awk '{print $2}'`.")
+		return false, scerr
 	}
 	out = strings.Trim(out, "\n")
 	memTotalKb, _ := strconv.Atoi(out)
@@ -239,7 +252,7 @@ func (j *Provision) AttachZfsPancake() (bool, error) {
 	}
 	out, scerr = j.ec2ctrl.RunInstanceSshCommand("echo "+strconv.FormatInt(int64(arcSizeB), 10)+" | sudo tee /sys/module/zfs/parameters/zfs_arc_max", j.config.Debug)
 	if scerr != nil {
-		return false, fmt.Errorf("Cannot set `zfs_arc_max` to `/sys/module/zfs/parameters/zfs_arc_max`.")
+		return false, scerr
 	}
 	return result, nil
 }
@@ -304,7 +317,7 @@ func (j *Provision) DockerStopPostgres() (bool, error) {
 	var err error
 	cnt = 0
 	for true {
-		out, err = j.DockerRunCommand("ps auxww | grep postgres | grep -v \"grep\" 2>/dev/null || echo ''")
+		out, err = j.DockerRunCommand(PG_PROCESS_CHECK)
 		out = strings.Trim(out, "\n ")
 		if out == "" && err == nil {
 			log.Dbg("Postgres has been stopped.")
@@ -331,7 +344,7 @@ func (j *Provision) DockerStartPostgres() (bool, error) {
 	var err error
 	cnt = 0
 	for true {
-		out, err = j.DockerRunCommand("ps auxww | grep postgres | grep -v \"grep\" 2>/dev/null || echo ''")
+		out, err = j.DockerRunCommand(PG_PROCESS_CHECK)
 		out = strings.Trim(out, "\n ")
 		if out != "" && err == nil {
 			log.Dbg("Postgres has been started.")
@@ -458,6 +471,9 @@ func (j *Provision) WriteState() (bool, error) {
 	if jerr != nil {
 		return false, jerr
 	}
+
+	log.Dbg("Provision state:", string(b))
+
 	wrote, werr := f.Write(b)
 	if wrote <= 0 {
 		return false, werr
@@ -513,6 +529,15 @@ func (j *Provision) StartWorkingInstance() (bool, error) {
 
 // Start test session
 func (j *Provision) StartSession(options ...string) (bool, string, error) {
+	// TODO(anatoly): Remove temporary hack.
+	if j.config.Local {
+		err := j.LocalResetSession()
+		if err != nil {
+			return false, "", err
+		}
+		return true, j.sessionId, nil
+	}
+
 	snapshot := j.config.InitialSnapshot
 	if len(options) > 0 && len(options[0]) > 0 {
 		snapshot = options[0]
@@ -568,14 +593,19 @@ func (j *Provision) ResetSession(options ...string) error {
 		snapshot = options[0]
 	}
 
+	// TODO(anatoly): Remove temporary hack.
+	if j.config.Local {
+		return j.LocalResetSession(snapshot)
+	}
+
 	_, err := j.DockerRollbackZfsSnapshot(snapshot)
 	if err != nil {
-		return fmt.Errorf("Unable to rollback database. %v", err) // TODO @NikolayS: why "unable" here but "cannot" above?
+		return fmt.Errorf("Unable to rollback database. %v", err) // TODO(NikolayS): Why "unable" here but "cannot" above?
 	}
 
 	err = j.DockerCreateDbUser()
 	if err != nil {
-		return fmt.Errorf("Unable to update rolled back database. %v", err) // TODO @NikolayS: improve wording here
+		return fmt.Errorf("Unable to update rolled back database. %v", err) // TODO(NikolayS): Improve wording here.
 	}
 
 	return nil
@@ -688,4 +718,112 @@ func (j *Provision) CreateSshTunnel() error {
 
 	log.Dbg("SSH tunnel is " + log.GREEN + "ready" + log.END)
 	return nil
+}
+
+// TODO(anatoly): Refactor to proper implementation. Remove copypasted code.
+func (j *Provision) LocalResetSession(options ...string) error {
+	snapshot := j.config.InitialSnapshot
+	if len(options) > 0 {
+		snapshot = options[0]
+	}
+
+	_, err := j.LocalRollbackZfsSnapshot(snapshot)
+	if err != nil {
+		return fmt.Errorf("Unable to rollback database to the initial state. %v", err)
+	}
+
+	return nil
+}
+
+func (j *Provision) LocalRollbackZfsSnapshot(name string) (bool, error) {
+	log.Dbg("Rollback the state of the database to the specified snapshot.")
+	var result bool
+	var err error
+	result, err = j.LocalStopPostgres()
+	if result == true && err == nil {
+		out, cerr := LocalRunCommand("sudo zfs rollback -f -r zpool@" + name)
+		if cerr != nil {
+			return false, fmt.Errorf("Cannot perform \"zfs rollback\" to the specified snapshot: %s, %v.", out, cerr)
+		}
+		result, err = j.LocalStartPostgres()
+	}
+	return result, err
+}
+
+func (j *Provision) LocalStopPostgres() (bool, error) {
+	log.Dbg("Stopping Postgres (local version)...")
+
+	stopCommand := "sudo systemctl stop postgresql || true"
+	if len(j.config.LocalConfiguration.PgStopCommand) > 0 {
+		stopCommand = j.config.LocalConfiguration.PgStopCommand
+	}
+	log.Dbg("Command to be used: "+stopCommand)
+
+	var cnt int
+	var out string
+	var err error
+	cnt = 0
+	for true {
+		out, err = LocalRunCommand(PG_PROCESS_CHECK)
+		out = strings.Trim(out, "\n ")
+		if out == "" && err == nil {
+			log.Dbg("Postgres has been stopped.")
+			return true, nil
+		}
+		cnt++
+		if cnt > 1000 && out != "" && err == nil {
+			return false, fmt.Errorf("Postgres could not be stopped within 15 minutes.")
+		}
+		if cnt > 900 { // 15 minutes = 900 seconds
+			out, err = LocalRunCommand("sudo killall -s 9 postgres || true")
+		}
+		out, err = LocalRunCommand(stopCommand)
+		time.Sleep(1 * time.Second)
+	}
+	return false, nil
+}
+
+// Start Postgres inside Docker
+func (j *Provision) LocalStartPostgres() (bool, error) {
+	log.Dbg("Starting Postgres...")
+
+	startCommand := "sudo systemctl stop postgresql || true"
+	if len(j.config.LocalConfiguration.PgStartCommand) > 0 {
+		startCommand = j.config.LocalConfiguration.PgStartCommand
+	}
+
+	var cnt int
+	var out string
+	var err error
+	cnt = 0
+	for true {
+		out, err = LocalRunCommand(PG_PROCESS_CHECK)
+		out = strings.Trim(out, "\n ")
+		if out != "" && err == nil {
+			log.Dbg("Postgres has been started.")
+			return true, nil
+		}
+		cnt++
+		if cnt > 900 { // 15 minutes = 900 seconds
+			return false, fmt.Errorf("Postgres could not be started within 15 minutes.")
+		}
+		out, err = LocalRunCommand(startCommand)
+		time.Sleep(1 * time.Second)
+	}
+	return false, nil
+}
+
+func LocalRunCommand(cmd string) (string, error) {
+	log.Dbg(fmt.Sprintf("> exec: %s", cmd))
+	out, err := exec.Command("/bin/bash", "-c", cmd).Output()
+	if err != nil {
+		log.Dbg(fmt.Sprintf(">> Error: %v Output: %s", err, out))
+		return "", fmt.Errorf("RunCommand \"%s\" error: %v", cmd, err)
+	}
+	log.Dbg(fmt.Sprintf(">> Output: %s", out))
+	return string(out), nil
+}
+
+func (j *Provision) IsLocal() bool {
+	return j.config.Local
 }

@@ -47,11 +47,13 @@ var opts struct {
 }
 
 type ProvisionConfig struct {
-	AwsConfiguration ec2ctrl.Ec2Configuration `yaml:"awsConfiguration"`
-	EbsVolumeId      string                   `yaml:"ebsVolumeId"`
-	Debug            bool                     `yaml:"debug"`
-	PgVersion        string                   `yaml:"pgVersion"`
-	InitialSnapshot  string                   `yaml:"initialSnapshot"`
+	Local              bool                         `yaml:"local"`
+	AwsConfiguration   ec2ctrl.Ec2Configuration     `yaml:"awsConfiguration"`
+	LocalConfiguration provision.LocalConfiguration `yaml:"localConfiguration"`
+	EbsVolumeId        string                       `yaml:"ebsVolumeId"`
+	Debug              bool                         `yaml:"debug"`
+	PgVersion          string                       `yaml:"pgVersion"`
+	InitialSnapshot    string                       `yaml:"initialSnapshot"`
 }
 
 func main() {
@@ -80,14 +82,16 @@ func main() {
 	}
 	log.DEBUG = provisionConfig.Debug
 	provConf := provision.ProvisionConfiguration{
-		AwsConfiguration: provisionConfig.AwsConfiguration,
-		Debug:            provisionConfig.Debug,
-		EbsVolumeId:      provisionConfig.EbsVolumeId,
-		InitialSnapshot:  provisionConfig.InitialSnapshot,
-		PgVersion:        provisionConfig.PgVersion,
-		DbUsername:       opts.DbUser,
-		DbPassword:       opts.DbPassword,
-		SshTunnelPort:    opts.DbPort,
+		AwsConfiguration:   provisionConfig.AwsConfiguration,
+		LocalConfiguration: provisionConfig.LocalConfiguration,
+		Local:              provisionConfig.Local,
+		Debug:              provisionConfig.Debug,
+		EbsVolumeId:        provisionConfig.EbsVolumeId,
+		InitialSnapshot:    provisionConfig.InitialSnapshot,
+		PgVersion:          provisionConfig.PgVersion,
+		DbUsername:         opts.DbUser,
+		DbPassword:         opts.DbPassword,
+		SshTunnelPort:      opts.DbPort,
 	}
 	if !provision.IsValidConfig(provConf) {
 		log.Err("Wrong configuration format.")
@@ -148,6 +152,7 @@ func loadProvisionConfig() (ProvisionConfig, error) {
 			AwsRegion:       "us-east-1",
 			AwsZone:         "a",
 		},
+		Local:           false,
 		Debug:           true,
 		PgVersion:       "9.6",
 		InitialSnapshot: "db_state_1",
