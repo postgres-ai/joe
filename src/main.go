@@ -1,8 +1,6 @@
 /*
 Joe Bot
 
-2019 © Anatoly Stansler anatoly@postgres.ai
-2019 © Dmitry Udalov dmius@postgres.ai
 2019 © Postgres.ai
 
 Conversational UI bot for Postgres query optimization.
