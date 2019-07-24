@@ -18,13 +18,13 @@ import (
 	"path/filepath"
 
 	"./bot"
+	"./chatapi"
 	"./ec2ctrl"
 	"./log"
 	"./pgexplain"
 	"./provision"
 
 	"github.com/jessevdk/go-flags"
-	"github.com/nlopes/slack"
 	"gopkg.in/yaml.v2"
 )
 
@@ -110,8 +110,8 @@ func main() {
 
 	var connStr = fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
 		opts.DbHost, opts.DbPort, opts.DbUser, opts.DbPassword, opts.DbName)
-	var chatApi = slack.New(opts.AccessToken)
-	bot.RunHttpServer(connStr, opts.ServerPort, chatApi, explainConfig, opts.VerificationToken, prov)
+	var chat = chatapi.NewChat(opts.AccessToken, opts.VerificationToken)
+	bot.RunHttpServer(connStr, opts.ServerPort, chat, explainConfig, prov)
 
 	prov.StopSession()
 }
