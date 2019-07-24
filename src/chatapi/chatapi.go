@@ -1,5 +1,4 @@
 /*
-2019 © Anatoly Stansler anatoly@postgres.ai
 2019 © Postgres.ai
 */
 

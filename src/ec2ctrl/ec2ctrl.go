@@ -1,7 +1,6 @@
 /*
 EC2 Instances Control Wrapper
 
-2019 © Dmitry Udalov dmius@postgres.ai
 2019 © Postgres.ai
 Based on source of docker-machine cli tool
 

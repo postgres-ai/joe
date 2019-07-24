@@ -1,7 +1,6 @@
 /*
-2019 © Anatoly Stansler anatoly@postgres.ai
 2019 © Postgres.ai
-Using code from Simon Engledew @ https://github.com/simon-engledew/gocmdpev
+Based on the code from Simon Engledew @ https://github.com/simon-engledew/gocmdpev
 */
 
 package pgexplain
