@@ -15,13 +15,12 @@ import (
 	"strings"
 	"time"
 
-	"../chat"
+	"../chatapi"
 	"../log"
 	"../pgexplain"
 	"../provision"
 
 	_ "github.com/lib/pq"
-	"github.com/nlopes/slack"
 	"github.com/nlopes/slack/slackevents"
 )
 
@@ -45,6 +44,8 @@ var commands = []string{
 	COMMAND_HELP,
 }
 
+const QUERY_PREVIEW_SIZE = 400
+
 const MSG_HELP = "• `explain` — analyze your query (SELECT, INSERT, DELETE, UPDATE or WITH) and generate recommendations\n" +
 	"• `exec` — execute any query (for example, CREATE INDEX)\n" +
 	"• `snapshot` — create a snapshot of the current database state\n" +
@@ -60,8 +61,8 @@ const RCTN_ERROR = "x"
 
 // TODO(anatoly): verifToken should be a part of Slack API wrapper.
 // TODO(anatoly): Convert args to struct.
-func RunHttpServer(connStr string, port uint, chatApi *slack.Client,
-	explainConfig pgexplain.ExplainConfig, verifToken string, prov *provision.Provision) {
+func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
+	explainConfig pgexplain.ExplainConfig, prov *provision.Provision) {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		log.Msg("Request received:", html.EscapeString(r.URL.Path))
 
@@ -78,7 +79,9 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client,
 
 		eventsAPIEvent, err := slackevents.ParseEvent(json.RawMessage(body),
 			slackevents.OptionVerifyToken(
-				&slackevents.TokenComparator{VerificationToken: verifToken}))
+				&slackevents.TokenComparator{
+					VerificationToken: chat.VerificationToken,
+				}))
 		if err != nil {
 			log.Err("Event parse error:", err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -106,7 +109,13 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client,
 
 			switch ev := innerEvent.Data.(type) {
 			case *slackevents.AppMentionEvent:
-				chatApi.PostMessage(ev.Channel, slack.MsgOptionText("What's up?", false))
+				msg, _ := chat.NewMessage(ev.Channel)
+				err = msg.Publish("What's up?")
+				if err != nil {
+					// TODO(anatoly): Retry.
+					log.Err("Bot: Can't publish a message", err)
+					return
+				}
 			case *slackevents.MessageEvent:
 				// Skip messages sent by bots.
 				if ev.User == "" || ev.BotID != "" {
@@ -129,6 +138,23 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client,
 				message = strings.ReplaceAll(message, "‘", "'")
 				message = strings.ReplaceAll(message, "’", "'")
 
+				// Get command from snippet if exists. Snippets allow longer queries support.
+				files := ev.Files
+				if len(files) > 0 {
+					file := files[0]
+					snippet, err := chat.DownloadSnippet(file.URLPrivate)
+					if err != nil {
+						log.Err(err)
+
+						msg, _ := chat.NewMessage(ch)
+						msg.Publish(" ")
+						failMsg(msg, err.Error())
+						return
+					}
+
+					message = string(snippet)
+				}
+
 				if len(message) == 0 {
 					return
 				}
@@ -146,8 +172,15 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client,
 					return
 				}
 
-				msg, err := chat.NewMessage(ch, chatApi)
-				err = msg.Publish(fmt.Sprintf("```%s %s```", command, query))
+				queryPreview := ""
+				if len(query) > QUERY_PREVIEW_SIZE {
+					queryPreview = query[0:QUERY_PREVIEW_SIZE-1]+"…"
+				} else {
+					queryPreview = query
+				}
+
+				msg, err := chat.NewMessage(ch)
+				err = msg.Publish(fmt.Sprintf("```%s %s```", command, queryPreview))
 				if err != nil {
 					// TODO(anatoly): Retry.
 					log.Err("Bot: Can't publish a message", err)
@@ -306,15 +339,15 @@ func RunHttpServer(connStr string, port uint, chatApi *slack.Client,
 }
 
 // TODO(anatoly): Retries, error processing.
-func runMsg(msg *chat.Message) {
+func runMsg(msg *chatapi.Message) {
 	msg.ChangeReaction(RCTN_RUNNING)
 }
 
-func okMsg(msg *chat.Message) {
+func okMsg(msg *chatapi.Message) {
 	msg.ChangeReaction(RCTN_OK)
 }
 
-func failMsg(msg *chat.Message, text string) {
+func failMsg(msg *chatapi.Message, text string) {
 	msg.Append(fmt.Sprintf("ERROR: %s", text))
 	msg.ChangeReaction(RCTN_ERROR)
 }
