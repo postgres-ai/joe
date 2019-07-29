@@ -66,21 +66,26 @@ func prepareMessage(v ...interface{}) string {
 	return message
 }
 
-// Output message
+// Output message.
 func Msg(v ...interface{}) {
 	log.Println(">>> INFO:  " + prepareMessage(v...))
 }
 
-// Output debug message
+// Output debug message.
 func Dbg(v ...interface{}) {
 	if DEBUG {
 		log.Println(">>> DEBUG: " + prepareMessage(v...))
 	}
 }
 
-// Output error message
+// Output error message.
 func Err(v ...interface{}) {
 	log.Println(">>> ERROR: " + prepareMessage(v...))
+}
+
+// Messages for security audit.
+func Audit(v ...interface{}) {
+	log.Println(">>> AUDIT: " + prepareMessage(v...))
 }
 
 func Fatal(v ...interface{}) {

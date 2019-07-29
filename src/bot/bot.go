@@ -87,8 +87,6 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 			return
 		}
 
-		log.Dbg("EventsAPI event:", eventsAPIEvent)
-
 		// Used to verified bot's API URL for Slack.
 		if eventsAPIEvent.Type == slackevents.URLVerification {
 			var r *slackevents.ChallengeResponse
@@ -112,7 +110,7 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 				err = msg.Publish("What's up?")
 				if err != nil {
 					// TODO(anatoly): Retry.
-					log.Err("Bot: Can't publish a message", err)
+					log.Err("Bot: Cannot publish a message", err)
 					return
 				}
 			case *slackevents.MessageEvent:
@@ -178,11 +176,14 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 					queryPreview = query
 				}
 
+				log.Audit(fmt.Sprintf("UserId: \"%s\", Command: \"%s\", Query: \"%s\"",
+					ev.User, command, query))
+
 				msg, err := chat.NewMessage(ch)
 				err = msg.Publish(fmt.Sprintf("```%s %s```", command, queryPreview))
 				if err != nil {
 					// TODO(anatoly): Retry.
-					log.Err("Bot: Can't publish a message", err)
+					log.Err("Bot: Cannot publish a message", err)
 					return
 				}
 
