@@ -750,6 +750,8 @@ func (j *Provision) LocalRollbackZfsSnapshot(name string) (bool, error) {
 		    	return false, fmt.Errorf("Cannot perform \"zfs rollback\" to the specified snapshot: %s, %v.", out, cerr)
 		    }
 		}
+		
+		result, err = j.LocalStartPostgres()
 	}
 	return result, err
 }
