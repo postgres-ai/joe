@@ -737,22 +737,24 @@ func (j *Provision) LocalRollbackZfsSnapshot(name string) (bool, error) {
 	log.Dbg("Rollback the state of the database to the specified snapshot.")
 	var result bool
 	var err error
+
 	result, err = j.LocalStopPostgres()
-	if result == true && err == nil {
-		out, cerr := LocalRunCommand("sudo sh -c 'sync; echo 3 > /proc/sys/vm/drop_caches'")
-		if cerr != nil {
-			return false, fmt.Errorf("Cannot flush OS cache: %s, %v.", out, cerr)
-		}
-		
-		if result == true && err == nil {
-	        out, cerr := LocalRunCommand("sudo zfs rollback -f -r zpool@" + name)
-		    if cerr != nil {
-		    	return false, fmt.Errorf("Cannot perform \"zfs rollback\" to the specified snapshot: %s, %v.", out, cerr)
-		    }
-		}
-		
-		result, err = j.LocalStartPostgres()
+	rf cerr != nil {
+        return false, fmt.Errorf("Cannot stop Postgres")
+    }
+
+    out, cerr := LocalRunCommand("sudo sh -c 'sync; echo 3 > /proc/sys/vm/drop_caches'")
+	if cerr != nil {
+		return false, fmt.Errorf("Cannot flush OS cache: %s, %v.", out, cerr)
 	}
+
+	out, cerr := LocalRunCommand("sudo zfs rollback -f -r zpool@" + name)
+    if cerr != nil {
+        return false, fmt.Errorf("Cannot perform \"zfs rollback\" to the specified snapshot: %s, %v.", out, cerr)
+    }
+
+	result, err = j.LocalStartPostgres()
+
 	return result, err
 }
 
