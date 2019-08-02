@@ -755,7 +755,7 @@ func (j *Provision) LocalStopPostgres() (bool, error) {
 	if len(j.config.LocalConfiguration.PgStopCommand) > 0 {
 		stopCommand = j.config.LocalConfiguration.PgStopCommand
 	}
-	log.Dbg("Command to be used: "+stopCommand)
+	log.Dbg("Command to be used: " + stopCommand)
 
 	var cnt int
 	var out string
