@@ -44,6 +44,7 @@ var commands = []string{
 }
 
 const QUERY_PREVIEW_SIZE = 400
+const PLAN_SIZE = 1000
 
 const MSG_HELP = "• `explain` — analyze your query (SELECT, INSERT, DELETE, UPDATE or WITH) and generate recommendations\n" +
 	"• `exec` — execute any query (for example, CREATE INDEX)\n" +
@@ -57,6 +58,11 @@ const MSG_QUERY_REQ = "Option query required for this command, e.g. `query selec
 const RCTN_RUNNING = "hourglass_flowing_sand"
 const RCTN_OK = "white_check_mark"
 const RCTN_ERROR = "x"
+
+const SEPARATOR_ELLIPSIS = "\n…\n"
+const SEPARATOR_PLAN = "\n…\n"
+
+const TRUNCATED_TEXT = "_(Preview truncated)_"
 
 // TODO(anatoly): verifToken should be a part of Slack API wrapper.
 // TODO(anatoly): Convert args to struct.
@@ -169,12 +175,10 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 					return
 				}
 
-				queryPreview := ""
-				if len(query) > QUERY_PREVIEW_SIZE {
-					queryPreview = query[0:QUERY_PREVIEW_SIZE-1]+"…"
-				} else {
-					queryPreview = query
-				}
+				// We want to save message height space for more valuable info.
+				queryPreview := strings.ReplaceAll(query, "\n", " ")
+				queryPreview = strings.ReplaceAll(queryPreview, "\t", " ")
+				queryPreview, _ = truncateText(queryPreview, QUERY_PREVIEW_SIZE, SEPARATOR_ELLIPSIS)
 
 				log.Audit(fmt.Sprintf("UserId: \"%s\", Command: \"%s\", Query: \"%s\"",
 					ev.User, command, query))
@@ -191,6 +195,9 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 
 				switch command {
 				case COMMAND_EXPLAIN:
+					var detailsText string
+					var trnd bool
+
 					if query == "" {
 						failMsg(msg, MSG_QUERY_REQ)
 						return
@@ -203,7 +210,33 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 						return
 					}
 
-					msg.Append(fmt.Sprintf("*Plan:*\n```%s```", res))
+					planPreview, trnd := truncateText(res, PLAN_SIZE, SEPARATOR_PLAN)
+
+					err = msg.Append(fmt.Sprintf("*Plan:*\n```%s```", planPreview))
+					if err != nil {
+						log.Err("Show plan: ", err)
+						failMsg(msg, err.Error())
+						return
+					}
+
+					filePlanWoExec, err := chat.UploadFile("plan-wo-execution", res, ch, msg.Timestamp)
+					if err != nil {
+						log.Err("File upload failed:", err)
+						failMsg(msg, err.Error())
+						return
+					}
+
+					detailsText = ""
+					if trnd {
+						detailsText = " " + TRUNCATED_TEXT
+					}
+
+					err = msg.Append(fmt.Sprintf("<%s|Open file>%s", filePlanWoExec.Permalink, detailsText))
+					if err != nil {
+						log.Err("File: ", err)
+						failMsg(msg, err.Error())
+						return
+					}
 
 					// Explain analyze request and processing.
 					res, err = runQuery(connStr,
@@ -214,7 +247,12 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 					}
 
 					if SHOW_RAW_EXPLAIN {
-						msg.Append(res)
+						err = msg.Append(res)
+						if err != nil {
+							log.Err("Show raw explain: ", err)
+							failMsg(msg, err.Error())
+							return
+						}
 					}
 
 					explain, err := pgexplain.NewExplain(res, explainConfig)
@@ -243,14 +281,45 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 						}
 					}
 
-					msg.Append(recommends)
+					err = msg.Append(recommends)
+					if err != nil {
+						log.Err("Show recommendations: ", err)
+						failMsg(msg, err.Error())
+						return
+					}
 
 					// Visualization.
 					var buf = new(bytes.Buffer)
 					explain.Visualize(buf)
 					var vis = buf.String()
 
-					msg.Append(fmt.Sprintf("*Explain Analyze:*\n```%s```", vis))
+					planExecPreview, trnd := truncateText(vis, PLAN_SIZE, SEPARATOR_PLAN)
+
+					err = msg.Append(fmt.Sprintf("*Explain Analyze:*\n```%s```", planExecPreview))
+					if err != nil {
+						log.Err("Show explain analyze: ", err)
+						failMsg(msg, err.Error())
+						return
+					}
+
+					filePlan, err := chat.UploadFile("plan", vis, ch, msg.Timestamp)
+					if err != nil {
+						log.Err("File upload failed:", err)
+						failMsg(msg, err.Error())
+						return
+					}
+
+					detailsText = ""
+					if trnd {
+						detailsText = " " + TRUNCATED_TEXT
+					}
+
+					err = msg.Append(fmt.Sprintf("<%s|Open file>%s", filePlan.Permalink, detailsText))
+					if err != nil {
+						log.Err("File: ", err)
+						failMsg(msg, err.Error())
+						return
+					}
 				case COMMAND_EXEC:
 					if query == "" {
 						failMsg(msg, MSG_QUERY_REQ)
@@ -340,16 +409,40 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 
 // TODO(anatoly): Retries, error processing.
 func runMsg(msg *chatapi.Message) {
-	msg.ChangeReaction(RCTN_RUNNING)
+	err := msg.ChangeReaction(RCTN_RUNNING)
+	if err != nil {
+		log.Err(err)
+	}
 }
 
 func okMsg(msg *chatapi.Message) {
-	msg.ChangeReaction(RCTN_OK)
+	err := msg.ChangeReaction(RCTN_OK)
+	if err != nil {
+		log.Err(err)
+	}
 }
 
 func failMsg(msg *chatapi.Message, text string) {
-	msg.Append(fmt.Sprintf("ERROR: %s", text))
-	msg.ChangeReaction(RCTN_ERROR)
+	err := msg.Append(fmt.Sprintf("ERROR: %s", text))
+	if err != nil {
+		log.Err(err)
+	}
+
+	err = msg.ChangeReaction(RCTN_ERROR)
+	if err != nil {
+		log.Err(err)
+	}
+}
+
+// Cuts length of a text if it exceeds specified size. Specifies was text cut or not.
+func truncateText(text string, size int, separator string) (string, bool) {
+	if len(text) > size {
+		size -= len(separator)
+		res := text[0:size/2] + separator + text[len(text)-size/2-size%2:len(text)]
+		return res, true
+	}
+
+	return text, false
 }
 
 func runQuery(connStr string, query string) (string, error) {

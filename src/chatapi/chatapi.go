@@ -6,8 +6,8 @@ package chatapi
 
 import (
 	"fmt"
-	"net/http"
 	"io/ioutil"
+	"net/http"
 	"strings"
 
 	"../log"
@@ -24,8 +24,8 @@ const ERROR_NOT_PUBLISHED = "Message not published yet"
 const CONTENT_TYPE_TEXT = "text/plain"
 
 type Chat struct {
-	Api         *slack.Client
-	AccessToken string
+	Api               *slack.Client
+	AccessToken       string
 	VerificationToken string
 }
 
@@ -41,8 +41,8 @@ func NewChat(accessToken string, verificationToken string) *Chat {
 	chatApi := slack.New(accessToken)
 
 	chat := Chat{
-		Api: chatApi,
-		AccessToken: accessToken,
+		Api:               chatApi,
+		AccessToken:       accessToken,
 		VerificationToken: verificationToken,
 	}
 
@@ -105,6 +105,31 @@ func (c *Chat) DownloadSnippet(privateUrl string) ([]byte, error) {
 
 	return snippet, nil
 }
+
+// In order a file could be used, it should be posted to a channel or a thread.
+func (c *Chat) UploadFile(title string, content string, channel string, ts string) (*slack.File, error) {
+	filetype := "txt"
+	name := strings.ToLower(strings.ReplaceAll(title, " ", "-"))
+	filename := fmt.Sprintf("%s.%s", name, filetype)
+
+	params := slack.FileUploadParameters{
+		Title: title,
+		Filetype: "text",
+		Filename: filename,
+		Content:  content,
+		Channels: []string{channel},
+		ThreadTimestamp: ts,
+	}
+
+	file, err := c.Api.UploadFile(params)
+	if err != nil {
+		return &slack.File{}, err
+	}
+
+	return file, nil
+}
+
+// Slack limits length of message to 4000 characters.
 
 // TODO(anatoly): Retries.
 // Publish a message.

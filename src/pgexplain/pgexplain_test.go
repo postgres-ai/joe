@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"../util"
+
+	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
 func TestVisualize(t *testing.T) {
@@ -42,7 +44,7 @@ func TestVisualize(t *testing.T) {
 		actual := buf.String()
 
 		if actual != expected {
-			t.Errorf("(%d) got different than expected: \n%s ", i, actual)
+			t.Errorf("(%d) got different than expected: \n%s ", i, diff(expected, actual))
 		}
 	}
 }
@@ -120,6 +122,12 @@ func getCodes(tips []Tip) []string {
 	}
 
 	return codes
+}
+
+func diff(a string, b string) string {
+	dmp := diffmatchpatch.New()
+	diffs := dmp.DiffMain(a, b, false)
+	return dmp.DiffPrettyText(diffs)
 }
 
 // Test cases from Postgres 9.6.
@@ -1108,7 +1116,7 @@ const EXPECTED_TEXT_1 = ` Unique  (cost=156506.25..156507.37 rows=225 width=149)
                      Index Cond: (u.id = s_id)
                      Buffers: shared hit=624
  Planning time: 1.690 ms
- Execution time: 1.783 s
+ Execution time: 3.566 s
  Total Cost: 156543.13
  Buffers Hit: 43757
  Buffers Written: 0
