@@ -60,10 +60,10 @@ const RCTN_RUNNING = "hourglass_flowing_sand"
 const RCTN_OK = "white_check_mark"
 const RCTN_ERROR = "x"
 
-const SEPARATOR_ELLIPSIS = "\n…\n"
-const SEPARATOR_PLAN = "\n…\n"
+const SEPARATOR_ELLIPSIS = "\n[...SKIP...]\n"
+const SEPARATOR_PLAN = "\n[...SKIP...]\n"
 
-const TRUNCATED_TEXT = "_(Preview truncated)_"
+const CUT_TEXT = "_(The text in the preview above has been cut)_"
 
 type Audit struct {
 	Id       string `json:"id"`
@@ -210,7 +210,7 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 				// We want to save message height space for more valuable info.
 				queryPreview := strings.ReplaceAll(query, "\n", " ")
 				queryPreview = strings.ReplaceAll(queryPreview, "\t", " ")
-				queryPreview, _ = truncateText(queryPreview, QUERY_PREVIEW_SIZE, SEPARATOR_ELLIPSIS)
+				queryPreview, _ = cutText(queryPreview, QUERY_PREVIEW_SIZE, SEPARATOR_ELLIPSIS)
 
 				audit, err := json.Marshal(Audit{
 					Id:       user.ID,
@@ -254,7 +254,7 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 						return
 					}
 
-					planPreview, trnd := truncateText(res, PLAN_SIZE, SEPARATOR_PLAN)
+					planPreview, trnd := cutText(res, PLAN_SIZE, SEPARATOR_PLAN)
 
 					err = msg.Append(fmt.Sprintf("*Plan:*\n```%s```", planPreview))
 					if err != nil {
@@ -272,10 +272,10 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 
 					detailsText = ""
 					if trnd {
-						detailsText = " " + TRUNCATED_TEXT
+						detailsText = " " + CUT_TEXT
 					}
 
-					err = msg.Append(fmt.Sprintf("<%s|Open file>%s", filePlanWoExec.Permalink, detailsText))
+					err = msg.Append(fmt.Sprintf("<%s|Full plan (w/o execution)>%s", filePlanWoExec.Permalink, detailsText))
 					if err != nil {
 						log.Err("File: ", err)
 						failMsg(msg, err.Error())
@@ -337,7 +337,7 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 					explain.Visualize(buf)
 					var vis = buf.String()
 
-					planExecPreview, trnd := truncateText(vis, PLAN_SIZE, SEPARATOR_PLAN)
+					planExecPreview, trnd := cutText(vis, PLAN_SIZE, SEPARATOR_PLAN)
 
 					err = msg.Append(fmt.Sprintf("*Explain Analyze:*\n```%s```", planExecPreview))
 					if err != nil {
@@ -355,10 +355,10 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 
 					detailsText = ""
 					if trnd {
-						detailsText = " " + TRUNCATED_TEXT
+						detailsText = " " + CUT_TEXT
 					}
 
-					err = msg.Append(fmt.Sprintf("<%s|Open file>%s", filePlan.Permalink, detailsText))
+					err = msg.Append(fmt.Sprintf("<%s|Full execution plan>%s", filePlan.Permalink, detailsText))
 					if err != nil {
 						log.Err("File: ", err)
 						failMsg(msg, err.Error())
@@ -479,7 +479,7 @@ func failMsg(msg *chatapi.Message, text string) {
 }
 
 // Cuts length of a text if it exceeds specified size. Specifies was text cut or not.
-func truncateText(text string, size int, separator string) (string, bool) {
+func cutText(text string, size int, separator string) (string, bool) {
 	if len(text) > size {
 		size -= len(separator)
 		res := text[0:size/2] + separator + text[len(text)-size/2-size%2:len(text)]
