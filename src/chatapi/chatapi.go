@@ -113,11 +113,11 @@ func (c *Chat) UploadFile(title string, content string, channel string, ts strin
 	filename := fmt.Sprintf("%s.%s", name, filetype)
 
 	params := slack.FileUploadParameters{
-		Title: title,
-		Filetype: "text",
-		Filename: filename,
-		Content:  content,
-		Channels: []string{channel},
+		Title:           title,
+		Filetype:        "text",
+		Filename:        filename,
+		Content:         content,
+		Channels:        []string{channel},
 		ThreadTimestamp: ts,
 	}
 
@@ -210,4 +210,9 @@ func (m *Message) isPublished() bool {
 	}
 
 	return true
+}
+
+func (c *Chat) GetUserInfo(id string) (*slack.User, error) {
+	log.Dbg("Request: GetUserInfo")
+	return c.Api.GetUserInfo(id)
 }
