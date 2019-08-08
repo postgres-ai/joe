@@ -20,6 +20,7 @@ import (
 	"../provision"
 
 	_ "github.com/lib/pq"
+	"github.com/nlopes/slack"
 	"github.com/nlopes/slack/slackevents"
 )
 
@@ -64,23 +65,34 @@ const SEPARATOR_PLAN = "\n…\n"
 
 const TRUNCATED_TEXT = "_(Preview truncated)_"
 
+type Audit struct {
+	Id       string `json:"id"`
+	Name     string `json:"name"`
+	RealName string `json:"realName"`
+	Command  string `json:"command"`
+	Query    string `json:"query"`
+}
+
 // TODO(anatoly): verifToken should be a part of Slack API wrapper.
 // TODO(anatoly): Convert args to struct.
 func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 	explainConfig pgexplain.ExplainConfig, prov *provision.Provision) {
+
+	var usersCache = make(map[string]*slack.User)
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		log.Msg("Request received:", html.EscapeString(r.URL.Path))
 
 		// TODO(anatoly): Respond time according to Slack API timeouts policy.
 		// Slack sends retries in case of timedout responses.
 		if r.Header.Get("X-Slack-Retry-Num") != "" {
+			log.Dbg("Message filtered: Slack Retry")
 			return
 		}
 
 		buf := new(bytes.Buffer)
 		buf.ReadFrom(r.Body)
 		body := buf.String()
-		log.Dbg("Request body:", body)
 
 		eventsAPIEvent, err := slackevents.ParseEvent(json.RawMessage(body),
 			slackevents.OptionVerifyToken(
@@ -125,8 +137,28 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 					return
 				}
 
+				// Skip messages from threads.
+				if ev.ThreadTimeStamp != "" {
+					return
+				}
+
 				var ch = ev.Channel
 				var message = strings.TrimSpace(ev.Text)
+
+				// Get information about user.
+				user, ok := usersCache[ev.User]
+				if !ok {
+					user, err = chat.GetUserInfo(ev.User)
+					if err != nil {
+						log.Err(err)
+
+						msg, _ := chat.NewMessage(ch)
+						msg.Publish(" ")
+						failMsg(msg, err.Error())
+						return
+					}
+					usersCache[ev.User] = user
+				}
 
 				// Slack escapes some characters
 				// https://api.slack.com/docs/message-formatting#how_to_escape_characters
@@ -180,8 +212,20 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 				queryPreview = strings.ReplaceAll(queryPreview, "\t", " ")
 				queryPreview, _ = truncateText(queryPreview, QUERY_PREVIEW_SIZE, SEPARATOR_ELLIPSIS)
 
-				log.Audit(fmt.Sprintf("UserId: \"%s\", Command: \"%s\", Query: \"%s\"",
-					ev.User, command, query))
+				audit, err := json.Marshal(Audit{
+					Id:       user.ID,
+					Name:     user.Name,
+					RealName: user.RealName,
+					Command:  command,
+					Query:    query,
+				})
+				if err != nil {
+					msg, _ := chat.NewMessage(ch)
+					msg.Publish(" ")
+					failMsg(msg, err.Error())
+					return
+				}
+				log.Audit(string(audit))
 
 				msg, err := chat.NewMessage(ch)
 				err = msg.Publish(fmt.Sprintf("```%s %s```", command, queryPreview))
