@@ -293,7 +293,7 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 					if SHOW_RAW_EXPLAIN {
 						err = msg.Append(res)
 						if err != nil {
-							log.Err("Show raw explain: ", err)
+							log.Err("Show raw EXPLAIN: ", err)
 							failMsg(msg, err.Error())
 							return
 						}
@@ -339,9 +339,9 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 
 					planExecPreview, trnd := cutText(vis, PLAN_SIZE, SEPARATOR_PLAN)
 
-					err = msg.Append(fmt.Sprintf("*Explain Analyze:*\n```%s```", planExecPreview))
+					err = msg.Append(fmt.Sprintf("*EXPLAIN ANALYZE:*\n```%s```", planExecPreview))
 					if err != nil {
-						log.Err("Show explain analyze: ", err)
+						log.Err("Show EXPLAIN ANALYZE: ", err)
 						failMsg(msg, err.Error())
 						return
 					}
@@ -378,7 +378,7 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 						failMsg(msg, err.Error())
 						return
 					}
-					msg.Append(fmt.Sprintf("DDL executed. Execution Time: %s", elapsed))
+					msg.Append(fmt.Sprintf("DDL has been executed. Execution time: %s", elapsed))
 				case COMMAND_SNAPSHOT:
 					if query == "" {
 						failMsg(msg, MSG_QUERY_REQ)
@@ -387,7 +387,7 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 
 					// TODO(anatoly): Refactor.
 					if prov.IsLocal() {
-						failMsg(msg, "`snapshot` command is not available in current mode.")
+						failMsg(msg, "`snapshot` command is not available in the current mode.")
 					}
 
 					_, err = prov.CreateZfsSnapshot(query)
@@ -397,9 +397,9 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 						return
 					}
 				case COMMAND_RESET:
-					msg.Append("Performing rollback of DB state...")
+					msg.Append("Resetting the state of the database...")
 
-					// TODO(anatoly): ZFS rollback deletes newer snapshots. Users will be able
+					// TODO(anatoly): "zfs rollback" deletes newer snapshots. Users will be able
 					// to jump across snapshots if we solve it.
 					err := prov.ResetSession()
 					if err != nil {
@@ -407,7 +407,7 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 						failMsg(msg, err.Error())
 						return
 					}
-					msg.Append("Rollback performed")
+					msg.Append("The state of the database has been reset.")
 				case COMMAND_HARDRESET:
 					// TODO(anatoly): Refactor
 					if prov.IsLocal() {
@@ -418,7 +418,7 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 					log.Msg("Reestablishing connection")
 					msg.Append("Reestablishing connection to DB, " +
 						"it may take a couple of minutes...\n" +
-						"If you want to rollback DB state use `reset` command.")
+						"If you want to reset the state of the database use `reset` command.")
 
 					// TODO(anatoly): Remove temporary hack.
 
