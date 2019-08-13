@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"../pgexplain"
 	"../provision"
 
+	"github.com/dustin/go-humanize/english"
 	_ "github.com/lib/pq"
 	"github.com/nlopes/slack"
 	"github.com/nlopes/slack/slackevents"
@@ -65,6 +67,14 @@ const SEPARATOR_PLAN = "\n[...SKIP...]\n"
 
 const CUT_TEXT = "_(The text in the preview above has been cut)_"
 
+type Config struct {
+	ConnStr       string
+	Port          uint
+	Explain       pgexplain.ExplainConfig
+	QuotaLimit    uint
+	QuotaInterval uint // Seconds.
+}
+
 type Audit struct {
 	Id       string `json:"id"`
 	Name     string `json:"name"`
@@ -73,12 +83,26 @@ type Audit struct {
 	Query    string `json:"query"`
 }
 
+type User struct {
+	ChatUser *slack.User
+	Session  UserSession
+}
+
+type UserSession struct {
+	QuotaTs       time.Time
+	QuotaCount    uint
+	QuotaLimit    uint
+	QuotaInterval uint
+}
+
 // TODO(anatoly): verifToken should be a part of Slack API wrapper.
 // TODO(anatoly): Convert args to struct.
-func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
-	explainConfig pgexplain.ExplainConfig, prov *provision.Provision) {
+func RunHttpServer(config Config, chat *chatapi.Chat, prov *provision.Provision) {
+	connStr := config.ConnStr
+	port := config.Port
+	explainConfig := config.Explain
 
-	var usersCache = make(map[string]*slack.User)
+	var users = make(map[string]*User) // Slack UID -> User.
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		log.Msg("Request received:", html.EscapeString(r.URL.Path))
@@ -146,9 +170,9 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 				var message = strings.TrimSpace(ev.Text)
 
 				// Get information about user.
-				user, ok := usersCache[ev.User]
+				user, ok := users[ev.User]
 				if !ok {
-					user, err = chat.GetUserInfo(ev.User)
+					chatUser, err := chat.GetUserInfo(ev.User)
 					if err != nil {
 						log.Err(err)
 
@@ -157,7 +181,9 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 						failMsg(msg, err.Error())
 						return
 					}
-					usersCache[ev.User] = user
+
+					user = NewUser(chatUser, config)
+					users[ev.User] = user
 				}
 
 				// Slack escapes some characters
@@ -207,15 +233,24 @@ func RunHttpServer(connStr string, port uint, chat *chatapi.Chat,
 					return
 				}
 
+				err = user.requestQuota()
+				if err != nil {
+					log.Err("Quota: ", err)
+					msg, _ := chat.NewMessage(ch)
+					msg.Publish(" ")
+					failMsg(msg, err.Error())
+					return
+				}
+
 				// We want to save message height space for more valuable info.
 				queryPreview := strings.ReplaceAll(query, "\n", " ")
 				queryPreview = strings.ReplaceAll(queryPreview, "\t", " ")
 				queryPreview, _ = cutText(queryPreview, QUERY_PREVIEW_SIZE, SEPARATOR_ELLIPSIS)
 
 				audit, err := json.Marshal(Audit{
-					Id:       user.ID,
-					Name:     user.Name,
-					RealName: user.RealName,
+					Id:       user.ChatUser.ID,
+					Name:     user.ChatUser.Name,
+					RealName: user.ChatUser.RealName,
 					Command:  command,
 					Query:    query,
 				})
@@ -487,6 +522,45 @@ func cutText(text string, size int, separator string) (string, bool) {
 	}
 
 	return text, false
+}
+
+func NewUser(chatUser *slack.User, config Config) *User {
+	user := User{
+		ChatUser: chatUser,
+		Session: UserSession{
+			QuotaTs:       time.Now(),
+			QuotaCount:    0,
+			QuotaLimit:    config.QuotaLimit,
+			QuotaInterval: config.QuotaInterval,
+		},
+	}
+
+	return &user
+}
+
+func (u *User) requestQuota() error {
+	now := time.Now()
+
+	limit := u.Session.QuotaLimit
+	interval := u.Session.QuotaInterval
+	sAgo := uint(math.Floor(now.Sub(u.Session.QuotaTs).Seconds()))
+
+	if sAgo < interval {
+		if u.Session.QuotaCount >= limit {
+			return fmt.Errorf(
+				"You have reached the limit of requests per %s (%d). "+
+					"Please wait before trying again.",
+				english.Plural(int(interval), "second", ""),
+				limit)
+		}
+
+		u.Session.QuotaCount++
+		return nil
+	}
+
+	u.Session.QuotaCount = 1
+	u.Session.QuotaTs = now
+	return nil
 }
 
 func runQuery(connStr string, query string) (string, error) {
