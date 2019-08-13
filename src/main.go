@@ -41,6 +41,9 @@ var opts struct {
 	// HTTP Server
 	ServerPort uint `short:"s" long:"http-port" description:"HTTP server port" env:"SERVER_PORT" default:"3000"`
 
+	QuotaLimit    uint `long:"quota-limit" description:"limit request rates to up to 2x of this number" env:"QUOTA_LIMIT" default:"10"`
+	QuotaInterval uint `long:"quota-interval" description:"an time interval (in seconds) to apply a quota-limit" env:"QUOTA_INTERVAL" default:"60"`
+
 	ShowHelp func() error `long:"help" description:"Show this help message"`
 }
 
@@ -108,8 +111,17 @@ func main() {
 
 	var connStr = fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
 		opts.DbHost, opts.DbPort, opts.DbUser, opts.DbPassword, opts.DbName)
+	config := bot.Config{
+		ConnStr:       connStr,
+		Port:          opts.ServerPort,
+		Explain:       explainConfig,
+		QuotaLimit:    opts.QuotaLimit,
+		QuotaInterval: opts.QuotaInterval,
+	}
+
 	var chat = chatapi.NewChat(opts.AccessToken, opts.VerificationToken)
-	bot.RunHttpServer(connStr, opts.ServerPort, chat, explainConfig, prov)
+
+	bot.RunHttpServer(config, chat, prov)
 
 	prov.StopSession()
 }
