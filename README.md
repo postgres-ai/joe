@@ -1,7 +1,6 @@
 # Joe - Postgres Query Optimization
 Boost your backend development process
 
-
 <div align="center">
     ![Joe Demo](./assets/demo.gif)
 </div>
@@ -10,8 +9,6 @@ Provide developers access to experiment on automatically provisioned
 production-size DB testing replica. Joe will provide recommendations
 for query optimization and the ability to rollback.
 
-
-## Software```suggestion:-0+0
 ## Install Software
 
 *Currently, there are no ready-to-use binaries or a Docker image. The setup
@@ -61,6 +58,3 @@ Deploy Joe instance in your infrastructure. You would need to:
 
 Unless being run in the "local" mode, Joe will automatically provision AWS EC2
 or GCP GCE instance of Postgres.
-
-
-
