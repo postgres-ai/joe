@@ -11,12 +11,31 @@ production-size DB testing replica. Joe will provide recommendations
 for query optimization and the ability to rollback.
 
 
-## Install
+## Software```suggestion:-0+0
+## Install Software
+
+*Currently, there are no ready-to-use binaries or a Docker image. The setup
+is to be done using the source code.*
+
+1. Get the source code: `git clone https://gitlab.com/postgres-ai/joe.git`.
+1. It is not recommended to use HTTP: all the traffic from Slack to Joe should
+be encrypted. It can be achieved by using NGINX with a free Let's Encrypt
+certificate (Ubuntu: https://gitlab.com/postgres-ai/joe/snippets/1876422).
+1. Golang is required.
+    - Ubuntu: In some cases, standard Ubuntu package might not work. See
+https://gitlab.com/postgres-ai/joe/snippets/1880315.
+    - On macOS: `brew install golang`
+1. If needed (when working in "local" mode), install ZFS (Ubuntu:
+https://gitlab.com/postgres-ai/joe/snippets/1880313).
 
 ### ZFS Store
-Create a ZFS store (AWS EBS or GCP persistent disk) with a production Postgres
-dump or archive (e.g. WAL-G archive). Specify its name and params in Joe
-configuration (`config/provisioning.yaml`).
+1. Create a ZFS store with a clone of
+the production Postgres database (e.g. using WAL-E, WAL-E or Barman archive).
+1. Shutdown Postgres, create a new ZFS snapshot
+(`sudo zfs snapshot -r  zpool@db_state_1`) and remember its name. It will
+be needed for further configuration (`initialSnapshot` option in 
+`config/provisioning.yaml`).
+1. Start Postgres.
 
 ### Slack App
 Configure a new Slack App in order to use Joe in Slack and add the app to your
@@ -37,29 +56,11 @@ team Workspace. Joe Bot should be available with public URL calls from Slack.
 ### Deploy
 Deploy Joe instance in your infrastructure. You would need to:
 1. Update configuration in `makerun.sh` and `config/provisioning.yaml`.
-1. Make a publicly accessible HTTP server port specified in the configuration for Slack Events Request URL.
-1. Build and run Joe `bash ./makerun.sh` (or, with log: `./makerun.sh 2>&1 | tee -a joe.log`).
+1. Make a publicly accessible HTTP(S) server port specified in the configuration for Slack Events Request URL.
+1. Build and run Joe `bash ./makerun.sh` (or, with log: `bash ./makerun.sh 2>&1 | tee -a joe.log`).
 
-Joe will automatically provision AWS EC2 or GCP GCE instance of Postgres.
+Unless being run in the "local" mode, Joe will automatically provision AWS EC2
+or GCP GCE instance of Postgres.
 
-### Requirements
 
-Golang is required.
 
-In some cases, standard Ubuntu package might not work. Then do this:
-
-```bash
-## uninstall the package and then download and install it as described at
-## https://golang.org/doc/install?download=go1.12.7.linux-amd64.tar.gz
-wget https://dl.google.com/go/go1.12.7.linux-amd64.tar.gz
-sudo tar -C /usr/local -xzf go1.12.7.linux-amd64.tar.gz
-echo 'echo 'GOPATH="$HOME/joe/"' >> ~/.bashrc' >> ~/.bashrc
-echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
-bash --login
-```
-
-On macOS:
-
-```bash
-brew install golang
-```
