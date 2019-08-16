@@ -5,6 +5,7 @@
 package chatapi
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"../log"
 
 	"github.com/nlopes/slack"
+	"github.com/nlopes/slack/slackevents"
 )
 
 // TODO(anatoly): Refactor package to use as a full wrapper for nlopes/slack.
@@ -215,4 +217,12 @@ func (m *Message) isPublished() bool {
 func (c *Chat) GetUserInfo(id string) (*slack.User, error) {
 	log.Dbg("Request: GetUserInfo")
 	return c.Api.GetUserInfo(id)
+}
+
+func (c *Chat) ParseEvent(rawEvent string) (slackevents.EventsAPIEvent, error) {
+	return slackevents.ParseEvent(json.RawMessage(rawEvent),
+		slackevents.OptionVerifyToken(
+			&slackevents.TokenComparator{
+				VerificationToken: c.VerificationToken,
+			}))
 }

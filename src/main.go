@@ -121,7 +121,8 @@ func main() {
 
 	var chat = chatapi.NewChat(opts.AccessToken, opts.VerificationToken)
 
-	bot.RunHttpServer(config, chat, prov)
+	joeBot := bot.NewBot(config, chat, prov)
+	joeBot.RunServer()
 
 	prov.StopSession()
 }
