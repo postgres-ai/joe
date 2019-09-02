@@ -26,6 +26,10 @@ func TestVisualize(t *testing.T) {
 			inputJson: INPUT_JSON_1,
 			expected:  EXPECTED_TEXT_1,
 		},
+		{
+			inputJson: INPUT_JSON_2,
+			expected:  EXPECTED_TEXT_2,
+		},
 	}
 
 	for i, test := range tests {
@@ -44,7 +48,7 @@ func TestVisualize(t *testing.T) {
 		actual := buf.String()
 
 		if actual != expected {
-			t.Errorf("(%d) got different than expected: \n%s ", i, diff(expected, actual))
+			t.Errorf("(%d) got different than expected: \n%s\n", i, diff(expected, actual))
 		}
 	}
 }
@@ -1119,6 +1123,83 @@ const EXPECTED_TEXT_1 = ` Unique  (cost=156506.25..156507.37 rows=225 width=149)
  Execution time: 3.566 s
  Total Cost: 156543.13
  Buffers Hit: 43757
+ Buffers Written: 0
+ Buffers Read: 0
+`
+
+const INPUT_JSON_2 = `[
+  {
+    "Plan": {
+      "Node Type": "Limit",
+      "Parallel Aware": false,
+      "Startup Cost": 0.43,
+      "Total Cost": 8.45,
+      "Plan Rows": 1,
+      "Plan Width": 22,
+      "Actual Startup Time": 0.026,
+      "Actual Total Time": 0.035,
+      "Actual Rows": 1,
+      "Actual Loops": 1,
+      "Shared Hit Blocks": 4,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0,
+      "Plans": [
+        {
+          "Node Type": "Index Only Scan",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Scan Direction": "Forward",
+          "Index Name": "i_user_col",
+          "Relation Name": "table_1",
+          "Alias": "table_1",
+          "Startup Cost": 0.43,
+          "Total Cost": 8.45,
+          "Plan Rows": 1,
+          "Plan Width": 22,
+          "Actual Startup Time": 0.021,
+          "Actual Total Time": 0.026,
+          "Actual Rows": 1,
+          "Actual Loops": 1,
+          "Index Cond": "(col = 'xxxx'::text)",
+          "Rows Removed by Index Recheck": 0,
+          "Heap Fetches": 0,
+          "Shared Hit Blocks": 4,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0
+        }
+      ]
+    },
+    "Planning Time": 0.110,
+    "Triggers": [
+    ],
+    "Execution Time": 0.199
+  }
+]`
+
+const EXPECTED_TEXT_2 = ` Limit  (cost=0.43..8.45 rows=1 width=22) (actual time=0.026..0.035 rows=1 loops=1)
+   Buffers: shared hit=4
+   ->  Index Only Scan using i_user_col on table_1  (cost=0.43..8.45 rows=1 width=22) (actual time=0.021..0.026 rows=1 loops=1)
+         Index Cond: (col = 'xxxx'::text)
+         Heap Fetches: 0
+         Buffers: shared hit=4
+ Planning time: 0.110 ms
+ Execution time: 0.199 ms
+ Total Cost: 8.45
+ Buffers Hit: 4
  Buffers Written: 0
  Buffers Read: 0
 `

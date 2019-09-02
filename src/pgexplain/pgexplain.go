@@ -444,6 +444,10 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 		outputFn("Index Cond: %v", plan.IndexCondition)
 	}
 
+	if plan.NodeType == IndexOnlyScan {
+		outputFn("Heap Fetches: %d", plan.HeapFetches)
+	}
+
 	if plan.HashCondition != "" {
 		outputFn("Hash Cond: %v", plan.HashCondition)
 	}
@@ -510,11 +514,7 @@ func writeExplainTree(writer io.Writer, explain *Explain) {
 }
 
 func durationToString(value float64) string {
-	if value < 1 {
-		return "<1 ms"
-	} else if value < 100 {
-		return fmt.Sprintf("%.3f ms", value)
-	} else if value < 1000 {
+	if value < 1000 {
 		return fmt.Sprintf("%.3f ms", value)
 	} else if value < 60000 {
 		return fmt.Sprintf("%.3f s", value/1000.0)
