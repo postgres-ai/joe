@@ -567,9 +567,9 @@ func (j *Provision) StartSession(options ...string) (bool, string, error) {
 	if err != nil {
 		return false, "", fmt.Errorf("Cannot create a database user. %v", err)
 	}
-	res, _ := j.WriteState()
-	if res == false {
-		log.Err("Cannot save the state.")
+	_, err = j.WriteState()
+	if err != nil {
+		return false, "", fmt.Errorf("Cannot save the state. %v", err)
 	}
 	err = j.CreateSshTunnel()
 	if err != nil {
