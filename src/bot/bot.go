@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
-	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -19,14 +18,13 @@ import (
 	"../log"
 	"../pgexplain"
 	"../provision"
+	"../util"
 
 	"github.com/dustin/go-humanize/english"
 	_ "github.com/lib/pq"
 	"github.com/nlopes/slack"
 	"github.com/nlopes/slack/slackevents"
 )
-
-// TODO(anatoly): Use chat package wrapper.
 
 const SHOW_RAW_EXPLAIN = false
 
@@ -37,13 +35,21 @@ const COMMAND_RESET = "reset"
 const COMMAND_HARDRESET = "hardreset"
 const COMMAND_HELP = "help"
 
-var commands = []string{
+var supportedCommands = []string{
 	COMMAND_EXPLAIN,
 	COMMAND_EXEC,
 	COMMAND_SNAPSHOT,
 	COMMAND_RESET,
 	COMMAND_HARDRESET,
 	COMMAND_HELP,
+}
+
+const SUBTYPE_GENERAL = ""
+const SUBTYPE_FILE_SHARE = "file_share"
+
+var supportedSubtypes = []string{
+	SUBTYPE_GENERAL,
+	SUBTYPE_FILE_SHARE,
 }
 
 const QUERY_PREVIEW_SIZE = 400
@@ -54,7 +60,7 @@ const MSG_HELP = "• `explain` — analyze your query (SELECT, INSERT, DELETE, 
 	"• `snapshot` — create a snapshot of the current database state\n" +
 	"• `reset` — revert the database to the initial state (usually takes less than a minute, :warning: all changes will be lost)\n" +
 	"• `hardreset` — re-provision the database instance (usually takes a couple of minutes, :warning: all changes will be lost)\n" +
-	"• `help` — this message"
+	"• `help` — this message\n"
 
 const MSG_QUERY_REQ = "Option query required for this command, e.g. `query select 1`"
 
@@ -67,18 +73,27 @@ const SEPARATOR_PLAN = "\n[...SKIP...]\n"
 
 const CUT_TEXT = "_(The text in the preview above has been cut)_"
 
+const IDLE_TICK_DURATION = 120 * time.Minute
+
 type Config struct {
 	ConnStr       string
 	Port          uint
 	Explain       pgexplain.ExplainConfig
 	QuotaLimit    uint
 	QuotaInterval uint // Seconds.
+	IdleInterval  uint // Seconds.
+
+	DbHost     string
+	DbPort     uint
+	DbUser     string
+	DbPassword string
+	DbName     string
 }
 
 type Bot struct {
 	Config Config
 	Chat   *chatapi.Chat
-	Prov   *provision.Provision
+	Prov   provision.Provision
 	Users  map[string]*User // Slack UID -> User.
 }
 
@@ -100,9 +115,16 @@ type UserSession struct {
 	QuotaCount    uint
 	QuotaLimit    uint
 	QuotaInterval uint
+
+	LastActionTs time.Time
+	IdleInterval uint
+
+	ChannelIds []string
+
+	Provision *provision.Session
 }
 
-func NewBot(config Config, chat *chatapi.Chat, prov *provision.Provision) *Bot {
+func NewBot(config Config, chat *chatapi.Chat, prov provision.Provision) *Bot {
 	bot := Bot{
 		Config: config,
 		Chat:   chat,
@@ -112,13 +134,111 @@ func NewBot(config Config, chat *chatapi.Chat, prov *provision.Provision) *Bot {
 	return &bot
 }
 
+func (b *Bot) stopIdleSessions() error {
+	// TODO(anatoly): List stopped sesssion to channel.
+	chsNotify := make(map[string][]string)
+
+	for _, u := range b.Users {
+		if u == nil {
+			continue
+		}
+
+		s := u.Session
+		if s.Provision == nil {
+			continue
+		}
+
+		interval := u.Session.IdleInterval
+		sAgo := util.SecondsAgo(u.Session.LastActionTs)
+
+		if sAgo < interval {
+			continue
+		}
+
+		log.Dbg("Session idle: %v %v", u, s)
+
+		for _, ch := range u.Session.ChannelIds {
+			uId := u.ChatUser.ID
+			chNotify, ok := chsNotify[ch]
+			if !ok {
+				chsNotify[ch] = []string{uId}
+				continue
+			}
+
+			chsNotify[ch] = append(chNotify, uId)
+		}
+
+		b.stopSession(u)
+	}
+
+	// Publish message in every channel with a list of users.
+	for ch, uIds := range chsNotify {
+		if len(uIds) == 0 {
+			continue
+		}
+
+		list := ""
+		for _, uId := range uIds {
+			if len(list) > 0 {
+				list += ", "
+			}
+			list += fmt.Sprintf("<@%s>", uId)
+		}
+
+		msgText := "Stopped idle sessions for: " + list
+
+		msg, _ := b.Chat.NewMessage(ch)
+		err := msg.Publish(msgText)
+		if err != nil {
+			log.Err("Bot: Cannot publish a message", err)
+		}
+	}
+
+	return nil
+}
+
+func (b *Bot) stopAllSessions() error {
+	for _, u := range b.Users {
+		if u == nil {
+			continue
+		}
+
+		s := u.Session
+		if s.Provision == nil {
+			continue
+		}
+
+		b.stopSession(u)
+	}
+
+	return nil
+}
+
+func (b *Bot) stopSession(u *User) error {
+	log.Dbg("Stopping session...")
+	err := b.Prov.StopSession(u.Session.Provision)
+	if err != nil {
+		log.Err(err)
+		return err
+	}
+
+	u.Session.Provision = nil
+	return nil
+}
+
 func (b *Bot) RunServer() {
+	// Stop idle sessions.
+	_ = util.RunInterval(IDLE_TICK_DURATION, func() {
+		log.Dbg("Stop idle sessions tick")
+		b.stopIdleSessions()
+	})
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		b.handleEvent(w, r)
 	})
 
 	port := b.Config.Port
-	log.Msg("Server is about to listen on localhost:", port)
+	log.Msg(fmt.Sprintf("Server start listening on localhost:%d", port))
 	err := http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
 	log.Err("HTTP server error:", err)
 }
@@ -196,7 +316,6 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 	var err error
 
 	explainConfig := b.Config.Explain
-	connStr := b.Config.ConnStr
 
 	// Skip messages sent by bots.
 	if ev.User == "" || ev.BotID != "" {
@@ -207,6 +326,11 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 	// Skip messages from threads.
 	if ev.ThreadTimeStamp != "" {
 		log.Dbg("Message filtered: Message in thread")
+		return
+	}
+
+	if !util.Contains(supportedSubtypes, ev.SubType) {
+		log.Dbg("Message filtered: Subtype not supported")
 		return
 	}
 
@@ -228,6 +352,10 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 
 		user = NewUser(chatUser, b.Config)
 		b.Users[ev.User] = user
+	}
+	user.Session.LastActionTs = time.Now()
+	if !util.Contains(user.Session.ChannelIds, ch) {
+		user.Session.ChannelIds = append(user.Session.ChannelIds, ch)
 	}
 
 	message = formatSlackMessage(message)
@@ -264,7 +392,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		query = parts[1]
 	}
 
-	if !contains(commands, command) {
+	if !util.Contains(supportedCommands, command) {
 		log.Dbg("Message filtered: Not a command")
 		return
 	}
@@ -298,8 +426,60 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 	}
 	log.Audit(string(audit))
 
+	msgText := fmt.Sprintf("```%s %s```\n", command, queryPreview)
+
+	// Show `help` command without initializing of a session.
+	if command == COMMAND_HELP {
+		msgText = appendHelp(msgText)
+		msgText = appendSessionId(msgText, user)
+
+		hMsg, _ := b.Chat.NewMessage(ch)
+		err = hMsg.Publish(msgText)
+		if err != nil {
+			// TODO(anatoly): Retry.
+			log.Err("Bot: Cannot publish a message", err)
+		}
+
+		return
+	}
+
+	if user.Session.Provision == nil {
+		sMsg, _ := b.Chat.NewMessage(ch)
+		sMsg.Publish("Starting new session")
+		runMsg(sMsg)
+
+		session, err := b.Prov.StartSession()
+		if err != nil {
+			switch err.(type) {
+			case provision.NoRoomError:
+				err = b.stopIdleSessions()
+				if err != nil {
+					failMsg(sMsg, err.Error())
+					return
+				}
+
+				session, err = b.Prov.StartSession()
+				if err != nil {
+					failMsg(sMsg, err.Error())
+					return
+				}
+			default:
+				failMsg(sMsg, err.Error())
+				return
+			}
+		}
+
+		user.Session.Provision = session
+
+		sMsg.Append(fmt.Sprintf("Session started: `%s`", session.Id))
+		okMsg(sMsg)
+	}
+	msgText = appendSessionId(msgText, user)
+
+	connStr := user.Session.Provision.GetConnStr(b.Config.DbName)
+
 	msg, err := b.Chat.NewMessage(ch)
-	err = msg.Publish(fmt.Sprintf("```%s %s```", command, queryPreview))
+	err = msg.Publish(msgText)
 	if err != nil {
 		// TODO(anatoly): Retry.
 		log.Err("Bot: Cannot publish a message", err)
@@ -435,6 +615,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 			failMsg(msg, err.Error())
 			return
 		}
+
 	case COMMAND_EXEC:
 		if query == "" {
 			failMsg(msg, MSG_QUERY_REQ)
@@ -451,69 +632,76 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		}
 		msg.Append(fmt.Sprintf("DDL has been executed. Execution time: %s",
 			elapsed.String()))
+
 	case COMMAND_SNAPSHOT:
 		if query == "" {
 			failMsg(msg, MSG_QUERY_REQ)
 			return
 		}
 
-		// TODO(anatoly): Refactor.
-		if b.Prov.IsLocal() {
-			failMsg(msg, "`snapshot` command is not available in the current mode.")
-		}
-
-		_, err = b.Prov.CreateZfsSnapshot(query)
+		err = b.Prov.CreateSnapshot(query)
 		if err != nil {
 			log.Err("Snapshot: ", err)
 			failMsg(msg, err.Error())
 			return
 		}
+
 	case COMMAND_RESET:
 		msg.Append("Resetting the state of the database...")
 
 		// TODO(anatoly): "zfs rollback" deletes newer snapshots. Users will be able
 		// to jump across snapshots if we solve it.
-		err := b.Prov.ResetSession()
+		err = b.Prov.ResetSession(user.Session.Provision)
 		if err != nil {
 			log.Err("Reset:", err)
 			failMsg(msg, err.Error())
 			return
 		}
 		msg.Append("The state of the database has been reset.")
-	case COMMAND_HARDRESET:
-		// TODO(anatoly): Refactor
-		if b.Prov.IsLocal() {
-			failMsg(msg, "`hardreset` command is not available in `local` mode.")
-		}
 
-		// Temprorary command for managing sessions.
-		log.Msg("Reestablishing connection")
-		msg.Append("Reestablishing connection to DB, " +
+	case COMMAND_HARDRESET:
+		// TODO(anatoly): Do we need this command in mulocal mode?
+		// Anyone can close all sessions.
+
+		log.Msg("Reinitilizating provision")
+		msg.Append("Reinitilizating DB provision, " +
 			"it may take a couple of minutes...\n" +
 			"If you want to reset the state of the database use `reset` command.")
 
-		// TODO(anatoly): Remove temporary hack.
-
-		b.Prov.StopSession()
-
-		// TODO(anatoly): Temp hack. Remove after provisioning fix.
-		// "Can't attach pancake drive" bug.
-		time.Sleep(2 * time.Second)
-		b.Prov.StopSession()
-
-		res, sessionId, err := b.Prov.StartSession()
+		err = b.stopAllSessions()
 		if err != nil {
-			log.Err("Hardreset:", res, sessionId, err)
+			log.Err("Hardreset:", err)
 			failMsg(msg, err.Error())
 			return
 		}
-		log.Msg("Connection reestablished", res, sessionId, err)
-		msg.Append("Connection reestablished")
-	case COMMAND_HELP:
-		msg.Append(MSG_HELP)
+
+		err = b.Prov.Init()
+		if err != nil {
+			log.Err("Hardreset:", err)
+			failMsg(msg, err.Error())
+			return
+		}
+
+		log.Msg("Provision reinitilized", err)
+		msg.Append("Provision reinitilized")
 	}
 
 	okMsg(msg)
+}
+
+func appendSessionId(text string, u *User) string {
+	s := "No session\n"
+
+	if u != nil && u.Session.Provision != nil && len(u.Session.Provision.Id) > 0 {
+		sessionId := u.Session.Provision.Id
+		s = fmt.Sprintf("Session: `%s`\n", sessionId)
+	}
+
+	return text + s
+}
+
+func appendHelp(text string) string {
+	return text + MSG_HELP
 }
 
 // TODO(anatoly): Retries, error processing.
@@ -568,6 +756,8 @@ func NewUser(chatUser *slack.User, config Config) *User {
 			QuotaCount:    0,
 			QuotaLimit:    config.QuotaLimit,
 			QuotaInterval: config.QuotaInterval,
+			LastActionTs:  time.Now(),
+			IdleInterval:  config.IdleInterval,
 		},
 	}
 
@@ -575,11 +765,9 @@ func NewUser(chatUser *slack.User, config Config) *User {
 }
 
 func (u *User) requestQuota() error {
-	now := time.Now()
-
 	limit := u.Session.QuotaLimit
 	interval := u.Session.QuotaInterval
-	sAgo := uint(math.Floor(now.Sub(u.Session.QuotaTs).Seconds()))
+	sAgo := util.SecondsAgo(u.Session.QuotaTs)
 
 	if sAgo < interval {
 		if u.Session.QuotaCount >= limit {
@@ -595,7 +783,7 @@ func (u *User) requestQuota() error {
 	}
 
 	u.Session.QuotaCount = 1
-	u.Session.QuotaTs = now
+	u.Session.QuotaTs = time.Now()
 	return nil
 }
 
@@ -644,13 +832,4 @@ func runQuery(connStr string, query string) (string, error) {
 	}
 
 	return result, nil
-}
-
-func contains(list []string, s string) bool {
-	for _, item := range list {
-		if s == item {
-			return true
-		}
-	}
-	return false
 }
