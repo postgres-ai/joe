@@ -44,17 +44,25 @@ var opts struct {
 	QuotaLimit    uint `long:"quota-limit" description:"limit request rates to up to 2x of this number" env:"QUOTA_LIMIT" default:"10"`
 	QuotaInterval uint `long:"quota-interval" description:"an time interval (in seconds) to apply a quota-limit" env:"QUOTA_INTERVAL" default:"60"`
 
+	IdleInterval uint `long:"idle-interval" description:"an time interval (in seconds) before user session can be stoped due to idle" env:"IDLE_INTERVAL" default:"3600"`
+
 	ShowHelp func() error `long:"help" description:"Show this help message"`
 }
 
+// TODO(anatoly): Refactor configs and envs.
 type ProvisionConfig struct {
-	Local              bool                         `yaml:"local"`
-	AwsConfiguration   ec2ctrl.Ec2Configuration     `yaml:"awsConfiguration"`
-	LocalConfiguration provision.LocalConfiguration `yaml:"localConfiguration"`
-	EbsVolumeId        string                       `yaml:"ebsVolumeId"`
-	Debug              bool                         `yaml:"debug"`
-	PgVersion          string                       `yaml:"pgVersion"`
-	InitialSnapshot    string                       `yaml:"initialSnapshot"`
+	Mode    string                  `yaml:"mode"`
+	Aws     provision.AwsConfig     `yaml:"aws"`
+	Local   provision.LocalConfig   `yaml:"local"`
+	MuLocal provision.MuLocalConfig `yaml:"mulocal"`
+	Debug   bool                    `yaml:"debug"`
+
+	ZfsPool         string `yaml:"zfsPool"`
+	InitialSnapshot string `yaml:"initialSnapshot"`
+
+	PgVersion    string `yaml:"pgVersion"`
+	PgBindir     string `yaml:"pgBindir"`
+	PgDatasubdir string `yaml:"pgDatasubdir"`
 }
 
 func main() {
@@ -82,49 +90,58 @@ func main() {
 		return
 	}
 	log.DEBUG = provisionConfig.Debug
-	provConf := provision.ProvisionConfiguration{
-		AwsConfiguration:   provisionConfig.AwsConfiguration,
-		LocalConfiguration: provisionConfig.LocalConfiguration,
-		Local:              provisionConfig.Local,
-		Debug:              provisionConfig.Debug,
-		EbsVolumeId:        provisionConfig.EbsVolumeId,
-		InitialSnapshot:    provisionConfig.InitialSnapshot,
-		PgVersion:          provisionConfig.PgVersion,
-		DbUsername:         opts.DbUser,
-		DbPassword:         opts.DbPassword,
-		SshTunnelPort:      opts.DbPort,
+	provConf := provision.Config{
+		Mode:    provisionConfig.Mode,
+		Aws:     provisionConfig.Aws,
+		Local:   provisionConfig.Local,
+		MuLocal: provisionConfig.MuLocal,
+		Debug:   provisionConfig.Debug,
+
+		// ZFS.
+		ZfsPool:         provisionConfig.ZfsPool,
+		InitialSnapshot: provisionConfig.InitialSnapshot,
+
+		// TODO(anatoly): Use opts.DbPort, opts.DbHost for local and direct mode.
+		DbHost:     opts.DbHost,
+		DbUsername: opts.DbUser,
+		DbPassword: opts.DbPassword,
+		DbName:     opts.DbName,
+
+		PgVersion:    provisionConfig.PgVersion,
+		PgBindir:     provisionConfig.PgBindir,
+		PgDatasubdir: provisionConfig.PgDatasubdir,
 	}
 	if !provision.IsValidConfig(provConf) {
 		log.Err("Wrong configuration format.")
 		os.Exit(1)
 	}
 
-	// Start AWS instance and set up SSH tunnel for PG connection.
-	prov := provision.NewProvision(provConf)
-	prov.StopSession()
-	res, sessionId, err := prov.StartSession()
+	// Initialize provisioning.
+	prov, err := provision.NewProvision(provConf)
 	if err != nil {
-		log.Fatal("Start session error", res, sessionId, err)
-	} else {
-		log.Msg("Session started", res, sessionId, err)
+		log.Fatal("Provision constuct failed", err)
 	}
 
-	var connStr = fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
-		opts.DbHost, opts.DbPort, opts.DbUser, opts.DbPassword, opts.DbName)
+	err = prov.Init()
+	if err != nil {
+		log.Fatal("Provision init error", err)
+	}
+	log.Dbg("Provision init ok", err)
+
 	config := bot.Config{
-		ConnStr:       connStr,
 		Port:          opts.ServerPort,
 		Explain:       explainConfig,
 		QuotaLimit:    opts.QuotaLimit,
 		QuotaInterval: opts.QuotaInterval,
+		IdleInterval:  opts.IdleInterval,
+
+		DbName: opts.DbName,
 	}
 
 	var chat = chatapi.NewChat(opts.AccessToken, opts.VerificationToken)
 
 	joeBot := bot.NewBot(config, chat, prov)
 	joeBot.RunServer()
-
-	prov.StopSession()
 }
 
 func parseArgs() ([]string, error) {
@@ -158,14 +175,17 @@ func loadExplainConfig() (pgexplain.ExplainConfig, error) {
 
 func loadProvisionConfig() (ProvisionConfig, error) {
 	var config = ProvisionConfig{
-		AwsConfiguration: ec2ctrl.Ec2Configuration{
-			AwsInstanceType: "r4.large",
-			AwsRegion:       "us-east-1",
-			AwsZone:         "a",
+		Aws: provision.AwsConfig{
+			Ec2: ec2ctrl.Ec2Configuration{
+				AwsInstanceType: "r4.large",
+				AwsRegion:       "us-east-1",
+				AwsZone:         "a",
+			},
 		},
-		Local:           false,
+		Mode:            "aws",
 		Debug:           true,
 		PgVersion:       "9.6",
+		ZfsPool:         "zpool",
 		InitialSnapshot: "db_state_1",
 	}
 

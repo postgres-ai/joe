@@ -1,9 +1,13 @@
 # Copy the following to: ./config/provisioning.yaml
 
-mode: "local"
+mode: "mulocal"
+mulocal:
+  portPool:
+    from: 6000
+    to: 6100
 debug: true
 pgVersion: "11"
-pgBindir: "/usr/lib/postgresql/9.6/bin"
+pgBindir: "/usr/lib/postgresql/9.6/bin/pg_ctl"
 pgDatasubdir: "/pgdata"
 zfsPool: "joepool"
 initialSnapshot: "db_state_1"
