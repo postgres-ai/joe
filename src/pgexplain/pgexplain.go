@@ -48,6 +48,7 @@ type Explain struct {
 
 	PlanningTime  float64 `json:"Planning Time"`
 	ExecutionTime float64 `json:"Execution Time"`
+	TotalTime     float64
 
 	TotalCost float64
 
@@ -259,6 +260,7 @@ func (ex *Explain) calculateParams() {
 	ex.TempReadBlocks = ex.Plan.TempReadBlocks
 	ex.TempWrittenBlocks = ex.Plan.TempWrittenBlocks
 
+	ex.TotalTime = ex.PlanningTime + ex.ExecutionTime
 	ex.IOReadTime = ex.Plan.IOReadTime
 	ex.IOWriteTime = ex.Plan.IOWriteTime
 }
@@ -357,48 +359,49 @@ func (ex *Explain) writeExplainText(writer io.Writer) {
 }
 
 func (ex *Explain) writeStatsText(writer io.Writer) {
-	fmt.Fprintf(writer, "Planning time: %s\n", durationToString(ex.PlanningTime))
-	fmt.Fprintf(writer, "Execution time: %s\n", durationToString(ex.ExecutionTime))
-	fmt.Fprintf(writer, "Total cost: %.2f\n", ex.TotalCost)
+	fmt.Fprintf(writer, "Cost: %.2f\n", ex.TotalCost)
+
+	fmt.Fprintf(writer, "\nTime: %s\n", durationToString(ex.TotalTime))
+	fmt.Fprintf(writer, "  - planning: %s\n", durationToString(ex.PlanningTime))
+	fmt.Fprintf(writer, "  - execution: %s\n", durationToString(ex.ExecutionTime))
+	if ex.IOReadTime > 0 {
+		fmt.Fprintf(writer, "    - I/O read: %s\n", durationToString(ex.IOReadTime))
+	}
+	if ex.IOWriteTime > 0 {
+		fmt.Fprintf(writer, "    - I/O write: %s\n", durationToString(ex.IOWriteTime))
+	}
 
 	fmt.Fprintf(writer, "\nShared buffers:\n")
-	ex.writeBlocks(writer, "hit", ex.SharedHitBlocks, "from the buffer pool")
-	ex.writeBlocks(writer, "read", ex.SharedReadBlocks, "from the OS cache, includes disk IO")
+	ex.writeBlocks(writer, "hits", ex.SharedHitBlocks, "from the buffer pool")
+	ex.writeBlocks(writer, "reads", ex.SharedReadBlocks, "from the OS file cache, including disk I/O")
 	ex.writeBlocks(writer, "dirtied", ex.SharedDirtiedBlocks, "")
-	ex.writeBlocks(writer, "written", ex.SharedWrittenBlocks, "")
+	ex.writeBlocks(writer, "writes", ex.SharedWrittenBlocks, "")
 
 	if ex.LocalHitBlocks > 0 || ex.LocalReadBlocks > 0 ||
 		ex.LocalDirtiedBlocks > 0 || ex.LocalWrittenBlocks > 0 {
 		fmt.Fprintf(writer, "\nLocal buffers:\n")
 	}
 	if ex.LocalHitBlocks > 0 {
-		ex.writeBlocks(writer, "hit", ex.LocalHitBlocks, "")
+		ex.writeBlocks(writer, "hits", ex.LocalHitBlocks, "")
 	}
 	if ex.LocalReadBlocks > 0 {
-		ex.writeBlocks(writer, "read", ex.LocalReadBlocks, "")
+		ex.writeBlocks(writer, "reads", ex.LocalReadBlocks, "")
 	}
 	if ex.LocalDirtiedBlocks > 0 {
 		ex.writeBlocks(writer, "dirtied", ex.LocalDirtiedBlocks, "")
 	}
 	if ex.LocalWrittenBlocks > 0 {
-		ex.writeBlocks(writer, "written", ex.LocalWrittenBlocks, "")
+		ex.writeBlocks(writer, "writes", ex.LocalWrittenBlocks, "")
 	}
 
 	if ex.TempReadBlocks > 0 || ex.TempWrittenBlocks > 0 {
-		fmt.Fprintf(writer, "\nTmp buffers:\n")
+		fmt.Fprintf(writer, "\nTemp buffers:\n")
 	}
 	if ex.TempReadBlocks > 0 {
-		ex.writeBlocks(writer, "read", ex.TempReadBlocks, "")
+		ex.writeBlocks(writer, "reads", ex.TempReadBlocks, "")
 	}
 	if ex.TempWrittenBlocks > 0 {
-		ex.writeBlocks(writer, "written", ex.TempWrittenBlocks, "")
-	}
-
-	if ex.IOReadTime > 0 {
-		fmt.Fprintf(writer, "I/O read time: %s\n", durationToString(ex.IOReadTime))
-	}
-	if ex.IOWriteTime > 0 {
-		fmt.Fprintf(writer, "I/O write time: %s\n", durationToString(ex.IOWriteTime))
+		ex.writeBlocks(writer, "writes", ex.TempWrittenBlocks, "")
 	}
 }
 
