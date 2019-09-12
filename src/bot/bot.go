@@ -35,6 +35,19 @@ const COMMAND_RESET = "reset"
 const COMMAND_HARDRESET = "hardreset"
 const COMMAND_HELP = "help"
 
+const COMMAND_PSQL_D = `\d`
+const COMMAND_PSQL_DP = `\d+`
+const COMMAND_PSQL_DT = `\dt`
+const COMMAND_PSQL_DTP = `\dt+`
+const COMMAND_PSQL_DI = `\di`
+const COMMAND_PSQL_DIP = `\di+`
+const COMMAND_PSQL_L = `\l`
+const COMMAND_PSQL_LP = `\l+`
+const COMMAND_PSQL_DV = `\dv`
+const COMMAND_PSQL_DVP = `\dv+`
+const COMMAND_PSQL_DM = `\dm`
+const COMMAND_PSQL_DMP = `\dm+`
+
 var supportedCommands = []string{
 	COMMAND_EXPLAIN,
 	COMMAND_EXEC,
@@ -42,6 +55,34 @@ var supportedCommands = []string{
 	COMMAND_RESET,
 	COMMAND_HARDRESET,
 	COMMAND_HELP,
+
+	COMMAND_PSQL_D,
+	COMMAND_PSQL_DP,
+	COMMAND_PSQL_DT,
+	COMMAND_PSQL_DTP,
+	COMMAND_PSQL_DI,
+	COMMAND_PSQL_DIP,
+	COMMAND_PSQL_L,
+	COMMAND_PSQL_LP,
+	COMMAND_PSQL_DV,
+	COMMAND_PSQL_DVP,
+	COMMAND_PSQL_DM,
+	COMMAND_PSQL_DMP,
+}
+
+var allowedPsqlCommands = []string{
+	COMMAND_PSQL_D,
+	COMMAND_PSQL_DP,
+	COMMAND_PSQL_DT,
+	COMMAND_PSQL_DTP,
+	COMMAND_PSQL_DI,
+	COMMAND_PSQL_DIP,
+	COMMAND_PSQL_L,
+	COMMAND_PSQL_LP,
+	COMMAND_PSQL_DV,
+	COMMAND_PSQL_DVP,
+	COMMAND_PSQL_DM,
+	COMMAND_PSQL_DMP,
 }
 
 const SUBTYPE_GENERAL = ""
@@ -60,6 +101,7 @@ const MSG_HELP = "• `explain` — analyze your query (SELECT, INSERT, DELETE, 
 	"• `snapshot` — create a snapshot of the current database state\n" +
 	"• `reset` — revert the database to the initial state (usually takes less than a minute, :warning: all changes will be lost)\n" +
 	"• `hardreset` — re-provision the database instance (usually takes a couple of minutes, :warning: all changes will be lost)\n" +
+	"• `\\d`, `\\d+`, `\\dt`, `\\dt+`, `\\di`, `\\di+`, `\\l`, `\\l+`, `\\dv`, `\\dv+`, `\\dm`, `\\dm+` — psql meta information commands\n" +
 	"• `help` — this message\n"
 
 const MSG_QUERY_REQ = "Option query required for this command, e.g. `query select 1`"
@@ -132,6 +174,22 @@ func NewBot(config Config, chat *chatapi.Chat, prov provision.Provision) *Bot {
 		Users:  make(map[string]*User),
 	}
 	return &bot
+}
+
+func NewUser(chatUser *slack.User, config Config) *User {
+	user := User{
+		ChatUser: chatUser,
+		Session: UserSession{
+			QuotaTs:       time.Now(),
+			QuotaCount:    0,
+			QuotaLimit:    config.QuotaLimit,
+			QuotaInterval: config.QuotaInterval,
+			LastActionTs:  time.Now(),
+			IdleInterval:  config.IdleInterval,
+		},
+	}
+
+	return &user
 }
 
 func (b *Bot) stopIdleSessions() error {
@@ -488,8 +546,8 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 
 	runMsg(msg)
 
-	switch command {
-	case COMMAND_EXPLAIN:
+	switch {
+	case command == COMMAND_EXPLAIN:
 		var detailsText string
 		var trnd bool
 
@@ -622,7 +680,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 			return
 		}
 
-	case COMMAND_EXEC:
+	case command == COMMAND_EXEC:
 		if query == "" {
 			failMsg(msg, MSG_QUERY_REQ)
 			return
@@ -639,7 +697,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		msg.Append(fmt.Sprintf("DDL has been executed. Execution time: %s",
 			elapsed.String()))
 
-	case COMMAND_SNAPSHOT:
+	case command == COMMAND_SNAPSHOT:
 		if query == "" {
 			failMsg(msg, MSG_QUERY_REQ)
 			return
@@ -652,7 +710,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 			return
 		}
 
-	case COMMAND_RESET:
+	case command == COMMAND_RESET:
 		msg.Append("Resetting the state of the database...")
 
 		// TODO(anatoly): "zfs rollback" deletes newer snapshots. Users will be able
@@ -665,7 +723,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		}
 		msg.Append("The state of the database has been reset.")
 
-	case COMMAND_HARDRESET:
+	case command == COMMAND_HARDRESET:
 		// TODO(anatoly): Do we need this command in mulocal mode?
 		// Anyone can close all sessions.
 
@@ -690,6 +748,31 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 
 		log.Msg("Provision reinitilized", err)
 		msg.Append("Provision reinitilized")
+	case util.Contains(allowedPsqlCommands, command):
+		// See provision.runPsqlStrict for more comments.
+		if strings.ContainsAny(query, "\n;\\ ") {
+			err = fmt.Errorf("Query should not contain semicolons, " +
+				"new lines, spaces, and excess backslashes.")
+			log.Err(err)
+			failMsg(msg, err.Error())
+			return
+		}
+
+		psqlCmd := command + " " + query
+
+		out, err := b.Prov.RunPsql(user.Session.Provision, psqlCmd)
+		if err != nil {
+			log.Err(err)
+			failMsg(msg, err.Error())
+			return
+		}
+
+		err = msg.Append(fmt.Sprintf("```%s```", out))
+		if err != nil {
+			log.Err("Show psql output: ", err)
+			failMsg(msg, err.Error())
+			return
+		}
 	}
 
 	okMsg(msg)
@@ -752,22 +835,6 @@ func formatSlackMessage(msg string) string {
 	msg = strings.ReplaceAll(msg, "’", "'")
 
 	return msg
-}
-
-func NewUser(chatUser *slack.User, config Config) *User {
-	user := User{
-		ChatUser: chatUser,
-		Session: UserSession{
-			QuotaTs:       time.Now(),
-			QuotaCount:    0,
-			QuotaLimit:    config.QuotaLimit,
-			QuotaInterval: config.QuotaInterval,
-			LastActionTs:  time.Now(),
-			IdleInterval:  config.IdleInterval,
-		},
-	}
-
-	return &user
 }
 
 func (u *User) requestQuota() error {

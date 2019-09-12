@@ -90,6 +90,11 @@ func (j *provisionLocal) CreateSnapshot(name string) error {
 	return fmt.Errorf("Unsupported in `local` mode.")
 }
 
+func (j *provisionLocal) RunPsql(session *Session, command string) (string, error) {
+	pgConf := j.getPgConfig(session.Name, session.Port)
+	return runPsqlStrict(j.runner, command, pgConf)
+}
+
 // Private methods.
 func (j *provisionLocal) rollbackState(snapshot string) error {
 	log.Dbg("Rollback the disk with the database to the specified snapshot.")

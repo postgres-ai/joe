@@ -216,6 +216,11 @@ func (j *provisionMuLocal) CreateSnapshot(name string) error {
 	return fmt.Errorf("Unsupported in `mulocal` mode.")
 }
 
+func (j *provisionMuLocal) RunPsql(session *Session, command string) (string, error) {
+	pgConf := j.getPgConfig(session.Name, session.Port)
+	return runPsqlStrict(j.runner, command, pgConf)
+}
+
 // Other methods.
 func (j *provisionMuLocal) initPortPool() error {
 	// Init session pool.

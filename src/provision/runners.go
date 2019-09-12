@@ -28,6 +28,7 @@ type Runner interface {
 type RunnerError struct {
 	Msg        string
 	ExitStatus int
+	Stderr     string
 }
 
 func NewRunnerError(command string, stderr string, e error) error {
@@ -57,6 +58,7 @@ func NewRunnerError(command string, stderr string, e error) error {
 	return RunnerError{
 		Msg:        msg,
 		ExitStatus: exitStatus,
+		Stderr:     stderr,
 	}
 }
 
@@ -75,6 +77,11 @@ func NewLocalRunner() *LocalRunner {
 }
 
 func (r *LocalRunner) Run(command string, options ...bool) (string, error) {
+	command = strings.Trim(command, " \n")
+	if len(command) == 0 {
+		return "", fmt.Errorf("Empty command")
+	}
+
 	logsEnabled := parseOptions(options...)
 
 	logCommand := HIDDEN
@@ -96,8 +103,11 @@ func (r *LocalRunner) Run(command string, options ...bool) (string, error) {
 	cmd.Stdout = &out
 	cmd.Stderr = &stderr
 
+	// Psql with the file option returns error reponse to stderr with
+	// success exit code. In that case err will be nil, but we need
+	// to treat the case as error and read proper output.
 	err := cmd.Run()
-	if err != nil {
+	if err != nil || len(stderr.String()) > 0 {
 		rerr := NewRunnerError(logCommand, stderr.String(), err)
 
 		log.Err(rerr)
