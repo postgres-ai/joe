@@ -6,14 +6,12 @@ Based on the code from Simon Engledew @ https://github.com/simon-engledew/gocmdp
 package pgexplain
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
-
-	"github.com/dustin/go-humanize"
-	"github.com/mitchellh/go-wordwrap"
 )
 
 type EstimateDirection string
@@ -45,79 +43,108 @@ const (
 )
 
 type Explain struct {
-	Plan                Plan          `json:"Plan"`
-	PlanningTime        float64       `json:"Planning Time"`
-	Triggers            []interface{} `json:"Triggers"`
-	ExecutionTime       float64       `json:"Execution Time"`
-	TotalCost           float64
-	MaxRows             uint64
-	MaxCost             float64
-	MaxDuration         float64
-	ContainsSeqScan     bool
+	Plan     Plan          `json:"Plan"`
+	Triggers []interface{} `json:"Triggers"`
+
+	PlanningTime  float64 `json:"Planning Time"`
+	ExecutionTime float64 `json:"Execution Time"`
+
+	TotalCost float64
+
+	// Buffers.
 	SharedHitBlocks     uint64
-	SharedWrittenBlocks uint64
+	SharedDirtiedBlocks uint64
 	SharedReadBlocks    uint64
-	Config              ExplainConfig `json:"-"`
+	SharedWrittenBlocks uint64
+	LocalHitBlocks      uint64
+	LocalReadBlocks     uint64
+	LocalDirtiedBlocks  uint64
+	LocalWrittenBlocks  uint64
+	TempReadBlocks      uint64
+	TempWrittenBlocks   uint64
+
+	// IO timing.
+	IOReadTime  float64
+	IOWriteTime float64
+
+	MaxRows         uint64
+	MaxCost         float64
+	MaxDuration     float64
+	ContainsSeqScan bool
+
+	Config ExplainConfig `json:"-"`
 }
 
 type Plan struct {
+	Plans []Plan `json:"Plans"`
+
+	// Buffers.
+	SharedHitBlocks     uint64 `json:"Shared Hit Blocks"`
+	SharedReadBlocks    uint64 `json:"Shared Read Blocks"`
+	SharedDirtiedBlocks uint64 `json:"Shared Dirtied Blocks"`
+	SharedWrittenBlocks uint64 `json:"Shared Written Blocks"`
+	LocalHitBlocks      uint64 `json:"Local Hit Blocks"`
+	LocalReadBlocks     uint64 `json:"Local Read Blocks"`
+	LocalDirtiedBlocks  uint64 `json:"Local Dirtied Blocks"`
+	LocalWrittenBlocks  uint64 `json:"Local Written Blocks"`
+	TempReadBlocks      uint64 `json:"Temp Read Blocks"`
+	TempWrittenBlocks   uint64 `json:"Temp Written Blocks"`
+
+	// IO timing.
+	IOReadTime  float64 `json:"I/O Read Time"`  // ms
+	IOWriteTime float64 `json:"I/O Write Time"` // ms
+
+	// Actual.
+	ActualLoops       uint64  `json:"Actual Loops"`
+	ActualRows        uint64  `json:"Actual Rows"`
+	ActualStartupTime float64 `json:"Actual Startup Time"`
+	ActualTotalTime   float64 `json:"Actual Total Time"`
+
+	// Estimates.
+	PlanRows    uint64  `json:"Plan Rows"`
+	PlanWidth   uint64  `json:"Plan Width"`
+	StartupCost float64 `json:"Startup Cost"`
+	TotalCost   float64 `json:"Total Cost"`
+
+	// General.
+	Alias                     string   `json:"Alias"`
+	CteName                   string   `json:"CTE Name"`
+	Filter                    string   `json:"Filter"`
+	GroupKey                  []string `json:"Group Key"`
+	HashBatches               uint64   `json:"Hash Batches"`
+	HashBuckets               uint64   `json:"Hash Buckets"`
+	HashCondition             string   `json:"Hash Cond"`
+	HeapFetches               uint64   `json:"Heap Fetches"`
+	IndexCondition            string   `json:"Index Cond"`
+	IndexName                 string   `json:"Index Name"`
+	JoinType                  string   `json:"Join Type"`
+	NodeType                  NodeType `json:"Node Type"`
+	Operation                 string   `json:"Operation"`
+	OriginalHashBatches       uint64   `json:"Original Hash Batches"`
+	OriginalHashBuckets       uint64   `json:"Original Hash Buckets"`
+	Output                    []string `json:"Output"`
+	ParentRelationship        string   `json:"Parent Relationship"`
+	PeakMemoryUsage           uint64   `json:"Peak Memory Usage"` // kB
+	RelationName              string   `json:"Relation Name"`
+	RowsRemovedByFilter       uint64   `json:"Rows Removed by Filter"`
+	RowsRemovedByIndexRecheck uint64   `json:"Rows Removed by Index Recheck"`
+	ScanDirection             string   `json:"Scan Direction"`
+	Schema                    string   `json:"Schema"`
+	SortKey                   []string `json:"Sort Key"`
+	SortMethod                string   `json:"Sort Method"`
+	SortSpaceType             string   `json:"Sort Space Type"`
+	SortSpaceUsed             uint64   `json:"Sort Space Used"` // kB
+	Strategy                  string   `json:"Strategy"`
+	SubplanName               string   `json:"Subplan Name"`
+
+	// Calculated params.
 	ActualCost                  float64
 	ActualDuration              float64
-	ActualLoops                 uint64  `json:"Actual Loops"`
-	ActualRows                  uint64  `json:"Actual Rows"`
-	ActualStartupTime           float64 `json:"Actual Startup Time"`
-	ActualTotalTime             float64 `json:"Actual Total Time"`
-	Alias                       string  `json:"Alias"`
 	Costliest                   bool
-	CteName                     string   `json:"CTE Name"`
-	Filter                      string   `json:"Filter"`
-	GroupKey                    []string `json:"Group Key"`
-	HashCondition               string   `json:"Hash Cond"`
-	HeapFetches                 uint64   `json:"Heap Fetches"`
-	IndexCondition              string   `json:"Index Cond"`
-	IndexName                   string   `json:"Index Name"`
-	IOReadTime                  float64  `json:"I/O Read Time"`
-	IOWriteTime                 float64  `json:"I/O Write Time"`
-	JoinType                    string   `json:"Join Type"`
 	Largest                     bool
-	LocalDirtiedBlocks          uint64   `json:"Local Dirtied Blocks"`
-	LocalHitBlocks              uint64   `json:"Local Hit Blocks"`
-	LocalReadBlocks             uint64   `json:"Local Read Blocks"`
-	LocalWrittenBlocks          uint64   `json:"Local Written Blocks"`
-	NodeType                    NodeType `json:"Node Type"`
-	Operation                   string   `json:"Operation"`
-	Output                      []string `json:"Output"`
-	ParentRelationship          string   `json:"Parent Relationship"`
 	PlannerRowEstimateDirection EstimateDirection
 	PlannerRowEstimateFactor    float64
-	PlanRows                    uint64   `json:"Plan Rows"`
-	Plans                       []Plan   `json:"Plans"`
-	PlanWidth                   uint64   `json:"Plan Width"`
-	RelationName                string   `json:"Relation Name"`
-	RowsRemovedByFilter         uint64   `json:"Rows Removed by Filter"`
-	RowsRemovedByIndexRecheck   uint64   `json:"Rows Removed by Index Recheck"`
-	ScanDirection               string   `json:"Scan Direction"`
-	Schema                      string   `json:"Schema"`
-	SharedDirtiedBlocks         uint64   `json:"Shared Dirtied Blocks"`
-	SharedHitBlocks             uint64   `json:"Shared Hit Blocks"`
-	SharedReadBlocks            uint64   `json:"Shared Read Blocks"`
-	SharedWrittenBlocks         uint64   `json:"Shared Written Blocks"`
-	SubplanName                 string   `json:"Subplan Name"`
-	SortKey                     []string `json:"Sort Key"`
-	SortMethod                  string   `json:"Sort Method"`
-	SortSpaceUsed               uint64   `json:"Sort Space Used"` // kB
-	SortSpaceType               string   `json:"Sort Space Type"`
-	HashBuckets                 uint64   `json:"Hash Buckets"`
-	OriginalHashBuckets         uint64   `json:"Original Hash Buckets"`
-	HashBatches                 uint64   `json:"Hash Batches"`
-	OriginalHashBatches         uint64   `json:"Original Hash Batches"`
-	PeakMemoryUsage             uint64   `json:"Peak Memory Usage"` // kB
 	Slowest                     bool
-	StartupCost                 float64 `json:"Startup Cost"`
-	Strategy                    string  `json:"Strategy"`
-	TempReadBlocks              uint64  `json:"Temp Read Blocks"`
-	TempWrittenBlocks           uint64  `json:"Temp Written Blocks"`
-	TotalCost                   float64 `json:"Total Cost"`
 }
 
 const (
@@ -158,43 +185,100 @@ func NewExplain(explainJson string, config ExplainConfig) (*Explain, error) {
 	}
 
 	// TODO(anatoly): Is it possible to have more than one explain?
-	var explain = explains[0]
-	processExplain(&explain)
+	var ex = &explains[0]
+	ex.processExplain()
 
-	explain.Config = config
+	ex.Config = config
 
-	return &explain, nil
+	return ex, nil
 }
 
-func processExplain(explain *Explain) {
-	calculateBuffers(explain)
-
-	processPlan(explain, &explain.Plan)
-	calculateOutlierNodes(explain, &explain.Plan)
+func (ex *Explain) RenderPlanText() string {
+	buf := new(bytes.Buffer)
+	ex.writeExplainText(buf)
+	return buf.String()
 }
 
-func calculateBuffers(explain *Explain) {
-	explain.SharedHitBlocks = explain.Plan.SharedHitBlocks
-	explain.SharedWrittenBlocks = explain.Plan.SharedWrittenBlocks
-	explain.SharedReadBlocks = explain.Plan.SharedReadBlocks
+func (ex *Explain) RenderStats() string {
+	buf := new(bytes.Buffer)
+	ex.writeStatsText(buf)
+	return buf.String()
 }
 
-func processPlan(explain *Explain, plan *Plan) {
-	checkSeqScan(explain, plan)
-	calculatePlannerEstimate(explain, plan)
-	calculateActuals(explain, plan)
-	calculateMaximums(explain, plan)
+func (ex *Explain) GetTips() ([]Tip, error) {
+	var tips []Tip
+
+	// T1: SeqScan used.
+	if ex.ContainsSeqScan {
+		tip, err := ex.Config.getTipByCode(TIP_SEQSCAN_USED)
+		if err != nil {
+			return make([]Tip, 0), err
+		}
+		tips = append(tips, tip)
+	}
+
+	// T2: Buffers read too big.
+	if ex.SharedReadBlocks > 100 {
+		tip, err := ex.Config.getTipByCode(TIP_BUFFERS_READ_BIG)
+		if err != nil {
+			return make([]Tip, 0), err
+		}
+		tips = append(tips, tip)
+	}
+
+	// T3: Buffers hit too big.
+	if ex.SharedHitBlocks > 1000 {
+		tip, err := ex.Config.getTipByCode(TIP_BUFFERS_HIT_BIG)
+		if err != nil {
+			return make([]Tip, 0), err
+		}
+		tips = append(tips, tip)
+	}
+
+	return tips, nil
+}
+
+func (ex *Explain) processExplain() {
+	ex.calculateParams()
+
+	ex.processPlan(&ex.Plan)
+	ex.calculateOutlierNodes(&ex.Plan)
+}
+
+func (ex *Explain) calculateParams() {
+	ex.SharedHitBlocks = ex.Plan.SharedHitBlocks
+	ex.SharedReadBlocks = ex.Plan.SharedReadBlocks
+	ex.SharedDirtiedBlocks = ex.Plan.SharedDirtiedBlocks
+	ex.SharedWrittenBlocks = ex.Plan.SharedWrittenBlocks
+
+	ex.LocalHitBlocks = ex.Plan.LocalHitBlocks
+	ex.LocalReadBlocks = ex.Plan.LocalReadBlocks
+	ex.LocalDirtiedBlocks = ex.Plan.LocalDirtiedBlocks
+	ex.LocalWrittenBlocks = ex.Plan.LocalWrittenBlocks
+
+	ex.TempReadBlocks = ex.Plan.TempReadBlocks
+	ex.TempWrittenBlocks = ex.Plan.TempWrittenBlocks
+
+	ex.IOReadTime = ex.Plan.IOReadTime
+	ex.IOWriteTime = ex.Plan.IOWriteTime
+}
+
+func (ex *Explain) processPlan(plan *Plan) {
+	ex.checkSeqScan(plan)
+	ex.calculatePlannerEstimate(plan)
+	ex.calculateActuals(plan)
+	ex.calculateMaximums(plan)
 
 	for index := range plan.Plans {
-		processPlan(explain, &plan.Plans[index])
+		ex.processPlan(&plan.Plans[index])
 	}
 }
 
-func checkSeqScan(explain *Explain, plan *Plan) {
-	explain.ContainsSeqScan = explain.ContainsSeqScan || plan.NodeType == SequenceScan
+func (ex *Explain) checkSeqScan(plan *Plan) {
+	ex.ContainsSeqScan = ex.ContainsSeqScan || plan.NodeType == SequenceScan
 }
 
-func calculatePlannerEstimate(explain *Explain, plan *Plan) {
+func (ex *Explain) calculatePlannerEstimate(plan *Plan) {
 	plan.PlannerRowEstimateFactor = 0
 
 	if plan.PlanRows == plan.ActualRows {
@@ -215,7 +299,7 @@ func calculatePlannerEstimate(explain *Explain, plan *Plan) {
 	}
 }
 
-func calculateActuals(explain *Explain, plan *Plan) {
+func (ex *Explain) calculateActuals(plan *Plan) {
 	plan.ActualDuration = plan.ActualTotalTime
 	plan.ActualCost = plan.TotalCost
 
@@ -230,65 +314,31 @@ func calculateActuals(explain *Explain, plan *Plan) {
 		plan.ActualCost = 0
 	}
 
-	explain.TotalCost = explain.TotalCost + plan.ActualCost
+	ex.TotalCost = ex.TotalCost + plan.ActualCost
 
 	plan.ActualDuration = plan.ActualDuration * float64(plan.ActualLoops)
 }
 
-func calculateMaximums(explain *Explain, plan *Plan) {
-	if explain.MaxRows < plan.ActualRows {
-		explain.MaxRows = plan.ActualRows
+func (ex *Explain) calculateMaximums(plan *Plan) {
+	if ex.MaxRows < plan.ActualRows {
+		ex.MaxRows = plan.ActualRows
 	}
-	if explain.MaxCost < plan.ActualCost {
-		explain.MaxCost = plan.ActualCost
+	if ex.MaxCost < plan.ActualCost {
+		ex.MaxCost = plan.ActualCost
 	}
-	if explain.MaxDuration < plan.ActualDuration {
-		explain.MaxDuration = plan.ActualDuration
+	if ex.MaxDuration < plan.ActualDuration {
+		ex.MaxDuration = plan.ActualDuration
 	}
 }
 
-func calculateOutlierNodes(explain *Explain, plan *Plan) {
-	plan.Costliest = plan.ActualCost == explain.MaxCost
-	plan.Largest = plan.ActualRows == explain.MaxRows
-	plan.Slowest = plan.ActualDuration == explain.MaxDuration
+func (ex *Explain) calculateOutlierNodes(plan *Plan) {
+	plan.Costliest = plan.ActualCost == ex.MaxCost
+	plan.Largest = plan.ActualRows == ex.MaxRows
+	plan.Slowest = plan.ActualDuration == ex.MaxDuration
 
 	for index := range plan.Plans {
-		calculateOutlierNodes(explain, &plan.Plans[index])
+		ex.calculateOutlierNodes(&plan.Plans[index])
 	}
-}
-
-// Explain Recommendations.
-func (e *Explain) GetTips() ([]Tip, error) {
-	var tips []Tip
-
-	// T1: SeqScan used.
-	if e.ContainsSeqScan {
-		tip, err := e.Config.getTipByCode(TIP_SEQSCAN_USED)
-		if err != nil {
-			return make([]Tip, 0), err
-		}
-		tips = append(tips, tip)
-	}
-
-	// T2: Buffers read too big.
-	if e.SharedReadBlocks > 100 {
-		tip, err := e.Config.getTipByCode(TIP_BUFFERS_READ_BIG)
-		if err != nil {
-			return make([]Tip, 0), err
-		}
-		tips = append(tips, tip)
-	}
-
-	// T3: Buffers hit too big.
-	if e.SharedHitBlocks > 1000 {
-		tip, err := e.Config.getTipByCode(TIP_BUFFERS_HIT_BIG)
-		if err != nil {
-			return make([]Tip, 0), err
-		}
-		tips = append(tips, tip)
-	}
-
-	return tips, nil
 }
 
 func (config *ExplainConfig) getTipByCode(code string) (Tip, error) {
@@ -302,22 +352,70 @@ func (config *ExplainConfig) getTipByCode(code string) (Tip, error) {
 	return Tip{}, errors.New("Tip not found, check your explain config")
 }
 
-// Explain Visualization.
-func (e *Explain) Visualize(writer io.Writer) {
-	writeExplainText(writer, e)
+func (ex *Explain) writeExplainText(writer io.Writer) {
+	ex.writePlanText(writer, &ex.Plan, " ", 0, len(ex.Plan.Plans) == 1)
 }
 
-func writeExplainText(writer io.Writer, explain *Explain) {
-	writePlanText(writer, explain, &explain.Plan, " ", 0, len(explain.Plan.Plans) == 1)
-	fmt.Fprintf(writer, " Planning time: %s\n", durationToString(explain.PlanningTime))
-	fmt.Fprintf(writer, " Execution time: %s\n", durationToString(explain.ExecutionTime))
-	fmt.Fprintf(writer, " Total Cost: %.2f\n", explain.TotalCost)
-	fmt.Fprintf(writer, " Buffers Hit: %d\n", explain.SharedHitBlocks)
-	fmt.Fprintf(writer, " Buffers Written: %d\n", explain.SharedWrittenBlocks)
-	fmt.Fprintf(writer, " Buffers Read: %d\n", explain.SharedReadBlocks)
+func (ex *Explain) writeStatsText(writer io.Writer) {
+	fmt.Fprintf(writer, "Planning time: %s\n", durationToString(ex.PlanningTime))
+	fmt.Fprintf(writer, "Execution time: %s\n", durationToString(ex.ExecutionTime))
+	fmt.Fprintf(writer, "Total cost: %.2f\n", ex.TotalCost)
+
+	fmt.Fprintf(writer, "\nShared buffers:\n")
+	ex.writeBlocks(writer, "hit", ex.SharedHitBlocks, "from the buffer pool")
+	ex.writeBlocks(writer, "read", ex.SharedReadBlocks, "from the OS cache, includes disk IO")
+	ex.writeBlocks(writer, "dirtied", ex.SharedDirtiedBlocks, "")
+	ex.writeBlocks(writer, "written", ex.SharedWrittenBlocks, "")
+
+	if ex.LocalHitBlocks > 0 || ex.LocalReadBlocks > 0 ||
+		ex.LocalDirtiedBlocks > 0 || ex.LocalWrittenBlocks > 0 {
+		fmt.Fprintf(writer, "\nLocal buffers:\n")
+	}
+	if ex.LocalHitBlocks > 0 {
+		ex.writeBlocks(writer, "hit", ex.LocalHitBlocks, "")
+	}
+	if ex.LocalReadBlocks > 0 {
+		ex.writeBlocks(writer, "read", ex.LocalReadBlocks, "")
+	}
+	if ex.LocalDirtiedBlocks > 0 {
+		ex.writeBlocks(writer, "dirtied", ex.LocalDirtiedBlocks, "")
+	}
+	if ex.LocalWrittenBlocks > 0 {
+		ex.writeBlocks(writer, "written", ex.LocalWrittenBlocks, "")
+	}
+
+	if ex.TempReadBlocks > 0 || ex.TempWrittenBlocks > 0 {
+		fmt.Fprintf(writer, "\nTmp buffers:\n")
+	}
+	if ex.TempReadBlocks > 0 {
+		ex.writeBlocks(writer, "read", ex.TempReadBlocks, "")
+	}
+	if ex.TempWrittenBlocks > 0 {
+		ex.writeBlocks(writer, "written", ex.TempWrittenBlocks, "")
+	}
+
+	if ex.IOReadTime > 0 {
+		fmt.Fprintf(writer, "I/O read time: %s\n", durationToString(ex.IOReadTime))
+	}
+	if ex.IOWriteTime > 0 {
+		fmt.Fprintf(writer, "I/O write time: %s\n", durationToString(ex.IOWriteTime))
+	}
 }
 
-func writePlanText(writer io.Writer, explain *Explain, plan *Plan, prefix string, depth int, lastChild bool) {
+func (ex *Explain) writeBlocks(writer io.Writer, name string, blocks uint64, cmmt string) {
+	if len(cmmt) > 0 {
+		cmmt = " " + cmmt
+	}
+
+	if blocks == 0 {
+		fmt.Fprintf(writer, "  - %s: 0%s\n", name, cmmt)
+		return
+	}
+
+	fmt.Fprintf(writer, "  - %s: %d (~%s)%s\n", name, blocks, blocksToBytes(blocks), cmmt)
+}
+
+func (ex *Explain) writePlanText(writer io.Writer, plan *Plan, prefix string, depth int, lastChild bool) {
 	currentPrefix := prefix
 	subplanPrefix := ""
 
@@ -346,7 +444,7 @@ func writePlanText(writer io.Writer, explain *Explain, plan *Plan, prefix string
 	writePlanTextNodeDetails(outputFn, plan)
 
 	for index := range plan.Plans {
-		writePlanText(writer, explain, &plan.Plans[index], currentPrefix, depth+1, index == len(plan.Plans)-1)
+		ex.writePlanText(writer, &plan.Plans[index], currentPrefix, depth+1, index == len(plan.Plans)-1)
 	}
 }
 
@@ -494,161 +592,5 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 
 	if buffers != "" {
 		outputFn("Buffers: %s", buffers)
-	}
-}
-
-func (e *Explain) VisualizeTree(writer io.Writer) {
-	writeExplainTree(writer, e)
-}
-
-func writeExplainTree(writer io.Writer, explain *Explain) {
-	fmt.Fprintf(writer, "Total Cost: %s\n", humanize.Commaf(explain.TotalCost))
-	fmt.Fprintf(writer, "Planning Time: %s\n", durationToString(explain.PlanningTime))
-	fmt.Fprintf(writer, "Execution Time: %s\n", durationToString(explain.ExecutionTime))
-	fmt.Fprintf(writer, "Buffers Hit: %d\n", explain.SharedHitBlocks)
-	fmt.Fprintf(writer, "Buffers Written: %d\n", explain.SharedWrittenBlocks)
-	fmt.Fprintf(writer, "Buffers Read: %d\n", explain.SharedReadBlocks)
-	fmt.Fprintf(writer, "┬\n")
-
-	writePlanTree(writer, explain, &explain.Plan, "", 0, len(explain.Plan.Plans) == 1)
-}
-
-func durationToString(value float64) string {
-	if value < 1000 {
-		return fmt.Sprintf("%.3f ms", value)
-	} else if value < 60000 {
-		return fmt.Sprintf("%.3f s", value/1000.0)
-	} else {
-		return fmt.Sprintf("%.3f m", value/60000.0)
-	}
-}
-
-func formatDetails(plan *Plan) string {
-	var details []string
-
-	if plan.ScanDirection != "" {
-		details = append(details, plan.ScanDirection)
-	}
-
-	if plan.Strategy != "" {
-		details = append(details, plan.Strategy)
-	}
-
-	if len(details) > 0 {
-		return fmt.Sprintf(" [%v]", strings.Join(details, ", "))
-	}
-
-	return ""
-}
-
-func formatTags(plan *Plan) string {
-	var tags []string
-
-	if plan.Slowest {
-		tags = append(tags, "slowest")
-	}
-	if plan.Costliest {
-		tags = append(tags, "costliest")
-	}
-	if plan.Largest {
-		tags = append(tags, "largest")
-	}
-	if plan.PlannerRowEstimateFactor >= 100 {
-		tags = append(tags, "bad estimate")
-	}
-
-	return strings.Join(tags, " ")
-}
-
-func getTerminator(index int, plan *Plan) string {
-	if index == 0 {
-		if len(plan.Plans) == 0 {
-			return "⌡► "
-		} else {
-			return "├►  "
-		}
-	} else {
-		if len(plan.Plans) == 0 {
-			return "   "
-		} else {
-			return "│  "
-		}
-	}
-}
-
-func writePlanTree(writer io.Writer, explain *Explain, plan *Plan, prefix string, depth int, lastChild bool) {
-	currentPrefix := prefix
-
-	var outputFn = func(format string, a ...interface{}) (int, error) {
-		return fmt.Fprintf(writer, fmt.Sprintf("%s%s\n", currentPrefix, format), a...)
-	}
-
-	outputFn("│")
-
-	joint := "├"
-	if len(plan.Plans) > 1 || lastChild {
-		joint = "└"
-	}
-
-	outputFn("%v %v%v %v", joint+"─⌠", plan.NodeType, formatDetails(plan), formatTags(plan))
-
-	if len(plan.Plans) > 1 || lastChild {
-		prefix += "  "
-	} else {
-		prefix += "│ "
-	}
-
-	currentPrefix = prefix + "│ "
-
-	outputFn("○ %v %v (%.0f%%)", "Duration:", durationToString(plan.ActualDuration), (plan.ActualDuration/explain.ExecutionTime)*100)
-
-	outputFn("○ %v %v (%.0f%%)", "Cost:", humanize.Commaf(plan.ActualCost), (plan.ActualCost/explain.TotalCost)*100)
-
-	outputFn("○ %v %v", "Rows:", humanize.Comma(int64(plan.ActualRows)))
-
-	currentPrefix = currentPrefix + "  "
-
-	if plan.JoinType != "" {
-		outputFn("%v %v", plan.JoinType, "join")
-	}
-
-	if plan.RelationName != "" {
-		outputFn("%v %v.%v", "on", plan.Schema, plan.RelationName)
-	}
-
-	if plan.IndexName != "" {
-		outputFn("%v %v", "using", plan.IndexName)
-	}
-
-	if plan.IndexCondition != "" {
-		outputFn("%v %v", "condition", plan.IndexCondition)
-	}
-
-	if plan.Filter != "" {
-		outputFn("%v %v %v", "filter", plan.Filter, fmt.Sprintf("[-%v rows]", humanize.Comma(int64(plan.RowsRemovedByFilter))))
-	}
-
-	if plan.HashCondition != "" {
-		outputFn("%v %v", "on", plan.HashCondition)
-	}
-
-	if plan.CteName != "" {
-		outputFn("CTE %v", plan.CteName)
-	}
-
-	if plan.PlannerRowEstimateFactor != 0 {
-		outputFn("%v %vestimated %v %.2fx", "rows", plan.PlannerRowEstimateDirection, "by", plan.PlannerRowEstimateFactor)
-	}
-
-	currentPrefix = prefix
-
-	if len(plan.Output) > 0 {
-		for index, line := range strings.Split(wordwrap.WrapString(strings.Join(plan.Output, " + "), 60), "\n") {
-			outputFn(getTerminator(index, plan) + line)
-		}
-	}
-
-	for index := range plan.Plans {
-		writePlanTree(writer, explain, &plan.Plans[index], prefix, depth+1, index == len(plan.Plans)-1)
 	}
 }

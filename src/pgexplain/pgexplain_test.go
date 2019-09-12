@@ -5,7 +5,6 @@
 package pgexplain
 
 import (
-	"bytes"
 	"testing"
 
 	"../util"
@@ -43,9 +42,7 @@ func TestVisualize(t *testing.T) {
 			t.FailNow()
 		}
 
-		buf := new(bytes.Buffer)
-		explain.Visualize(buf)
-		actual := buf.String()
+		actual := explain.RenderPlanText()
 
 		if actual != expected {
 			t.Errorf("(%d) got different than expected: \n%s\n", i, diff(expected, actual))
@@ -198,12 +195,6 @@ const EXPECTED_TEXT_0 = ` Limit  (cost=0.00..452.37 rows=200 width=33) (actual t
          Filter: ((tech)::text = 'scss'::text)
          Rows Removed by Filter: 40711
          Buffers: shared hit=1 read=326
- Planning time: 27.727 ms
- Execution time: 6.834 ms
- Total Cost: 159040.41
- Buffers Hit: 1
- Buffers Written: 0
- Buffers Read: 326
 `
 
 const INPUT_JSON_1 = `[
@@ -1119,12 +1110,6 @@ const EXPECTED_TEXT_1 = ` Unique  (cost=156506.25..156507.37 rows=225 width=149)
                ->  Index Scan using table_7_pkey on table_7 d  (cost=0.29..0.33 rows=1 width=8) (actual time=0.004..0.004 rows=1 loops=208)
                      Index Cond: (u.id = s_id)
                      Buffers: shared hit=624
- Planning time: 1.690 ms
- Execution time: 3.566 s
- Total Cost: 156543.13
- Buffers Hit: 43757
- Buffers Written: 0
- Buffers Read: 0
 `
 
 const INPUT_JSON_2 = `[
@@ -1196,10 +1181,4 @@ const EXPECTED_TEXT_2 = ` Limit  (cost=0.43..8.45 rows=1 width=22) (actual time=
          Index Cond: (col = 'xxxx'::text)
          Heap Fetches: 0
          Buffers: shared hit=4
- Planning time: 0.110 ms
- Execution time: 0.199 ms
- Total Cost: 8.45
- Buffers Hit: 4
- Buffers Written: 0
- Buffers Read: 0
 `
