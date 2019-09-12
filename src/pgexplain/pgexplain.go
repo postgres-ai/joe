@@ -519,7 +519,7 @@ func durationToString(value float64) string {
 	} else if value < 60000 {
 		return fmt.Sprintf("%.3f s", value/1000.0)
 	} else {
-		return fmt.Sprintf("%.3f m", value/60000.0)
+		return fmt.Sprintf("%.3f min", value/60000.0)
 	}
 }
 
