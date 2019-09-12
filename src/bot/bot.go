@@ -544,7 +544,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		if SHOW_RAW_EXPLAIN {
 			err = msg.Append(res)
 			if err != nil {
-				log.Err("Show raw EXPLAIN:", err)
+				log.Err("Show plan:", err)
 				failMsg(msg, err.Error())
 				return
 			}
@@ -584,15 +584,13 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		}
 
 		// Visualization.
-		var buf = new(bytes.Buffer)
-		explain.Visualize(buf)
-		var vis = buf.String()
+		vis := explain.RenderPlanText()
 
 		planExecPreview, trnd := cutText(vis, PLAN_SIZE, SEPARATOR_PLAN)
 
 		err = msg.Append(fmt.Sprintf("*Plan with execution:*\n```%s```", planExecPreview))
 		if err != nil {
-			log.Err("Show EXPLAIN ANALYZE:", err)
+			log.Err("Show plan with execution:", err)
 			failMsg(msg, err.Error())
 			return
 		}
@@ -609,9 +607,17 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 			detailsText = " " + CUT_TEXT
 		}
 
-		err = msg.Append(fmt.Sprintf("<%s|Full execution plan>%s", filePlan.Permalink, detailsText))
+		err = msg.Append(fmt.Sprintf("<%s|Full execution plan>%s\n", filePlan.Permalink, detailsText))
 		if err != nil {
 			log.Err("File: ", err)
+			failMsg(msg, err.Error())
+			return
+		}
+
+		stats := explain.RenderStats()
+		err = msg.Append(fmt.Sprintf("*Statistics:*\n```%s```", stats))
+		if err != nil {
+			log.Err("Show statistics: ", err)
 			failMsg(msg, err.Error())
 			return
 		}
