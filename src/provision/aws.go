@@ -223,6 +223,11 @@ func (j *provisionAws) CreateSnapshot(name string) error {
 	return j.createZfsSnapshot(name)
 }
 
+func (j *provisionAws) RunPsql(session *Session, command string) (string, error) {
+	// TODO(anatoly): Implement.
+	return "", fmt.Errorf("Unsupported in `aws` mode.")
+}
+
 // Private methods.
 func (j *provisionAws) terminate() error {
 	CloseSshTunnel(j.instanceIp)

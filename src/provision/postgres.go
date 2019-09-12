@@ -6,6 +6,9 @@ package provision
 
 import (
 	"fmt"
+	"io/ioutil"
+	"math/rand"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -117,7 +120,7 @@ func PostgresStart(r Runner, c *PgConfig) error {
 	first := true
 	cnt := 0
 	for true {
-		out, err = runPsql(r, "select pg_is_in_recovery()", c)
+		out, err = runPsql(r, "select pg_is_in_recovery()", c, false, false)
 
 		if err == nil {
 			// Server does not need promotion if it is not in recovery.
@@ -259,10 +262,33 @@ func pgctlPromote(r Runner, c *PgConfig) (string, error) {
 }
 
 // TODO(anatoly): Use SQL runner.
-func runPsql(r Runner, command string, c *PgConfig) (string, error) {
+// Use `runPsqlStrict` for commands defined by a user!
+func runPsql(r Runner, command string, c *PgConfig, formatted bool, useFile bool) (string, error) {
 	host := ""
 	if len(c.Host) > 0 {
 		host = "--host " + c.Host + " "
+	}
+
+	params := "At" // Tuples only, unaligned.
+	if formatted {
+		params = ""
+	}
+
+	var filename string
+	commandParam := fmt.Sprintf(`-c "%s"`, command)
+	if useFile {
+		source := rand.NewSource(time.Now().UnixNano())
+		random := rand.New(source)
+		uid := random.Uint64()
+
+		filename := fmt.Sprintf("/tmp/psql-query-%d", uid)
+
+		err := ioutil.WriteFile(filename, []byte(command), 0644)
+		if err != nil {
+			return "", err
+		}
+
+		commandParam = fmt.Sprintf(`-f %s`, filename)
 	}
 
 	psqlCmd := `PGPASSWORD=` + c.getPassword() + ` ` +
@@ -272,7 +298,53 @@ func runPsql(r Runner, command string, c *PgConfig) (string, error) {
 		`--dbname ` + c.getDbName() + ` ` +
 		`--port ` + c.getPortStr() + ` ` +
 		`--username ` + c.getUsername() + ` ` +
-		`-XAtc "` + command + `"`
+		`-X` + params + ` ` +
+		commandParam
 
-	return r.Run(psqlCmd)
+	out, err := r.Run(psqlCmd)
+
+	if useFile {
+		os.Remove(filename)
+	}
+
+	return out, err
+}
+
+// Use for user defined commands to DB. Currently we only need
+// to support limited number of PSQL meta information commands.
+// That's why it's ok to restrict usage of some symbols.
+func runPsqlStrict(r Runner, command string, c *PgConfig) (string, error) {
+	command = strings.Trim(command, " \n")
+	if len(command) == 0 {
+		return "", fmt.Errorf("Empty command")
+	}
+
+	// Psql file option (-f) allows to run any number of commands.
+	// We need to take measures to restrict multiple commands support,
+	// as we only check the first command.
+
+	// User can run backslash commands on the same line with the first
+	// backslash command (even without space separator),
+	// e.g. `\d table1\d table2`.
+
+	// Remove all backslashes except the one in the beggining.
+	command = string(command[0]) + strings.ReplaceAll(command[1:], "\\", "")
+
+	// Semicolumn creates possibility to run consequent command.
+	command = strings.ReplaceAll(command, ";", "")
+
+	// User can run any command (including DML queries) on other lines.
+	// Restricting usage of multiline commands.
+	command = strings.ReplaceAll(command, "\n", "")
+
+	out, err := runPsql(r, command, c, true, true)
+	if err != nil {
+		if rerr, ok := err.(RunnerError); ok {
+			return "", fmt.Errorf("Pqsl error: %s", rerr.Stderr)
+		}
+
+		return "", fmt.Errorf("Psql error")
+	}
+
+	return out, nil
 }

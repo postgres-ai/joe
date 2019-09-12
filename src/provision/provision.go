@@ -29,7 +29,8 @@ type State struct {
 }
 
 type Session struct {
-	Id string
+	Id   string
+	Name string
 
 	// Database
 	Host     string
@@ -69,6 +70,8 @@ type Provision interface {
 	StopSession(*Session) error
 	ResetSession(*Session, ...string) error
 	CreateSnapshot(string) error
+
+	RunPsql(*Session, string) (string, error)
 }
 
 type provision struct {
