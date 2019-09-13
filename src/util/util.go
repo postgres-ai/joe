@@ -26,6 +26,12 @@ func EqualStringSlicesUnordered(x, y []string) bool {
 		}
 	}
 
+	for yMapKey, yMapVal := range yMap {
+		if xMap[yMapKey] != yMapVal {
+			return false
+		}
+	}
+
 	return true
 }
 

@@ -53,18 +53,32 @@ func TestVisualize(t *testing.T) {
 func TestTips(t *testing.T) {
 	explainConfig := ExplainConfig{
 		Params: ParamsConfig{
-			BuffersReadBigMax: 100,
-			BuffersHitBigMax:  1000,
+			BuffersHitReadSeqScan:         50,
+			BuffersReadBigMax:             100,
+			BuffersHitBigMax:              1000,
+			AddLimitMinRows:               10000,
+			TempWrittenBlocksMin:          0,
+			IndexNeededFilteredMin:        100,
+			VacuumAnalyzeNeededFetchesMin: 0,
 		},
 		Tips: []Tip{
 			{
 				Code: "SEQSCAN_USED",
 			},
 			{
-				Code: "BUFFERS_READ_BIG",
+				Code: "TOO_MUCH_DATA",
 			},
 			{
-				Code: "BUFFERS_HIT_BIG",
+				Code: "ADD_LIMIT",
+			},
+			{
+				Code: "TEMP_BUF_WRITTEN",
+			},
+			{
+				Code: "INDEX_NEEDED",
+			},
+			{
+				Code: "VACUUM_ANALYZE_NEEDED",
 			},
 		},
 	}
@@ -73,18 +87,119 @@ func TestTips(t *testing.T) {
 		inputJson     string
 		expectedCodes []string
 	}{
+		// SEQSCAN_USED.
 		{
 			inputJson: `[
 				{
 					"Plan": {
 						"Node Type": "Seq Scan",
 						"Relation Name": "table_1",
-						"Shared Hit Blocks": 10000,
-						"Shared Read Blocks": 315043
+						"Shared Hit Blocks": 0,
+						"Shared Read Blocks": 0
 					}
 				}
 			]`,
-			expectedCodes: []string{"SEQSCAN_USED", "BUFFERS_READ_BIG", "BUFFERS_HIT_BIG"},
+			expectedCodes: []string{},
+		},
+		{
+			inputJson: `[
+				{
+					"Plan": {
+						"Node Type": "Seq Scan",
+						"Relation Name": "table_1",
+						"Shared Hit Blocks": 40,
+						"Shared Read Blocks": 20
+					}
+				}
+			]`,
+			expectedCodes: []string{"SEQSCAN_USED"},
+		},
+		// TOO_MUCH_DATA.
+		{
+			inputJson: `[
+				{
+					"Plan": {
+						"Node Type": "Index Scan",
+						"Relation Name": "table_1",
+						"Shared Hit Blocks": 100000,
+						"Shared Read Blocks": 100000
+					}
+				}
+			]`,
+			expectedCodes: []string{"TOO_MUCH_DATA"},
+		},
+		// ADD_LIMIT.
+		{
+			inputJson: `[
+				{
+					"Plan": {
+						"Node Type": "Index Scan",
+						"Relation Name": "table_1",
+						"Actual Rows": 1000
+					}
+				}
+			]`,
+			expectedCodes: []string{},
+		},
+		{
+			inputJson: `[
+				{
+					"Plan": {
+						"Node Type": "Limit",
+						"Relation Name": "table_1",
+						"Actual Rows": 100000
+					}
+				}
+			]`,
+			expectedCodes: []string{},
+		},
+		{
+			inputJson: `[
+				{
+					"Plan": {
+						"Node Type": "Index Scan",
+						"Relation Name": "table_1",
+						"Actual Rows": 100000
+					}
+				}
+			]`,
+			expectedCodes: []string{"ADD_LIMIT"},
+		},
+		// TEMP_BUF_WRITTEN.
+		{
+			inputJson: `[
+				{
+					"Plan": {
+						"Node Type": "Index Scan",
+						"Temp Written Blocks": 100
+					}
+				}
+			]`,
+			expectedCodes: []string{"TEMP_BUF_WRITTEN"},
+		},
+		// INDEX_NEEDED.
+		{
+			inputJson: `[
+				{
+					"Plan": {
+						"Node Type": "Index Scan",
+						"Rows Removed by Filter": 101
+					}
+				}
+			]`,
+			expectedCodes: []string{"INDEX_NEEDED"},
+		},
+		// VACUUM_ANALYZE_NEEDED.
+		{
+			inputJson: `[
+				{
+					"Plan": {
+						"Node Type": "Index Only Scan",
+						"Heap Fetches": 1
+					}
+				}
+			]`,
+			expectedCodes: []string{"VACUUM_ANALYZE_NEEDED"},
 		},
 	}
 
@@ -107,7 +222,8 @@ func TestTips(t *testing.T) {
 		actualCodes := getCodes(actualTips)
 
 		if !util.EqualStringSlicesUnordered(actualCodes, expectedCodes) {
-			t.Errorf("(%d) got different than expected: \n%s ", i, actualCodes)
+			t.Errorf("(%d) got different than expected: \nActual: %s\nExpected: %s\n",
+				i, actualCodes, expectedCodes)
 		}
 	}
 }

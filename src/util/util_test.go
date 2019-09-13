@@ -20,4 +20,12 @@ func TestEqualStringSlicesUnordered(t *testing.T) {
 	if EqualStringSlicesUnordered([]string{"a", "x", "x", "x"}, []string{"a", "b", "c", "d"}) {
 		t.FailNow()
 	}
+
+	if EqualStringSlicesUnordered([]string{}, []string{"a"}) {
+		t.FailNow()
+	}
+
+	if EqualStringSlicesUnordered([]string{"a"}, []string{}) {
+		t.FailNow()
+	}
 }
