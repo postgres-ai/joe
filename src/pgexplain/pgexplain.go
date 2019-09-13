@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"../log"
 )
 
 type EstimateDirection string
@@ -68,10 +70,14 @@ type Explain struct {
 	IOReadTime  float64
 	IOWriteTime float64
 
+	ActualRows      uint64
 	MaxRows         uint64
 	MaxCost         float64
 	MaxDuration     float64
 	ContainsSeqScan bool
+
+	IndexNeeded         bool
+	VacuumAnalyzeNeeded bool
 
 	Config ExplainConfig `json:"-"`
 }
@@ -149,9 +155,12 @@ type Plan struct {
 }
 
 const (
-	TIP_SEQSCAN_USED     = "SEQSCAN_USED"
-	TIP_BUFFERS_READ_BIG = "BUFFERS_READ_BIG"
-	TIP_BUFFERS_HIT_BIG  = "BUFFERS_HIT_BIG"
+	TIP_SEQSCAN_USED          = "SEQSCAN_USED"
+	TIP_TOO_MUCH_DATA         = "TOO_MUCH_DATA"
+	TIP_ADD_LIMIT             = "ADD_LIMIT"
+	TIP_TEMP_BUF_WRITTEN      = "TEMP_BUF_WRITTEN"
+	TIP_INDEX_NEEDED          = "INDEX_NEEDED"
+	TIP_VACUUM_ANALYZE_NEEDED = "VACUUM_ANALYZE_NEEDED"
 )
 
 type ExplainConfig struct {
@@ -166,13 +175,32 @@ type Tip struct {
 	DetailsUrl  string `yaml:"detailsUrl"`
 }
 
+// TODO(anatoly): Refactor names.
 type ParamsConfig struct {
+	// T1 SEQSCAN_USED.
+	BuffersHitReadSeqScan uint64 `yaml:"buffersHitReadSeqScan"`
+
+	// T2 TOO_MUCH_DATA.
 	BuffersReadBigMax uint64 `yaml:"buffersReadBigMax"`
 	BuffersHitBigMax  uint64 `yaml:"buffersHitBigMax"`
+
+	// T3 ADD_LIMIT.
+	AddLimitMinRows uint64 `yaml:"addLimitMinRows"`
+
+	// T4 TEMP_BUF_WRITTEN.
+	TempWrittenBlocksMin uint64 `yaml:"tempWrittenBlocksMin"`
+
+	// T5 INDEX_NEEDED.
+	IndexNeededFilteredMin uint64 `yaml:"indexNeededFilteredMin"`
+
+	// T6 VACUUM_ANALYZE_NEEDED.
+	VacuumAnalyzeNeededFetchesMin uint64 `yaml:"vacuumAnalyzeNeededFetchesMin"`
 }
 
 // Explain Processing.
 func NewExplain(explainJson string, config ExplainConfig) (*Explain, error) {
+	log.Dbg("Explain config", config)
+
 	var explains []Explain
 
 	err := json.NewDecoder(strings.NewReader(explainJson)).Decode(&explains)
@@ -207,11 +235,15 @@ func (ex *Explain) RenderStats() string {
 }
 
 func (ex *Explain) GetTips() ([]Tip, error) {
+	c := ex.Config
+	p := c.Params
+
 	var tips []Tip
 
 	// T1: SeqScan used.
-	if ex.ContainsSeqScan {
-		tip, err := ex.Config.getTipByCode(TIP_SEQSCAN_USED)
+	hitReadBlocks := ex.SharedReadBlocks + ex.SharedHitBlocks
+	if ex.ContainsSeqScan && hitReadBlocks > p.BuffersHitReadSeqScan {
+		tip, err := c.getTipByCode(TIP_SEQSCAN_USED)
 		if err != nil {
 			return make([]Tip, 0), err
 		}
@@ -219,17 +251,45 @@ func (ex *Explain) GetTips() ([]Tip, error) {
 	}
 
 	// T2: Buffers read too big.
-	if ex.SharedReadBlocks > 100 {
-		tip, err := ex.Config.getTipByCode(TIP_BUFFERS_READ_BIG)
+	if ex.SharedReadBlocks > p.BuffersReadBigMax ||
+		ex.SharedHitBlocks > p.BuffersHitBigMax {
+		tip, err := c.getTipByCode(TIP_TOO_MUCH_DATA)
 		if err != nil {
 			return make([]Tip, 0), err
 		}
 		tips = append(tips, tip)
 	}
 
-	// T3: Buffers hit too big.
-	if ex.SharedHitBlocks > 1000 {
-		tip, err := ex.Config.getTipByCode(TIP_BUFFERS_HIT_BIG)
+	// T3: Add limit.
+	if ex.ActualRows > p.AddLimitMinRows && ex.Plan.NodeType != Limit {
+		tip, err := c.getTipByCode(TIP_ADD_LIMIT)
+		if err != nil {
+			return make([]Tip, 0), err
+		}
+		tips = append(tips, tip)
+	}
+
+	// T4: Temp buffers written.
+	if ex.TempWrittenBlocks > p.TempWrittenBlocksMin {
+		tip, err := c.getTipByCode(TIP_TEMP_BUF_WRITTEN)
+		if err != nil {
+			return make([]Tip, 0), err
+		}
+		tips = append(tips, tip)
+	}
+
+	// T5: Index needed.
+	if ex.IndexNeeded {
+		tip, err := c.getTipByCode(TIP_INDEX_NEEDED)
+		if err != nil {
+			return make([]Tip, 0), err
+		}
+		tips = append(tips, tip)
+	}
+
+	// T6: Vacuum analyze needed.
+	if ex.VacuumAnalyzeNeeded {
+		tip, err := c.getTipByCode(TIP_VACUUM_ANALYZE_NEEDED)
 		if err != nil {
 			return make([]Tip, 0), err
 		}
@@ -247,6 +307,8 @@ func (ex *Explain) processExplain() {
 }
 
 func (ex *Explain) calculateParams() {
+	ex.ActualRows = ex.Plan.ActualRows
+
 	ex.SharedHitBlocks = ex.Plan.SharedHitBlocks
 	ex.SharedReadBlocks = ex.Plan.SharedReadBlocks
 	ex.SharedDirtiedBlocks = ex.Plan.SharedDirtiedBlocks
@@ -334,9 +396,19 @@ func (ex *Explain) calculateMaximums(plan *Plan) {
 }
 
 func (ex *Explain) calculateOutlierNodes(plan *Plan) {
+	p := ex.Config.Params
+
 	plan.Costliest = plan.ActualCost == ex.MaxCost
 	plan.Largest = plan.ActualRows == ex.MaxRows
 	plan.Slowest = plan.ActualDuration == ex.MaxDuration
+
+	if plan.NodeType == IndexScan && plan.RowsRemovedByFilter > p.IndexNeededFilteredMin {
+		ex.IndexNeeded = true
+	}
+
+	if plan.NodeType == IndexOnlyScan && plan.HeapFetches > p.VacuumAnalyzeNeededFetchesMin {
+		ex.VacuumAnalyzeNeeded = true
+	}
 
 	for index := range plan.Plans {
 		ex.calculateOutlierNodes(&plan.Plans[index])
