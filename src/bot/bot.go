@@ -94,7 +94,7 @@ var supportedSubtypes = []string{
 }
 
 const QUERY_PREVIEW_SIZE = 400
-const PLAN_SIZE = 1000
+const PLAN_SIZE = 400
 
 const MSG_HELP = "• `explain` — analyze your query (SELECT, INSERT, DELETE, UPDATE or WITH) and generate recommendations\n" +
 	"• `exec` — execute any query (for example, CREATE INDEX)\n" +
@@ -193,7 +193,6 @@ func NewUser(chatUser *slack.User, config Config) *User {
 }
 
 func (b *Bot) stopIdleSessions() error {
-	// TODO(anatoly): List stopped sesssion to channel.
 	chsNotify := make(map[string][]string)
 
 	for _, u := range b.Users {
@@ -760,16 +759,37 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 
 		psqlCmd := command + " " + query
 
-		out, err := b.Prov.RunPsql(user.Session.Provision, psqlCmd)
+		cmd, err := b.Prov.RunPsql(user.Session.Provision, psqlCmd)
 		if err != nil {
 			log.Err(err)
 			failMsg(msg, err.Error())
 			return
 		}
 
-		err = msg.Append(fmt.Sprintf("```%s```", out))
+		cmdPreview, trnd := cutText(cmd, PLAN_SIZE, SEPARATOR_PLAN)
+
+		err = msg.Append(fmt.Sprintf("*Command output:*\n```%s```", cmdPreview))
 		if err != nil {
-			log.Err("Show psql output: ", err)
+			log.Err("Show psql output:", err)
+			failMsg(msg, err.Error())
+			return
+		}
+
+		fileCmd, err := b.Chat.UploadFile("command", cmd, ch, msg.Timestamp)
+		if err != nil {
+			log.Err("File upload failed:", err)
+			failMsg(msg, err.Error())
+			return
+		}
+
+		detailsText := ""
+		if trnd {
+			detailsText = " " + CUT_TEXT
+		}
+
+		err = msg.Append(fmt.Sprintf("<%s|Full command output>%s\n", fileCmd.Permalink, detailsText))
+		if err != nil {
+			log.Err("File: ", err)
 			failMsg(msg, err.Error())
 			return
 		}
@@ -864,7 +884,7 @@ func (u *User) requestQuota() error {
 func cutText(text string, size int, separator string) (string, bool) {
 	if len(text) > size {
 		size -= len(separator)
-		res := text[0:size/2] + separator + text[len(text)-size/2-size%2:len(text)]
+		res := text[0:size] + separator
 		return res, true
 	}
 
