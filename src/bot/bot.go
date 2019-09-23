@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"html"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -116,6 +117,14 @@ const SEPARATOR_PLAN = "\n[...SKIP...]\n"
 const CUT_TEXT = "_(The text in the preview above has been cut)_"
 
 const IDLE_TICK_DURATION = 120 * time.Minute
+
+const HINT_EXPLAIN = "Consider using `explain` command for DML statements. See `help` for details."
+const HINT_EXEC = "Consider using `exec` command for DDL statements. See `help` for details."
+
+var hintExplainDmlWords = []string{"insert", "select", "update", "delete", "with"}
+var hintExecDdlWords = []string{"alter", "create", "drop", "set"}
+
+var spaceRegex = regexp.MustCompile(`\s+`)
 
 type Config struct {
 	ConnStr       string
@@ -440,6 +449,9 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		return
 	}
 
+	// Replace any number of spaces, tab, new lines with single space.
+	message = spaceRegex.ReplaceAllString(message, " ")
+
 	// Message: "command query(optional)".
 	parts := strings.SplitN(message, " ", 2)
 	command := strings.ToLower(parts[0])
@@ -448,6 +460,8 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 	if len(parts) > 1 {
 		query = parts[1]
 	}
+
+	b.showBotHints(ev, command, query)
 
 	if !util.Contains(supportedCommands, command) {
 		log.Dbg("Message filtered: Not a command")
@@ -837,6 +851,31 @@ func failMsg(msg *chatapi.Message, text string) {
 	err = msg.ChangeReaction(RCTN_ERROR)
 	if err != nil {
 		log.Err(err)
+	}
+}
+
+// Show bot usage hints.
+func (b *Bot) showBotHints(ev *slackevents.MessageEvent, command string, query string) {
+	parts := strings.SplitN(query, " ", 2)
+	firstQueryWord := strings.ToLower(parts[0])
+
+	checkQuery := len(firstQueryWord) > 0 && command == COMMAND_EXEC
+
+	if (checkQuery && util.Contains(hintExplainDmlWords, firstQueryWord)) ||
+		util.Contains(hintExplainDmlWords, command) {
+		msg, _ := b.Chat.NewMessage(ev.Channel)
+		err := msg.PublishEphemeral(HINT_EXPLAIN, ev.User)
+		if err != nil {
+			log.Err("Hint explain:", err)
+		}
+	}
+
+	if util.Contains(hintExecDdlWords, command) {
+		msg, _ := b.Chat.NewMessage(ev.Channel)
+		err := msg.PublishEphemeral(HINT_EXEC, ev.User)
+		if err != nil {
+			log.Err("Hint exec:", err)
+		}
 	}
 }
 

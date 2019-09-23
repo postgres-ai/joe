@@ -149,6 +149,20 @@ func (m *Message) Publish(text string) error {
 	return nil
 }
 
+// Publish a message as ephemeral.
+func (m *Message) PublishEphemeral(text string, userId string) error {
+	timestamp, err := m.Chat.Api.PostEphemeral(m.ChannelId, userId,
+		slack.MsgOptionText(text, false))
+	if err != nil {
+		return err
+	}
+
+	m.Timestamp = timestamp
+	m.Text = text
+
+	return nil
+}
+
 // Append text to a published message.
 // Slack: User will not get notification. Publish a new message if notification needed.
 func (m *Message) Append(text string) error {
