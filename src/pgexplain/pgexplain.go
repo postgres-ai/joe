@@ -130,6 +130,7 @@ type Plan struct {
 	OriginalHashBatches       uint64   `json:"Original Hash Batches"`
 	OriginalHashBuckets       uint64   `json:"Original Hash Buckets"`
 	Output                    []string `json:"Output"`
+	ParallelAware             bool     `json:"Parallel Aware"`
 	ParentRelationship        string   `json:"Parent Relationship"`
 	PeakMemoryUsage           uint64   `json:"Peak Memory Usage"` // kB
 	RelationName              string   `json:"Relation Name"`
@@ -143,6 +144,8 @@ type Plan struct {
 	SortSpaceUsed             uint64   `json:"Sort Space Used"` // kB
 	Strategy                  string   `json:"Strategy"`
 	SubplanName               string   `json:"Subplan Name"`
+	WorkersLaunched           uint     `json:"Workers Launched"`
+	WorkersPlanned            uint     `json:"Workers Planned"`
 
 	// Calculated params.
 	ActualCost                  float64
@@ -552,7 +555,7 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 		}
 	}
 
-	nodeType := fmt.Sprintf("%v", plan.NodeType)
+	nodeType := string(plan.NodeType)
 	if plan.NodeType == ModifyTable { // E.g. for Insert.
 		nodeType = plan.Operation
 	}
@@ -569,7 +572,12 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 		nodeType = fmt.Sprintf("%v %s Join", NestedLoop, plan.JoinType)
 	}
 
-	outputFn("%v%s%s  %v %v", nodeType, using, on, costs, timing)
+	parallel := ""
+	if plan.ParallelAware {
+		parallel = "Parallel "
+	}
+
+	outputFn("%s%v%s%s  %v %v", parallel, nodeType, using, on, costs, timing)
 }
 
 func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error), plan *Plan) {
@@ -628,6 +636,11 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 	if plan.Filter != "" {
 		outputFn("Filter: %v", plan.Filter)
 		outputFn("Rows Removed by Filter: %d", plan.RowsRemovedByFilter)
+	}
+
+	if plan.WorkersPlanned > 0 {
+		outputFn("Workers Planned: %d", plan.WorkersPlanned)
+		outputFn("Workers Launched: %d", plan.WorkersLaunched)
 	}
 
 	buffers := ""
