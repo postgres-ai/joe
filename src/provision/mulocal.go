@@ -79,6 +79,10 @@ func (j *provisionMuLocal) Init() error {
 	return nil
 }
 
+func (j *provisionMuLocal) Reinit() error {
+	return fmt.Errorf("Unsupported in `mulocal` mode.")
+}
+
 func (j *provisionMuLocal) StartSession(options ...string) (*Session, error) {
 	snapshot := j.config.InitialSnapshot
 	if len(options) > 0 {

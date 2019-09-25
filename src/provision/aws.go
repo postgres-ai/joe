@@ -144,6 +144,10 @@ func (j *provisionAws) Init() error {
 	return nil
 }
 
+func (j *provisionAws) Reinit() error {
+	return j.Init()
+}
+
 func (j *provisionAws) StartSession(options ...string) (*Session, error) {
 	snapshot := j.config.InitialSnapshot
 	if len(options) > 0 && len(options[0]) > 0 {

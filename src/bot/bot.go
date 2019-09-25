@@ -282,13 +282,15 @@ func (b *Bot) stopAllSessions() error {
 
 func (b *Bot) stopSession(u *User) error {
 	log.Dbg("Stopping session...")
+
+	u.Session.Provision = nil
+
 	err := b.Prov.StopSession(u.Session.Provision)
 	if err != nil {
 		log.Err(err)
 		return err
 	}
 
-	u.Session.Provision = nil
 	return nil
 }
 
@@ -737,22 +739,19 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		msg.Append("The state of the database has been reset.")
 
 	case command == COMMAND_HARDRESET:
-		// TODO(anatoly): Do we need this command in mulocal mode?
-		// Anyone can close all sessions.
-
 		log.Msg("Reinitilizating provision")
 		msg.Append("Reinitilizating DB provision, " +
 			"it may take a couple of minutes...\n" +
 			"If you want to reset the state of the database use `reset` command.")
 
-		err = b.stopAllSessions()
+		err = b.Prov.Reinit()
 		if err != nil {
 			log.Err("Hardreset:", err)
 			failMsg(msg, err.Error())
 			return
 		}
 
-		err = b.Prov.Init()
+		err = b.stopAllSessions()
 		if err != nil {
 			log.Err("Hardreset:", err)
 			failMsg(msg, err.Error())
