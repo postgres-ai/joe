@@ -66,9 +66,12 @@ type Config struct {
 
 type Provision interface {
 	Init() error
+	Reinit() error
+
 	StartSession(...string) (*Session, error)
 	StopSession(*Session) error
 	ResetSession(*Session, ...string) error
+
 	CreateSnapshot(string) error
 
 	RunPsql(*Session, string) (string, error)

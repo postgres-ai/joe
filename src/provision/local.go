@@ -43,6 +43,10 @@ func (j *provisionLocal) Init() error {
 	return nil
 }
 
+func (j *provisionLocal) Reinit() error {
+	return fmt.Errorf("Unsupported in `local` mode.")
+}
+
 // Provision interface implementaion.
 func (j *provisionLocal) StartSession(options ...string) (*Session, error) {
 	snapshot := j.config.InitialSnapshot
