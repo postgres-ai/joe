@@ -29,6 +29,10 @@ func TestVisualize(t *testing.T) {
 			inputJson: INPUT_JSON_2,
 			expected:  EXPECTED_TEXT_2,
 		},
+		{
+			inputJson: INPUT_JSON_3,
+			expected:  EXPECTED_TEXT_3,
+		},
 	}
 
 	for i, test := range tests {
@@ -1297,4 +1301,77 @@ const EXPECTED_TEXT_2 = ` Limit  (cost=0.43..8.45 rows=1 width=22) (actual time=
          Index Cond: (col = 'xxxx'::text)
          Heap Fetches: 0
          Buffers: shared hit=4
+`
+
+const INPUT_JSON_3 = `[
+  {
+    "Plan": {
+      "Node Type": "Gather",
+      "Parallel Aware": false,
+      "Startup Cost": 1000.00,
+      "Total Cost": 107758.40,
+      "Plan Rows": 104,
+      "Plan Width": 0,
+      "Actual Startup Time": 0.772,
+      "Actual Total Time": 1393.167,
+      "Actual Rows": 101,
+      "Actual Loops": 1,
+      "Workers Planned": 2,
+      "Workers Launched": 2,
+      "Single Copy": false,
+      "Shared Hit Blocks": 2528,
+      "Shared Read Blocks": 41720,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0,
+      "Plans": [
+        {
+          "Node Type": "Seq Scan",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": true,
+          "Relation Name": "bbb",
+          "Alias": "bbb",
+          "Startup Cost": 0.00,
+          "Total Cost": 106748.00,
+          "Plan Rows": 43,
+          "Plan Width": 0,
+          "Actual Startup Time": 918.248,
+          "Actual Total Time": 1380.403,
+          "Actual Rows": 34,
+          "Actual Loops": 3,
+          "Filter": "((i >= 100) AND (i <= 200))",
+          "Rows Removed by Filter": 3333300,
+          "Shared Hit Blocks": 2528,
+          "Shared Read Blocks": 41720,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0
+        }
+      ]
+    },
+    "Planning Time": 0.158,
+    "Triggers": [
+    ],
+    "Execution Time": 1299.614
+  }
+]`
+
+const EXPECTED_TEXT_3 = ` Gather  (cost=1000.00..107758.40 rows=104 width=0) (actual time=0.772..1393.167 rows=101 loops=1)
+   Workers Planned: 2
+   Workers Launched: 2
+   Buffers: shared hit=2528 read=41720
+   ->  Parallel Seq Scan on bbb  (cost=0.00..106748.00 rows=43 width=0) (actual time=918.248..1380.403 rows=34 loops=3)
+         Filter: ((i >= 100) AND (i <= 200))
+         Rows Removed by Filter: 3333300
+         Buffers: shared hit=2528 read=41720
 `
