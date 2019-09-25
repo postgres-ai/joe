@@ -6,7 +6,6 @@ package bot
 
 import (
 	"bytes"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -572,7 +571,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		}
 
 		// Explain request and show.
-		var res, err = runQuery(connStr, "EXPLAIN (FORMAT TEXT) "+query)
+		var res, err = dbExplain(connStr, query)
 		if err != nil {
 			failMsg(msg, err.Error())
 			return
@@ -607,8 +606,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		}
 
 		// Explain analyze request and processing.
-		res, err = runQuery(connStr,
-			"EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) "+query)
+		res, err = dbExplainAnalyze(connStr, query)
 		if err != nil {
 			failMsg(msg, err.Error())
 			return
@@ -702,7 +700,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		}
 
 		start := time.Now()
-		var _, err = runQuery(connStr, query)
+		err = dbExec(connStr, query)
 		elapsed := time.Since(start)
 		if err != nil {
 			log.Err("Exec:", err)
@@ -927,40 +925,4 @@ func cutText(text string, size int, separator string) (string, bool) {
 	}
 
 	return text, false
-}
-
-func runQuery(connStr string, query string) (string, error) {
-	log.Dbg("DB query:", query)
-
-	// TODO(anatoly): Retry mechanic.
-	var result = ""
-
-	db, err := sql.Open("postgres", connStr)
-	if err != nil {
-		log.Err("DB connection:", err)
-		return "", err
-	}
-	defer db.Close()
-
-	rows, err := db.Query(query)
-	if err != nil {
-		log.Err("DB query:", err)
-		return "", err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var s string
-		if err := rows.Scan(&s); err != nil {
-			log.Err("DB query traversal:", err)
-			return s, err
-		}
-		result += s + "\n"
-	}
-	if err := rows.Err(); err != nil {
-		log.Err("DB query traversal:", err)
-		return result, err
-	}
-
-	return result, nil
 }
