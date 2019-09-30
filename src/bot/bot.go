@@ -282,9 +282,10 @@ func (b *Bot) stopAllSessions() error {
 func (b *Bot) stopSession(u *User) error {
 	log.Dbg("Stopping session...")
 
+	err := b.Prov.StopSession(u.Session.Provision)
+
 	u.Session.Provision = nil
 
-	err := b.Prov.StopSession(u.Session.Provision)
 	if err != nil {
 		log.Err(err)
 		return err
