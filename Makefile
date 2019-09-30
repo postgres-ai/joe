@@ -21,6 +21,9 @@ LDFLAGS = -ldflags "-s -w \
 # Build the project
 all: clean vet main
 
+dep:
+	go get -v -d -t ./...
+
 main:
 	GOARCH=${GOARCH} go build ${LDFLAGS} -o bin/${BINARY} ./src/
 
@@ -39,5 +42,5 @@ clean:
 run:
 	go run ${LDFLAGS} ./src/*
 
-.PHONY: all main test vet fmt clean run
+.PHONY: all dep main test vet fmt clean run
 
