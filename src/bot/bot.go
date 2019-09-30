@@ -138,6 +138,8 @@ type Config struct {
 	DbUser     string
 	DbPassword string
 	DbName     string
+
+	Version string
 }
 
 type Bot struct {
@@ -503,7 +505,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 
 	// Show `help` command without initializing of a session.
 	if command == COMMAND_HELP {
-		msgText = appendHelp(msgText)
+		msgText = appendHelp(msgText, b.Config.Version)
 		msgText = appendSessionId(msgText, user)
 
 		hMsg, _ := b.Chat.NewMessage(ch)
@@ -821,8 +823,8 @@ func appendSessionId(text string, u *User) string {
 	return text + s
 }
 
-func appendHelp(text string) string {
-	return text + MSG_HELP
+func appendHelp(text string, version string) string {
+	return text + MSG_HELP + fmt.Sprintf("Version: %s\n", version)
 }
 
 // TODO(anatoly): Retries, error processing.
