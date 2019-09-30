@@ -46,6 +46,11 @@ var opts struct {
 
 	IdleInterval uint `long:"idle-interval" description:"an time interval (in seconds) before user session can be stoped due to idle" env:"IDLE_INTERVAL" default:"3600"`
 
+	// Dev
+	DevGitCommitHash string `long:"git-commit-hash" env:"GIT_COMMIT_HASH" default:""`
+	DevGitBranch     string `long:"git-branch" env:"GIT_BRANCH" default:""`
+	DevGitModified   bool   `long:"git-modified" env:"GIT_MODIFIED"`
+
 	ShowHelp func() error `long:"help" description:"Show this help message"`
 }
 
@@ -128,6 +133,11 @@ func main() {
 	}
 	log.Dbg("Provision init ok", err)
 
+	log.Dbg("git: ", opts.DevGitCommitHash, opts.DevGitBranch, opts.DevGitModified)
+
+	version := formatBotVersion(opts.DevGitCommitHash, opts.DevGitBranch,
+		opts.DevGitModified)
+
 	config := bot.Config{
 		Port:          opts.ServerPort,
 		Explain:       explainConfig,
@@ -136,6 +146,8 @@ func main() {
 		IdleInterval:  opts.IdleInterval,
 
 		DbName: opts.DbName,
+
+		Version: version,
 	}
 
 	var chat = chatapi.NewChat(opts.AccessToken, opts.VerificationToken)
@@ -217,4 +229,19 @@ func getConfigPath(name string) string {
 	dir, _ := filepath.Abs(filepath.Dir(bindir))
 	path := dir + string(os.PathSeparator) + "config" + string(os.PathSeparator) + name
 	return path
+}
+
+func formatBotVersion(commit string, branch string, modified bool) string {
+	if len(commit) < 7 {
+		return "unknown"
+	}
+
+	modifiedStr := ""
+	if modified {
+		modifiedStr = " (modified)"
+	}
+
+	commitShort := commit[:7]
+
+	return fmt.Sprintf("%s@%s%s", commitShort, branch, modifiedStr)
 }
