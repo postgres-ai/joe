@@ -104,7 +104,9 @@ const MSG_HELP = "• `explain` — analyze your query (SELECT, INSERT, DELETE, 
 	"• `\\d`, `\\d+`, `\\dt`, `\\dt+`, `\\di`, `\\di+`, `\\l`, `\\l+`, `\\dv`, `\\dv+`, `\\dm`, `\\dm+` — psql meta information commands\n" +
 	"• `help` — this message\n"
 
-const MSG_QUERY_REQ = "Option query required for this command, e.g. `query select 1`"
+const MSG_EXEC_OPTION_REQ = "Use `exec` to run query, e.g. `exec drop index some_index_name`"
+const MSG_EXPLAIN_OPTION_REQ = "Use `explain` to see the query's plan, e.g. `explain select 1`"
+const MSG_SNAPSHOT_OPTION_REQ = "Use `snapshot` to create a snapshot, e.g. `snapshot state_name`"
 
 const RCTN_RUNNING = "hourglass_flowing_sand"
 const RCTN_OK = "white_check_mark"
@@ -569,7 +571,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		var trnd bool
 
 		if query == "" {
-			failMsg(msg, MSG_QUERY_REQ)
+			failMsg(msg, MSG_EXPLAIN_OPTION_REQ)
 			return
 		}
 
@@ -698,7 +700,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 
 	case command == COMMAND_EXEC:
 		if query == "" {
-			failMsg(msg, MSG_QUERY_REQ)
+			failMsg(msg, MSG_EXEC_OPTION_REQ)
 			return
 		}
 
@@ -715,7 +717,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 
 	case command == COMMAND_SNAPSHOT:
 		if query == "" {
-			failMsg(msg, MSG_QUERY_REQ)
+			failMsg(msg, MSG_SNAPSHOT_OPTION_REQ)
 			return
 		}
 
