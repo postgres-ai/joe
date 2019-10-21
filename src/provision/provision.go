@@ -84,10 +84,13 @@ type provision struct {
 func NewProvision(config Config) (Provision, error) {
 	switch config.Mode {
 	case MODE_AWS:
+		log.Dbg("Using AWS mode.")
 		return NewProvisionAws(config)
 	case MODE_LOCAL:
+		log.Dbg("Using Local mode.")
 		return NewProvisionLocal(config)
 	case MODE_MULOCAL:
+		log.Dbg("Using MuLocal mode.")
 		return NewProvisionMuLocal(config)
 	}
 

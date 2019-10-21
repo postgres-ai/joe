@@ -5,6 +5,7 @@
 package util
 
 import (
+	"fmt"
 	"math"
 	"time"
 )
@@ -78,4 +79,18 @@ func RunInterval(d time.Duration, fn func()) chan struct{} {
 
 	// Use `close(quit)` to stop interval execution.
 	return quit
+}
+
+func DurationToString(value time.Duration) string {
+	return MillisecondsToString(float64(value / 10000000))
+}
+
+func MillisecondsToString(value float64) string {
+	if value < 1000 {
+		return fmt.Sprintf("%.3f ms", value)
+	} else if value < 60000 {
+		return fmt.Sprintf("%.3f s", value/1000.0)
+	} else {
+		return fmt.Sprintf("%.3f min", value/60000.0)
+	}
 }

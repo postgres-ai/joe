@@ -5,25 +5,7 @@
 run() {
   set -x
 
-  go get github.com/aws/aws-sdk-go/aws
-  go get github.com/aws/aws-sdk-go/aws/awserr
-  go get github.com/aws/aws-sdk-go/aws/session
-  go get github.com/aws/aws-sdk-go/service/ec2
-  go get github.com/docker/machine/libmachine/mcnutils
-  go get github.com/docker/machine/libmachine/ssh
-  go get github.com/dustin/go-humanize
-  go get github.com/jessevdk/go-flags
-  go get github.com/lib/pq
-  go get github.com/mitchellh/go-wordwrap
-  go get github.com/nlopes/slack
-  go get github.com/sergi/go-diff/diffmatchpatch
-  go get github.com/tkanos/gonfig
-  go get golang.org/x/crypto/ssh/terminal
-  go get golang.org/x/net/http2
-  go get golang.org/x/sync/errgroup
-  go get golang.org/x/tools/go/buildutil
-  go get gopkg.in/yaml.v2
-
+  make dep
   make all
 
   set +x
