@@ -27,18 +27,18 @@ import (
 )
 
 var opts struct {
-	// Chat API
+	// Chat API.
 	AccessToken       string `short:"t" long:"token" description:"\"Bot User OAuth Access Token\" which starts with \"xoxb-\"" env:"CHAT_TOKEN" required:"true"`
 	VerificationToken string `short:"v" long:"verification-token" description:"callback URL verification token" env:"CHAT_VERIFICATION_TOKEN" required:"true"`
 
-	// Database
+	// Database.
 	DbHost     string `short:"h" long:"host" description:"database server host" env:"DB_HOST" default:"localhost"`
 	DbPort     uint   `short:"p" long:"port" description:"database server port" env:"DB_PORT" default:"5432"`
 	DbUser     string `short:"U" long:"username" description:"database user name" env:"DB_USER" default:"postgres"`
 	DbPassword string `short:"P" long:"password" description:"database password" env:"DB_PASSWORD" default:"postgres"`
 	DbName     string `short:"d" long:"dbname" description:"database name to connect to" env:"DB_NAME" default:"db"`
 
-	// HTTP Server
+	// HTTP Server.
 	ServerPort uint `short:"s" long:"http-port" description:"HTTP server port" env:"SERVER_PORT" default:"3000"`
 
 	QuotaLimit    uint `long:"quota-limit" description:"limit request rates to up to 2x of this number" env:"QUOTA_LIMIT" default:"10"`
@@ -46,7 +46,13 @@ var opts struct {
 
 	IdleInterval uint `long:"idle-interval" description:"an time interval (in seconds) before user session can be stoped due to idle" env:"IDLE_INTERVAL" default:"3600"`
 
-	// Dev
+	// Platform.
+	ApiUrl         string `long:"api-url" description:"Postgres.ai platform API base URL" env:"API_URL" default:"https://postgres.ai/api/general"`
+	ApiToken       string `long:"api-token" description:"Postgres.ai platform API token" env:"API_TOKEN"`
+	ApiProject     string `long:"api-project" description:"Postgres.ai platform project to assign user sessions" env:"API_PROJECT"`
+	HistoryEnabled bool   `long:"history-enabled" description:"send command and queries history to Postgres.ai platform for collaboration and visualization" env:"HISTORY_ENABLED"`
+
+	// Dev.
 	DevGitCommitHash string `long:"git-commit-hash" env:"GIT_COMMIT_HASH" default:""`
 	DevGitBranch     string `long:"git-branch" env:"GIT_BRANCH" default:""`
 	DevGitModified   bool   `long:"git-modified" env:"GIT_MODIFIED"`
@@ -146,6 +152,11 @@ func main() {
 		IdleInterval:  opts.IdleInterval,
 
 		DbName: opts.DbName,
+
+		ApiUrl:         opts.ApiUrl,
+		ApiToken:       opts.ApiToken,
+		ApiProject:     opts.ApiProject,
+		HistoryEnabled: opts.HistoryEnabled,
 
 		Version: version,
 	}

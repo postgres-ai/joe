@@ -13,7 +13,7 @@ import (
 	"io"
 	"strings"
 
-	"../log"
+	"../util"
 )
 
 type EstimateDirection string
@@ -202,8 +202,6 @@ type ParamsConfig struct {
 
 // Explain Processing.
 func NewExplain(explainJson string, config ExplainConfig) (*Explain, error) {
-	log.Dbg("Explain config", config)
-
 	var explains []Explain
 
 	err := json.NewDecoder(strings.NewReader(explainJson)).Decode(&explains)
@@ -436,14 +434,14 @@ func (ex *Explain) writeExplainText(writer io.Writer) {
 func (ex *Explain) writeStatsText(writer io.Writer) {
 	fmt.Fprintf(writer, "Cost: %.2f\n", ex.TotalCost)
 
-	fmt.Fprintf(writer, "\nTime: %s\n", durationToString(ex.TotalTime))
-	fmt.Fprintf(writer, "  - planning: %s\n", durationToString(ex.PlanningTime))
-	fmt.Fprintf(writer, "  - execution: %s\n", durationToString(ex.ExecutionTime))
+	fmt.Fprintf(writer, "\nTime: %s\n", util.MillisecondsToString(ex.TotalTime))
+	fmt.Fprintf(writer, "  - planning: %s\n", util.MillisecondsToString(ex.PlanningTime))
+	fmt.Fprintf(writer, "  - execution: %s\n", util.MillisecondsToString(ex.ExecutionTime))
 	if ex.IOReadTime > 0 {
-		fmt.Fprintf(writer, "    - I/O read: %s\n", durationToString(ex.IOReadTime))
+		fmt.Fprintf(writer, "    - I/O read: %s\n", util.MillisecondsToString(ex.IOReadTime))
 	}
 	if ex.IOWriteTime > 0 {
-		fmt.Fprintf(writer, "    - I/O write: %s\n", durationToString(ex.IOWriteTime))
+		fmt.Fprintf(writer, "    - I/O write: %s\n", util.MillisecondsToString(ex.IOWriteTime))
 	}
 
 	fmt.Fprintf(writer, "\nShared buffers:\n")

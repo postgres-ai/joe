@@ -9,16 +9,6 @@ import (
 	"math"
 )
 
-func durationToString(value float64) string {
-	if value < 1000 {
-		return fmt.Sprintf("%.3f ms", value)
-	} else if value < 60000 {
-		return fmt.Sprintf("%.3f s", value/1000.0)
-	} else {
-		return fmt.Sprintf("%.3f min", value/60000.0)
-	}
-}
-
 // Based on dustin/go-humanize.
 // https://github.com/dustin/go-humanize/blob/master/bytes.go
 // The lib lacks an ability to change float number format.

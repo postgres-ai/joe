@@ -107,7 +107,12 @@ func (r *LocalRunner) Run(command string, options ...bool) (string, error) {
 	// success exit code. In that case err will be nil, but we need
 	// to treat the case as error and read proper output.
 	err := cmd.Run()
-	if err != nil || len(stderr.String()) > 0 {
+	psqlErr := strings.Contains(command, "psql") && len(stderr.String()) > 0
+
+	// TODO(anatoly): Remove hotfix.
+	psqlErr = psqlErr && !strings.Contains(stderr.String(), "unable to resolve host")
+
+	if err != nil || psqlErr {
 		rerr := NewRunnerError(logCommand, stderr.String(), err)
 
 		log.Err(rerr)

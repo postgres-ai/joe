@@ -141,6 +141,11 @@ type Config struct {
 	DbPassword string
 	DbName     string
 
+	ApiUrl         string
+	ApiToken       string
+	ApiProject     string
+	HistoryEnabled bool
+
 	Version string
 }
 
@@ -165,6 +170,8 @@ type User struct {
 }
 
 type UserSession struct {
+	PlatformSessionId string
+
 	QuotaTs       time.Time
 	QuotaCount    uint
 	QuotaLimit    uint
@@ -289,6 +296,7 @@ func (b *Bot) stopSession(u *User) error {
 	err := b.Prov.StopSession(u.Session.Provision)
 
 	u.Session.Provision = nil
+	u.Session.PlatformSessionId = ""
 
 	if err != nil {
 		log.Err(err)
@@ -548,7 +556,24 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 
 		user.Session.Provision = session
 
-		sMsg.Append(fmt.Sprintf("Session started: `%s`", session.Id))
+		if b.Config.HistoryEnabled {
+			sId, err := b.ApiCreateSession(user.ChatUser.ID, user.ChatUser.Name, ch)
+			if err != nil {
+				log.Err("API: Create platform session:", err)
+				b.stopSession(user)
+				failMsg(sMsg, err.Error())
+				return
+			}
+
+			user.Session.PlatformSessionId = sId
+		}
+
+		sId := session.Id
+		if len(user.Session.PlatformSessionId) > 0 {
+			sId = user.Session.PlatformSessionId
+		}
+
+		sMsg.Append(fmt.Sprintf("Session started: `%s`", sId))
 		okMsg(sMsg)
 	}
 	msgText = appendSessionId(msgText, user)
@@ -565,6 +590,14 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 
 	runMsg(msg)
 
+	apiCmd := &ApiCommand{
+		SessionId: user.Session.PlatformSessionId,
+		Command:   command,
+		Query:     query,
+		SlackTs:   ev.TimeStamp,
+		Error:     "",
+	}
+
 	switch {
 	case command == COMMAND_EXPLAIN:
 		var detailsText string
@@ -572,6 +605,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 
 		if query == "" {
 			failMsg(msg, MSG_EXPLAIN_OPTION_REQ)
+			b.failApiCmd(apiCmd, MSG_EXPLAIN_OPTION_REQ)
 			return
 		}
 
@@ -579,15 +613,18 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		var res, err = dbExplain(connStr, query)
 		if err != nil {
 			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
 			return
 		}
 
+		apiCmd.PlanText = res
 		planPreview, trnd := cutText(res, PLAN_SIZE, SEPARATOR_PLAN)
 
 		err = msg.Append(fmt.Sprintf("*Plan:*\n```%s```", planPreview))
 		if err != nil {
 			log.Err("Show plan: ", err)
 			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
 			return
 		}
 
@@ -607,6 +644,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		if err != nil {
 			log.Err("File: ", err)
 			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
 			return
 		}
 
@@ -614,14 +652,18 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		res, err = dbExplainAnalyze(connStr, query)
 		if err != nil {
 			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
 			return
 		}
+
+		apiCmd.PlanExecJson = res
 
 		if SHOW_RAW_EXPLAIN {
 			err = msg.Append(res)
 			if err != nil {
 				log.Err("Show plan:", err)
 				failMsg(msg, err.Error())
+				b.failApiCmd(apiCmd, err.Error())
 				return
 			}
 		}
@@ -630,6 +672,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		if err != nil {
 			log.Err("Explain parsing: ", err)
 			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
 			return
 		}
 
@@ -638,10 +681,11 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		if err != nil {
 			log.Err("Recommendations: ", err)
 			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
 			return
 		}
 
-		recommends := "*Recommendations:*\n"
+		recommends := ""
 		if len(tips) == 0 {
 			recommends += ":white_check_mark: Looks good"
 		} else {
@@ -652,15 +696,19 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 			}
 		}
 
-		err = msg.Append(recommends)
+		apiCmd.Recommendations = recommends
+
+		err = msg.Append("*Recommendations:*\n" + recommends)
 		if err != nil {
 			log.Err("Show recommendations: ", err)
 			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
 			return
 		}
 
 		// Visualization.
 		vis := explain.RenderPlanText()
+		apiCmd.PlanExecText = vis
 
 		planExecPreview, trnd := cutText(vis, PLAN_SIZE, SEPARATOR_PLAN)
 
@@ -668,6 +716,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		if err != nil {
 			log.Err("Show plan with execution:", err)
 			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
 			return
 		}
 
@@ -675,6 +724,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		if err != nil {
 			log.Err("File upload failed:", err)
 			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
 			return
 		}
 
@@ -687,20 +737,25 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		if err != nil {
 			log.Err("File: ", err)
 			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
 			return
 		}
 
 		stats := explain.RenderStats()
+		apiCmd.Stats = stats
+
 		err = msg.Append(fmt.Sprintf("*Statistics:*\n```%s```", stats))
 		if err != nil {
 			log.Err("Show statistics: ", err)
 			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
 			return
 		}
 
 	case command == COMMAND_EXEC:
 		if query == "" {
 			failMsg(msg, MSG_EXEC_OPTION_REQ)
+			b.failApiCmd(apiCmd, MSG_EXEC_OPTION_REQ)
 			return
 		}
 
@@ -710,14 +765,26 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		if err != nil {
 			log.Err("Exec:", err)
 			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
 			return
 		}
-		msg.Append(fmt.Sprintf("DDL has been executed. Execution time: %s",
-			elapsed.String()))
+
+		duration := util.DurationToString(elapsed)
+		result := fmt.Sprintf("DDL has been executed. Execution time: %s", duration)
+		apiCmd.Response = result
+
+		err = msg.Append(result)
+		if err != nil {
+			log.Err("Exec:", err)
+			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
+			return
+		}
 
 	case command == COMMAND_SNAPSHOT:
 		if query == "" {
 			failMsg(msg, MSG_SNAPSHOT_OPTION_REQ)
+			b.failApiCmd(apiCmd, MSG_SNAPSHOT_OPTION_REQ)
 			return
 		}
 
@@ -725,6 +792,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		if err != nil {
 			log.Err("Snapshot: ", err)
 			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
 			return
 		}
 
@@ -737,9 +805,20 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		if err != nil {
 			log.Err("Reset:", err)
 			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
 			return
 		}
-		msg.Append("The state of the database has been reset.")
+
+		result := "The state of the database has been reset."
+		apiCmd.Response = result
+
+		err = msg.Append(result)
+		if err != nil {
+			log.Err("Reset:", err)
+			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
+			return
+		}
 
 	case command == COMMAND_HARDRESET:
 		log.Msg("Reinitilizating provision")
@@ -751,6 +830,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		if err != nil {
 			log.Err("Hardreset:", err)
 			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
 			return
 		}
 
@@ -758,11 +838,23 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		if err != nil {
 			log.Err("Hardreset:", err)
 			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
 			return
 		}
 
-		log.Msg("Provision reinitilized", err)
-		msg.Append("Provision reinitilized")
+		result := "Provision reinitilized"
+		log.Msg(result, err)
+
+		apiCmd.Response = result
+
+		err = msg.Append(result)
+		if err != nil {
+			log.Err("Hardreset:", err)
+			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
+			return
+		}
+
 	case util.Contains(allowedPsqlCommands, command):
 		// See provision.runPsqlStrict for more comments.
 		if strings.ContainsAny(query, "\n;\\ ") {
@@ -770,6 +862,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 				"new lines, spaces, and excess backslashes.")
 			log.Err(err)
 			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
 			return
 		}
 
@@ -779,8 +872,11 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		if err != nil {
 			log.Err(err)
 			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
 			return
 		}
+
+		apiCmd.Response = cmd
 
 		cmdPreview, trnd := cutText(cmd, PLAN_SIZE, SEPARATOR_PLAN)
 
@@ -788,6 +884,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		if err != nil {
 			log.Err("Show psql output:", err)
 			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
 			return
 		}
 
@@ -795,6 +892,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		if err != nil {
 			log.Err("File upload failed:", err)
 			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
 			return
 		}
 
@@ -806,6 +904,16 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		err = msg.Append(fmt.Sprintf("<%s|Full command output>%s\n", fileCmd.Permalink, detailsText))
 		if err != nil {
 			log.Err("File: ", err)
+			failMsg(msg, err.Error())
+			b.failApiCmd(apiCmd, err.Error())
+			return
+		}
+	}
+
+	if b.Config.HistoryEnabled {
+		_, err := b.ApiPostCommand(apiCmd)
+		if err != nil {
+			log.Err(err)
 			failMsg(msg, err.Error())
 			return
 		}
@@ -819,6 +927,12 @@ func appendSessionId(text string, u *User) string {
 
 	if u != nil && u.Session.Provision != nil && len(u.Session.Provision.Id) > 0 {
 		sessionId := u.Session.Provision.Id
+
+		// Use session ID from platform if it's defined.
+		if len(u.Session.PlatformSessionId) > 0 {
+			sessionId = u.Session.PlatformSessionId
+		}
+
 		s = fmt.Sprintf("Session: `%s`\n", sessionId)
 	}
 
@@ -853,6 +967,14 @@ func failMsg(msg *chatapi.Message, text string) {
 	err = msg.ChangeReaction(RCTN_ERROR)
 	if err != nil {
 		log.Err(err)
+	}
+}
+
+func (b *Bot) failApiCmd(apiCmd *ApiCommand, text string) {
+	apiCmd.Error = text
+	_, err := b.ApiPostCommand(apiCmd)
+	if err != nil {
+		log.Err("failApiCmd:", err)
 	}
 }
 
