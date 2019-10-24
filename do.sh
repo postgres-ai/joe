@@ -15,28 +15,13 @@ run() {
   # use `export` to define variables and run with `ENV=staging makerun.sh`.
   if [ -z ${ENV+x} ]; then
     echo "Using default variables"
-
-    # Slack API.
-    export CHAT_TOKEN="xoxb-TOKEN"
-    export CHAT_VERIFICATION_TOKEN="TOKEN"
-
-    # HTTP server for Slack Events.
-    export SERVER_PORT=3000
-
-    # DB connection info.
-    export DB_HOST="localhost"
-    export DB_PORT=10799
-    export DB_USER="postgres"
-    export DB_PASSWORD="postgres"
-    export DB_NAME="postgres"
-
-    # Edit config/provisioning.yaml.
+    source ./config/envs/default.sh
   else
-    source ./deploy/configs/${ENV}.sh
+    source ./config/envs/${ENV}.sh
   fi
 
   # Read and set git status info if it wasn't done before.
-  if [ -z "$GIT_COMMIT_HASH" ]; then
+  if [ "$INCLUDE_GIT_STATUS" == "true" ] && [ -z "$GIT_COMMIT_HASH" ]; then
     echo "Fetching git status..."
     export_git_status
   fi
