@@ -125,7 +125,7 @@ func (j *provisionLocal) getPgConfig(name string, port uint) *PgConfig {
 	return &PgConfig{
 		Version:  j.config.PgVersion,
 		Bindir:   j.config.PgBindir,
-		Datadir:  name + j.config.PgDatasubdir,
+		Datadir:  name + j.config.PgDataSubdir,
 		Host:     j.config.DbHost,
 		Port:     port,
 		Username: j.config.DbUsername,

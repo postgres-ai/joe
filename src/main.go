@@ -73,7 +73,7 @@ type ProvisionConfig struct {
 
 	PgVersion    string `yaml:"pgVersion"`
 	PgBindir     string `yaml:"pgBindir"`
-	PgDatasubdir string `yaml:"pgDatasubdir"`
+	PgDataSubdir string `yaml:"pgDataSubdir"`
 }
 
 func main() {
@@ -120,7 +120,7 @@ func main() {
 
 		PgVersion:    provisionConfig.PgVersion,
 		PgBindir:     provisionConfig.PgBindir,
-		PgDatasubdir: provisionConfig.PgDatasubdir,
+		PgDataSubdir: provisionConfig.PgDataSubdir,
 	}
 	if !provision.IsValidConfig(provConf) {
 		log.Err("Wrong configuration format.")
