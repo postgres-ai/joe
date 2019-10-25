@@ -4,6 +4,6 @@ mode: "local"
 debug: true
 pgVersion: "11"
 pgBindir: "/usr/lib/postgresql/9.6/bin"
-pgDatasubdir: "/pgdata"
+pgDataSubdir: "/pgdata"
 zfsPool: "joepool"
 initialSnapshot: "db_state_1"

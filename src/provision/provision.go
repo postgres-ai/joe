@@ -54,7 +54,7 @@ type Config struct {
 	// Postgres options.
 	PgVersion    string
 	PgBindir     string
-	PgDatasubdir string
+	PgDataSubdir string
 
 	DbHost string
 	DbName string
