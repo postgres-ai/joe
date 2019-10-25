@@ -100,7 +100,7 @@ func PostgresStart(r Runner, c *PgConfig) error {
 			switch rerr.ExitStatus {
 			// If an accessible data directory is not specified, the process returns an exit status of 4.
 			case 4:
-				return fmt.Errorf("The specified pgBindir is unaccesible. %v", rerr)
+				return fmt.Errorf("Cannot access PGDATA. %v", rerr)
 
 			// If the server is not running, the process returns an exit status of 3.
 			case 3:
@@ -176,7 +176,7 @@ func PostgresStop(r Runner, c *PgConfig) error {
 				switch rerr.ExitStatus {
 				// If an accessible data directory is not specified, the process returns an exit status of 4.
 				case 4:
-					return fmt.Errorf("The specified pgBindir is unaccesible. %v", rerr)
+					return fmt.Errorf("Cannot access PGDATA. %v", rerr)
 
 				// If the server is not running, the process returns an exit status of 3.
 				case 3:
