@@ -28,7 +28,7 @@ main:
 	GOARCH=${GOARCH} go build ${LDFLAGS} -o bin/${BINARY} ./src/
 
 test:
-	go test ./src/
+	go test ./src/...
 
 vet:
 	go vet ./src/...

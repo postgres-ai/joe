@@ -62,7 +62,7 @@ func TestTips(t *testing.T) {
 			BuffersHitBigMax:              1000,
 			AddLimitMinRows:               10000,
 			TempWrittenBlocksMin:          0,
-			IndexNeededFilteredMin:        100,
+			IndexIneffHighFilteredMin:     100,
 			VacuumAnalyzeNeededFetchesMin: 0,
 		},
 		Tips: []Tip{
@@ -79,7 +79,7 @@ func TestTips(t *testing.T) {
 				Code: "TEMP_BUF_WRITTEN",
 			},
 			{
-				Code: "INDEX_NEEDED",
+				Code: "INDEX_INEFFICIENT_HIGH_FILTERED",
 			},
 			{
 				Code: "VACUUM_ANALYZE_NEEDED",
@@ -181,7 +181,7 @@ func TestTips(t *testing.T) {
 			]`,
 			expectedCodes: []string{"TEMP_BUF_WRITTEN"},
 		},
-		// INDEX_NEEDED.
+		// INDEX_INEFFICIENT_HIGH_FILTERED.
 		{
 			inputJson: `[
 				{
@@ -191,7 +191,7 @@ func TestTips(t *testing.T) {
 					}
 				}
 			]`,
-			expectedCodes: []string{"INDEX_NEEDED"},
+			expectedCodes: []string{"INDEX_INEFFICIENT_HIGH_FILTERED"},
 		},
 		// VACUUM_ANALYZE_NEEDED.
 		{
