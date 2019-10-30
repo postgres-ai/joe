@@ -76,8 +76,8 @@ type Explain struct {
 	MaxDuration     float64
 	ContainsSeqScan bool
 
-	IndexNeeded         bool
-	VacuumAnalyzeNeeded bool
+	IndexIneffHighFiltered bool
+	VacuumAnalyzeNeeded    bool
 
 	Config ExplainConfig `json:"-"`
 }
@@ -158,12 +158,12 @@ type Plan struct {
 }
 
 const (
-	TIP_SEQSCAN_USED          = "SEQSCAN_USED"
-	TIP_TOO_MUCH_DATA         = "TOO_MUCH_DATA"
-	TIP_ADD_LIMIT             = "ADD_LIMIT"
-	TIP_TEMP_BUF_WRITTEN      = "TEMP_BUF_WRITTEN"
-	TIP_INDEX_NEEDED          = "INDEX_NEEDED"
-	TIP_VACUUM_ANALYZE_NEEDED = "VACUUM_ANALYZE_NEEDED"
+	TIP_SEQSCAN_USED                    = "SEQSCAN_USED"
+	TIP_TOO_MUCH_DATA                   = "TOO_MUCH_DATA"
+	TIP_ADD_LIMIT                       = "ADD_LIMIT"
+	TIP_TEMP_BUF_WRITTEN                = "TEMP_BUF_WRITTEN"
+	TIP_INDEX_INEFFICIENT_HIGH_FILTERED = "INDEX_INEFFICIENT_HIGH_FILTERED"
+	TIP_VACUUM_ANALYZE_NEEDED           = "VACUUM_ANALYZE_NEEDED"
 )
 
 type ExplainConfig struct {
@@ -193,8 +193,8 @@ type ParamsConfig struct {
 	// T4 TEMP_BUF_WRITTEN.
 	TempWrittenBlocksMin uint64 `yaml:"tempWrittenBlocksMin"`
 
-	// T5 INDEX_NEEDED.
-	IndexNeededFilteredMin uint64 `yaml:"indexNeededFilteredMin"`
+	// T5 INDEX_INEFFICIENT_HIGH_FILTERED.
+	IndexIneffHighFilteredMin uint64 `yaml:"indexIneffHighFilteredMin"`
 
 	// T6 VACUUM_ANALYZE_NEEDED.
 	VacuumAnalyzeNeededFetchesMin uint64 `yaml:"vacuumAnalyzeNeededFetchesMin"`
@@ -279,9 +279,9 @@ func (ex *Explain) GetTips() ([]Tip, error) {
 		tips = append(tips, tip)
 	}
 
-	// T5: Index needed.
-	if ex.IndexNeeded {
-		tip, err := c.getTipByCode(TIP_INDEX_NEEDED)
+	// T5: Index inefficient high filtered.
+	if ex.IndexIneffHighFiltered {
+		tip, err := c.getTipByCode(TIP_INDEX_INEFFICIENT_HIGH_FILTERED)
 		if err != nil {
 			return make([]Tip, 0), err
 		}
@@ -403,8 +403,8 @@ func (ex *Explain) calculateOutlierNodes(plan *Plan) {
 	plan.Largest = plan.ActualRows == ex.MaxRows
 	plan.Slowest = plan.ActualDuration == ex.MaxDuration
 
-	if plan.NodeType == IndexScan && plan.RowsRemovedByFilter > p.IndexNeededFilteredMin {
-		ex.IndexNeeded = true
+	if plan.NodeType == IndexScan && plan.RowsRemovedByFilter > p.IndexIneffHighFilteredMin {
+		ex.IndexIneffHighFiltered = true
 	}
 
 	if plan.NodeType == IndexOnlyScan && plan.HeapFetches > p.VacuumAnalyzeNeededFetchesMin {
