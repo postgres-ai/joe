@@ -223,12 +223,12 @@ func loadProvisionConfig() (ProvisionConfig, error) {
 func loadConfig(config interface{}, name string) error {
 	b, err := ioutil.ReadFile(getConfigPath(name))
 	if err != nil {
-		return fmt.Errorf("Error loading %s config file", name)
+		return fmt.Errorf("Error loading %s config file: %v", name, err)
 	}
 
 	err = yaml.Unmarshal(b, config)
 	if err != nil {
-		return fmt.Errorf("Error parsing %s config", name)
+		return fmt.Errorf("Error parsing %s config: %v", name, err)
 	}
 
 	log.Dbg("Config loaded", name, config)

@@ -135,10 +135,6 @@ type Config struct {
 	QuotaInterval uint // Seconds.
 	IdleInterval  uint // Seconds.
 
-	DbHost     string
-	DbPort     uint
-	DbUser     string
-	DbPassword string
 	DbName     string
 
 	ApiUrl         string
