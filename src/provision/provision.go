@@ -129,23 +129,23 @@ func (s *Session) GetConnStr(dbname string) string {
 	connStr := "sslmode=disable"
 
 	if len(s.Host) > 0 {
-		connStr += " " + s.Host
+		connStr += " host=" + s.Host
 	}
 
 	if s.Port > 0 {
-		connStr += fmt.Sprintf(" %d", s.Port)
+		connStr += fmt.Sprintf(" port=%d", s.Port)
 	}
 
 	if len(s.User) > 0 {
-		connStr += " " + s.User
+		connStr += " user=" + s.User
 	}
 
 	if len(s.Password) > 0 {
-		connStr += " " + s.Password
+		connStr += " password=" + s.Password
 	}
 
 	if len(dbname) > 0 {
-		connStr += " " + dbname
+		connStr += " dbname=" + dbname
 	}
 
 	return connStr
