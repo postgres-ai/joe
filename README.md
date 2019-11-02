@@ -27,7 +27,7 @@ https://gitlab.com/postgres-ai/joe/snippets/1880313).
 
 ### ZFS Store
 1. Create a ZFS store with a clone of
-the production Postgres database (e.g. using WAL-E, WAL-E or Barman archive).
+the production Postgres database (e.g. using WAL-E, WAL-G or Barman archive).
 1. Shutdown Postgres, create a new ZFS snapshot
 (`sudo zfs snapshot -r  zpool@db_state_1`) and remember its name. It will
 be needed for further configuration (`initialSnapshot` option in 
