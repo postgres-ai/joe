@@ -766,7 +766,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		}
 
 		duration := util.DurationToString(elapsed)
-		result := fmt.Sprintf("DDL has been executed. Execution time: %s", duration)
+		result := fmt.Sprintf("The query has been executed. Duration: %s", duration)
 		apiCmd.Response = result
 
 		err = msg.Append(result)
