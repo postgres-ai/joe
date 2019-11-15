@@ -740,9 +740,9 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		stats := explain.RenderStats()
 		apiCmd.Stats = stats
 
-		err = msg.Append(fmt.Sprintf("*Statistics:*\n```%s```", stats))
+		err = msg.Append(fmt.Sprintf("*Summary:*\n```%s```", stats))
 		if err != nil {
-			log.Err("Show statistics: ", err)
+			log.Err("Show summary: ", err)
 			failMsg(msg, err.Error())
 			b.failApiCmd(apiCmd, err.Error())
 			return

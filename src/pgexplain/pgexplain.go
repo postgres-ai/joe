@@ -432,17 +432,11 @@ func (ex *Explain) writeExplainText(writer io.Writer) {
 }
 
 func (ex *Explain) writeStatsText(writer io.Writer) {
-	fmt.Fprintf(writer, "Cost: %.2f\n", ex.TotalCost)
-
 	fmt.Fprintf(writer, "\nTime: %s\n", util.MillisecondsToString(ex.TotalTime))
 	fmt.Fprintf(writer, "  - planning: %s\n", util.MillisecondsToString(ex.PlanningTime))
 	fmt.Fprintf(writer, "  - execution: %s\n", util.MillisecondsToString(ex.ExecutionTime))
-	if ex.IOReadTime > 0 {
-		fmt.Fprintf(writer, "    - I/O read: %s\n", util.MillisecondsToString(ex.IOReadTime))
-	}
-	if ex.IOWriteTime > 0 {
-		fmt.Fprintf(writer, "    - I/O write: %s\n", util.MillisecondsToString(ex.IOWriteTime))
-	}
+	fmt.Fprintf(writer, "    - I/O read: %s\n", util.MillisecondsToString(ex.IOReadTime))
+	fmt.Fprintf(writer, "    - I/O write: %s\n", util.MillisecondsToString(ex.IOWriteTime))
 
 	fmt.Fprintf(writer, "\nShared buffers:\n")
 	ex.writeBlocks(writer, "hits", ex.SharedHitBlocks, "from the buffer pool")
@@ -644,14 +638,14 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 	buffers := ""
 	if plan.SharedDirtiedBlocks > 0 || plan.SharedHitBlocks > 0 || plan.SharedReadBlocks > 0 || plan.SharedWrittenBlocks > 0 {
 		buffers += "shared"
-		if plan.SharedDirtiedBlocks > 0 {
-			buffers += fmt.Sprintf(" dirtied=%d", plan.SharedDirtiedBlocks)
-		}
 		if plan.SharedHitBlocks > 0 {
 			buffers += fmt.Sprintf(" hit=%d", plan.SharedHitBlocks)
 		}
 		if plan.SharedReadBlocks > 0 {
 			buffers += fmt.Sprintf(" read=%d", plan.SharedReadBlocks)
+		}
+		if plan.SharedDirtiedBlocks > 0 {
+			buffers += fmt.Sprintf(" dirtied=%d", plan.SharedDirtiedBlocks)
 		}
 		if plan.SharedWrittenBlocks > 0 {
 			buffers += fmt.Sprintf(" written=%d", plan.SharedWrittenBlocks)
@@ -662,14 +656,14 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 			buffers += " "
 		}
 		buffers += "local"
-		if plan.LocalDirtiedBlocks > 0 {
-			buffers += fmt.Sprintf(" dirtied=%d", plan.LocalDirtiedBlocks)
-		}
 		if plan.LocalHitBlocks > 0 {
 			buffers += fmt.Sprintf(" hit=%d", plan.LocalHitBlocks)
 		}
 		if plan.LocalReadBlocks > 0 {
 			buffers += fmt.Sprintf(" read=%d", plan.LocalReadBlocks)
+		}
+		if plan.LocalDirtiedBlocks > 0 {
+			buffers += fmt.Sprintf(" dirtied=%d", plan.LocalDirtiedBlocks)
 		}
 		if plan.LocalWrittenBlocks > 0 {
 			buffers += fmt.Sprintf(" written=%d", plan.LocalWrittenBlocks)
@@ -678,5 +672,17 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 
 	if buffers != "" {
 		outputFn("Buffers: %s", buffers)
+	}
+
+	ioTiming := ""
+	if plan.IOReadTime > 0 {
+		ioTiming += fmt.Sprintf(" read=%.3f", plan.IOReadTime)
+	}
+	if plan.IOWriteTime > 0 {
+		ioTiming += fmt.Sprintf(" write=%.3f", plan.IOWriteTime)
+	}
+
+	if len(ioTiming) > 0 {
+		outputFn("I/O Timings:%s", ioTiming)
 	}
 }
