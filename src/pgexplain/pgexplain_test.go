@@ -33,6 +33,10 @@ func TestVisualize(t *testing.T) {
 			inputJson: INPUT_JSON_3,
 			expected:  EXPECTED_TEXT_3,
 		},
+		{
+			inputJson: INPUT_JSON_4,
+			expected:  EXPECTED_TEXT_4,
+		},
 	}
 
 	for i, test := range tests {
@@ -1374,4 +1378,73 @@ const EXPECTED_TEXT_3 = ` Gather  (cost=1000.00..107758.40 rows=104 width=0) (ac
          Filter: ((i >= 100) AND (i <= 200))
          Rows Removed by Filter: 3333300
          Buffers: shared hit=2528 read=41720
+`
+
+const INPUT_JSON_4 = `[
+  {
+    "Plan": {
+      "Node Type": "Limit",
+      "Parallel Aware": false,
+      "Startup Cost": 110.74,
+      "Total Cost": 111.85,
+      "Plan Rows": 20,
+      "Plan Width": 851,
+      "Actual Startup Time": 9.347,
+      "Actual Total Time": 9.357,
+      "Actual Rows": 20,
+      "Actual Loops": 1,
+      "Shared Hit Blocks": 8,
+      "Shared Read Blocks": 71,
+      "Shared Dirtied Blocks": 2,
+      "Shared Written Blocks": 2,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0,
+      "I/O Read Time": 7.150,
+      "I/O Write Time": 0.370,
+      "Plans": [
+        {
+          "Node Type": "Seq Scan",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Relation Name": "users",
+          "Alias": "users",
+          "Startup Cost": 0.00,
+          "Total Cost": 384481.33,
+          "Plan Rows": 6943833,
+          "Plan Width": 851,
+          "Actual Startup Time": 0.017,
+          "Actual Total Time": 9.196,
+          "Actual Rows": 2020,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 8,
+          "Shared Read Blocks": 71,
+          "Shared Dirtied Blocks": 2,
+          "Shared Written Blocks": 2,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Written Blocks": 0,
+          "I/O Read Time": 7.150,
+          "I/O Write Time": 0.370
+        }
+      ]
+    },
+    "Planning Time": 0.173,
+    "Triggers": [
+    ],
+    "Execution Time": 9.407
+  }
+]`
+
+const EXPECTED_TEXT_4 = ` Limit  (cost=110.74..111.85 rows=20 width=851) (actual time=9.347..9.357 rows=20 loops=1)
+   Buffers: shared hit=8 read=71 dirtied=2 written=2
+   I/O Timings: read=7.150 write=0.370
+   ->  Seq Scan on users  (cost=0.00..384481.33 rows=6943833 width=851) (actual time=0.017..9.196 rows=2020 loops=1)
+         Buffers: shared hit=8 read=71 dirtied=2 written=2
+         I/O Timings: read=7.150 write=0.370
 `
