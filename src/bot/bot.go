@@ -135,7 +135,7 @@ type Config struct {
 	QuotaInterval uint // Seconds.
 	IdleInterval  uint // Seconds.
 
-	DbName     string
+	DbName string
 
 	ApiUrl         string
 	ApiToken       string
