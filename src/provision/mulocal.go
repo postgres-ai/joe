@@ -7,12 +7,14 @@ package provision
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"../log"
 )
 
 const (
 	CLONE_PREFIX = "joe_auto_clone_"
+	SLASH        = "/"
 )
 
 type MuLocalPortPool struct {
@@ -22,6 +24,8 @@ type MuLocalPortPool struct {
 
 type MuLocalConfig struct {
 	PortPool MuLocalPortPool `yaml:"portPool"`
+	LogsDir  string          `yaml:"logsDir"`
+	MountDir string          `yaml:"mountDir"`
 }
 
 type provisionMuLocal struct {
@@ -32,13 +36,29 @@ type provisionMuLocal struct {
 }
 
 func NewProvisionMuLocal(config Config) (Provision, error) {
-	provisionMuLocal := &provisionMuLocal{
+	p := &provisionMuLocal{
 		runner:         NewLocalRunner(),
 		sessionCounter: 0,
 	}
-	provisionMuLocal.config = config
+	p.config = config
 
-	return provisionMuLocal, nil
+	if len(p.config.MuLocal.LogsDir) == 0 {
+		p.config.MuLocal.LogsDir = "/var/lib/postgresql/dblab/logs/"
+	}
+
+	if len(p.config.MuLocal.MountDir) == 0 {
+		p.config.MuLocal.MountDir = "/var/lib/postgresql/dblab/clones/"
+	}
+
+	if !strings.HasSuffix(p.config.MuLocal.LogsDir, SLASH) {
+		p.config.MuLocal.LogsDir += SLASH
+	}
+
+	if !strings.HasSuffix(p.config.MuLocal.MountDir, SLASH) {
+		p.config.MuLocal.MountDir += SLASH
+	}
+
+	return p, nil
 }
 
 func isValidConfigModeMuLocal(config Config) bool {
@@ -99,7 +119,8 @@ func (j *provisionMuLocal) StartSession(options ...string) (*Session, error) {
 
 	log.Dbg(fmt.Sprintf("Starting session for port: %d", port))
 
-	err = ZfsCreateClone(j.runner, j.config.ZfsPool, name, snapshot)
+	err = ZfsCreateClone(j.runner, j.config.ZfsPool, name, snapshot,
+		j.config.MuLocal.MountDir)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +212,8 @@ func (j *provisionMuLocal) ResetSession(session *Session, options ...string) err
 		return err
 	}
 
-	err = ZfsCreateClone(j.runner, j.config.ZfsPool, name, snapshot)
+	err = ZfsCreateClone(j.runner, j.config.ZfsPool, name, snapshot,
+		j.config.MuLocal.MountDir)
 	if err != nil {
 		return err
 	}
@@ -299,13 +321,14 @@ func (j *provisionMuLocal) getName(port uint) string {
 
 func (j *provisionMuLocal) getPgConfig(name string, port uint) *PgConfig {
 	return &PgConfig{
-		Version:  j.config.PgVersion,
-		Bindir:   j.config.PgBindir,
-		Datadir:  name + j.config.PgDataSubdir,
-		Host:     j.config.DbHost,
-		Port:     port,
-		Name:     j.config.DbName,
-		Username: j.config.DbUsername,
-		Password: j.config.DbPassword,
+		Version:    j.config.PgVersion,
+		Bindir:     j.config.PgBindir,
+		Datadir:    j.config.MuLocal.MountDir + name + j.config.PgDataSubdir,
+		Host:       j.config.DbHost,
+		Port:       port,
+		Name:       j.config.DbName,
+		Username:   j.config.DbUsername,
+		Password:   j.config.DbPassword,
+		LogsPrefix: j.config.MuLocal.LogsDir,
 	}
 }

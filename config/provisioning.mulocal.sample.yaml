@@ -5,6 +5,8 @@ mulocal:
   portPool:
     from: 6000
     to: 6100
+  mountDir: "/var/lib/postgresql/dblab/clones/"
+  logsDir: "/var/lib/postgresql/dblab/logs/"
 debug: true
 pgVersion: "11"
 pgBindir: "/usr/lib/postgresql/9.6/bin"

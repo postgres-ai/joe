@@ -12,7 +12,8 @@ import (
 	"../util"
 )
 
-func ZfsCreateClone(r Runner, pool string, name string, snapshot string) error {
+func ZfsCreateClone(r Runner, pool string, name string, snapshot string,
+	mountDir string) error {
 	exists, err := ZfsCloneExists(r, name)
 	if err != nil {
 		return err
@@ -23,9 +24,8 @@ func ZfsCreateClone(r Runner, pool string, name string, snapshot string) error {
 	}
 
 	cmd := "sudo zfs clone " + pool + "@" + snapshot + " " +
-		pool + "/" + name + " -o mountpoint=/" + name + " && " +
-		// TODO(anatoly): Refactor using of chown.
-		"sudo chown -R postgres /" + name
+		pool + "/" + name + " -o mountpoint=" + mountDir + name + " && " +
+		"sudo chown -R postgres " + mountDir + name
 
 	out, err := r.Run(cmd)
 	if err != nil {
