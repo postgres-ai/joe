@@ -104,6 +104,17 @@ const MSG_HELP = "• `explain` — analyze your query (SELECT, INSERT, DELETE, 
 	"• `\\d`, `\\d+`, `\\dt`, `\\dt+`, `\\di`, `\\di+`, `\\l`, `\\l+`, `\\dv`, `\\dv+`, `\\dm`, `\\dm+` — psql meta information commands\n" +
 	"• `help` — this message\n"
 
+const MSG_SESSION_FOREWORD = "Starting new session...\n\n" +
+	"• Sessions are independent. You will have your own full-sized copy of the database.\n" +
+	"• Feel free to change anything: build and drop indexes, change schema, etc.\n" +
+	"• At any time, use `reset` to re-initialize the database. This will cancel the ongoing queries in your session. Say `help` to see the full list of commands.\n" +
+	"• I will mark my responses with `Session: N`, where `N` is the session number (you will get your number once your session is initialized).\n" +
+	"• The session will be destroyed after 2 hours of inactivity. The corresponding DB clone will be deleted.\n" +
+	"• EXPLAIN plans here are expected to be identical to production plans, essential for SQL microanalysis and optimization.\n" +
+	"• The actual timing values may differ from those that production instances have because actual caches in DB Lab are smaller, therefore reading from disks is required more often. " +
+        "However, the number of bytes and pages/buffers involved into query execution are the same as those on a production server.\n" +
+	"\nMade with :hearts: by Postgres.ai. Bug reports, ideas, and MRs are welcome: https://gitlab.com/postgres-ai/joe \n\n"
+
 const MSG_EXEC_OPTION_REQ = "Use `exec` to run query, e.g. `exec drop index some_index_name`"
 const MSG_EXPLAIN_OPTION_REQ = "Use `explain` to see the query's plan, e.g. `explain select 1`"
 const MSG_SNAPSHOT_OPTION_REQ = "Use `snapshot` to create a snapshot, e.g. `snapshot state_name`"
@@ -526,7 +537,8 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 
 	if user.Session.Provision == nil {
 		sMsg, _ := b.Chat.NewMessage(ch)
-		sMsg.Publish("Starting new session")
+		sMsg.Publish(MSG_SESSION_FOREWORD)
+
 		runMsg(sMsg)
 
 		session, err := b.Prov.StartSession()
