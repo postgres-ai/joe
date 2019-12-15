@@ -185,6 +185,24 @@ func (m *Message) Append(text string) error {
 	return nil
 }
 
+func (m *Message) Replace(text string) error {
+	if !m.isPublished() {
+		return fmt.Errorf(ERROR_NOT_PUBLISHED)
+	}
+
+	channelId, timestamp, _, err := m.Chat.Api.UpdateMessage(m.ChannelId,
+		m.Timestamp, slack.MsgOptionText(text, false))
+	if err != nil {
+		return err
+	}
+
+	m.ChannelId = channelId // Shouldn't change, but update just in case.
+	m.Timestamp = timestamp
+	m.Text = text
+
+	return nil
+}
+
 // Remove previous reactions (from bot) in a published message and add a new one.
 func (m *Message) ChangeReaction(reaction string) error {
 	if !m.isPublished() {
