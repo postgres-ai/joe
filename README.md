@@ -11,6 +11,7 @@ for query optimization and the ability to rollback.
 
 ## Install Software
 
+### 1. Build
 *Currently, there are no ready-to-use binaries or a Docker image. The setup
 is to be done using the source code.*
 
@@ -22,10 +23,11 @@ certificate (Ubuntu: https://gitlab.com/postgres-ai/joe/snippets/1876422).
     - Ubuntu: In some cases, standard Ubuntu package might not work. See
 https://gitlab.com/postgres-ai/joe/snippets/1880315.
     - On macOS: `brew install golang`
+1. Run `make all` in the project directory.
+
+### 2. ZFS Store
 1. If needed (when working in "local" mode), install ZFS (Ubuntu:
 https://gitlab.com/postgres-ai/joe/snippets/1880313).
-
-### ZFS Store
 1. Create a ZFS store with a clone of
 the production Postgres database (e.g. using WAL-E, WAL-G or Barman archive).
 1. Shutdown Postgres, create a new ZFS snapshot
@@ -34,7 +36,7 @@ be needed for further configuration (`initialSnapshot` option in
 `config/provisioning.yaml`).
 1. Start Postgres.
 
-### Slack App
+### 3. Slack App
 Configure a new Slack App in order to use Joe in Slack and add the app to your
 team Workspace. Joe Bot should be available with public URL calls from Slack.
 1. Create "#db-lab" channel in your Slack Workspace (You can use another channel name).
@@ -50,7 +52,7 @@ team Workspace. Joe Bot should be available with public URL calls from Slack.
     * * Add `app_mention` and `message.channels` to "Subscribe to Bot Events".
 1. Invite "Joe Bot" to "#db-lab" channel.
 
-### Deploy
+### 4. Run
 Deploy Joe instance in your infrastructure. You would need to:
 1. Create `config/provisioning.yaml` and `config/envs/MY_ENV.sh` with desired configuration (see samples in corresponding directories).
 1. Make a publicly accessible HTTP(S) server port specified in the configuration for Slack Events Request URL.
@@ -58,3 +60,5 @@ Deploy Joe instance in your infrastructure. You would need to:
 
 Unless being run in the "local" mode, Joe will automatically provision AWS EC2
 or GCP GCE instance of Postgres.
+
+Privileged `postgres` user is required to run Joe in "local" and "mulocal" modes.
