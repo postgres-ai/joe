@@ -13,7 +13,7 @@ import (
 	"io"
 	"strings"
 
-	"../util"
+	"gitlab.com/postgres-ai/joe/pkg/util"
 )
 
 type EstimateDirection string

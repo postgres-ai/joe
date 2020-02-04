@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"strings"
 
-	"../log"
+	"gitlab.com/postgres-ai/database-lab/pkg/log"
 
 	"github.com/nlopes/slack"
 	"github.com/nlopes/slack/slackevents"
@@ -25,6 +25,8 @@ const ERROR_NOT_PUBLISHED = "Message not published yet"
 
 const CONTENT_TYPE_TEXT = "text/plain"
 
+const RCTN_ERROR = "x"
+
 type Chat struct {
 	Api               *slack.Client
 	AccessToken       string
@@ -32,7 +34,7 @@ type Chat struct {
 }
 
 type Message struct {
-	ChannelId string
+	ChannelID string
 	Timestamp string // Used as message id in Slack API.
 	Text      string // Used to accumulate message text to append new parts by edit.
 	Reaction  string // We will support only one reaction for now.
@@ -51,15 +53,15 @@ func NewChat(accessToken string, verificationToken string) *Chat {
 	return &chat
 }
 
-func (c *Chat) NewMessage(channelId string) (*Message, error) {
+func (c *Chat) NewMessage(channelID string) (*Message, error) {
 	var msg Message
 
-	if len(channelId) == 0 {
-		return &msg, fmt.Errorf("Bad channelId specified")
+	if channelID == "" {
+		return &msg, fmt.Errorf("Bad channelID specified")
 	}
 
 	msg = Message{
-		ChannelId: channelId,
+		ChannelID: channelID,
 		Timestamp: "",
 		Text:      "",
 		Reaction:  "",
@@ -136,13 +138,13 @@ func (c *Chat) UploadFile(title string, content string, channel string, ts strin
 // TODO(anatoly): Retries.
 // Publish a message.
 func (m *Message) Publish(text string) error {
-	channelId, timestamp, err := m.Chat.Api.PostMessage(m.ChannelId,
+	channelId, timestamp, err := m.Chat.Api.PostMessage(m.ChannelID,
 		slack.MsgOptionText(text, false))
 	if err != nil {
 		return err
 	}
 
-	m.ChannelId = channelId // Shouldn't change, but update just in case.
+	m.ChannelID = channelId // Shouldn't change, but update just in case.
 	m.Timestamp = timestamp
 	m.Text = text
 
@@ -151,7 +153,7 @@ func (m *Message) Publish(text string) error {
 
 // Publish a message as ephemeral.
 func (m *Message) PublishEphemeral(text string, userId string) error {
-	timestamp, err := m.Chat.Api.PostEphemeral(m.ChannelId, userId,
+	timestamp, err := m.Chat.Api.PostEphemeral(m.ChannelID, userId,
 		slack.MsgOptionText(text, false))
 	if err != nil {
 		return err
@@ -172,13 +174,13 @@ func (m *Message) Append(text string) error {
 
 	newText := m.Text + CHAT_APPEND_SEPARATOR + text
 
-	channelId, timestamp, _, err := m.Chat.Api.UpdateMessage(m.ChannelId,
+	channelId, timestamp, _, err := m.Chat.Api.UpdateMessage(m.ChannelID,
 		m.Timestamp, slack.MsgOptionText(newText, false))
 	if err != nil {
 		return err
 	}
 
-	m.ChannelId = channelId // Shouldn't change, but update just in case.
+	m.ChannelID = channelId // Shouldn't change, but update just in case.
 	m.Timestamp = timestamp
 	m.Text = newText
 
@@ -190,13 +192,13 @@ func (m *Message) Replace(text string) error {
 		return fmt.Errorf(ERROR_NOT_PUBLISHED)
 	}
 
-	channelId, timestamp, _, err := m.Chat.Api.UpdateMessage(m.ChannelId,
+	channelId, timestamp, _, err := m.Chat.Api.UpdateMessage(m.ChannelID,
 		m.Timestamp, slack.MsgOptionText(text, false))
 	if err != nil {
 		return err
 	}
 
-	m.ChannelId = channelId // Shouldn't change, but update just in case.
+	m.ChannelID = channelId // Shouldn't change, but update just in case.
 	m.Timestamp = timestamp
 	m.Text = text
 
@@ -213,7 +215,7 @@ func (m *Message) ChangeReaction(reaction string) error {
 		return nil
 	}
 
-	msgRef := slack.NewRefToMessage(m.ChannelId, m.Timestamp)
+	msgRef := slack.NewRefToMessage(m.ChannelID, m.Timestamp)
 
 	// Add new reaction.
 	err := m.Chat.Api.AddReaction(reaction, msgRef)
@@ -239,11 +241,23 @@ func (m *Message) ChangeReaction(reaction string) error {
 }
 
 func (m *Message) isPublished() bool {
-	if len(m.ChannelId) == 0 || len(m.Timestamp) == 0 {
+	if len(m.ChannelID) == 0 || len(m.Timestamp) == 0 {
 		return false
 	}
 
 	return true
+}
+
+func (m *Message) Fail(text string) {
+	err := m.Append(fmt.Sprintf("ERROR: %s", text))
+	if err != nil {
+		log.Err(err)
+	}
+
+	err = m.ChangeReaction(RCTN_ERROR)
+	if err != nil {
+		log.Err(err)
+	}
 }
 
 func (c *Chat) GetUserInfo(id string) (*slack.User, error) {

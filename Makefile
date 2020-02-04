@@ -18,20 +18,23 @@ LDFLAGS = -ldflags "-s -w \
 	-X main.branch=${BRANCH}\
 	-X main.buildTime=${BUILD_TIME}"
 
+# Go tooling command aliases
+GOBUILD = GO111MODULE=on GOARCH=${GOARCH} go build ${LDFLAGS}
+GOTEST = GO111MODULE=on go test
+GORUN = GO111MODULE=on go run ${LDFLAGS}
+
+
 # Build the project
-all: clean vet main
+all: clean vet build
 
-dep:
-	go get -v -d -t ./...
-
-main:
-	GOARCH=${GOARCH} go build ${LDFLAGS} -o bin/${BINARY} ./src/
+build:
+	${GOBUILD} -o bin/${BINARY} ./cmd/joe/main.go
 
 test:
-	go test ./src/...
+	go test ./pkg/...
 
 vet:
-	go vet ./src/...
+	go vet ./...
 
 fmt:
 	go fmt $$(go list ./... | grep -v /vendor/)
@@ -40,7 +43,7 @@ clean:
 	-rm -f bin/*
 
 run:
-	go run ${LDFLAGS} ./src/*
+	go run ${LDFLAGS} ./cmd/joe/main.go
 
-.PHONY: all dep main test vet fmt clean run
+.PHONY: all main test vet fmt clean run
 
