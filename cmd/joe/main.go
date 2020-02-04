@@ -15,15 +15,16 @@ import (
 	"os"
 	"path/filepath"
 
-	"./bot"
-	"./chatapi"
-	"./ec2ctrl"
-	"./log"
-	"./pgexplain"
-	"./provision"
-
 	"github.com/jessevdk/go-flags"
+	"github.com/sirupsen/logrus"
+	"gitlab.com/postgres-ai/database-lab/pkg/client/dblabapi"
+	"gitlab.com/postgres-ai/database-lab/pkg/log"
 	"gopkg.in/yaml.v2"
+
+	"gitlab.com/postgres-ai/joe/pkg/bot"
+	"gitlab.com/postgres-ai/joe/pkg/chatapi"
+	"gitlab.com/postgres-ai/joe/pkg/config"
+	"gitlab.com/postgres-ai/joe/pkg/pgexplain"
 )
 
 var opts struct {
@@ -31,20 +32,18 @@ var opts struct {
 	AccessToken       string `short:"t" long:"token" description:"\"Bot User OAuth Access Token\" which starts with \"xoxb-\"" env:"CHAT_TOKEN" required:"true"`
 	VerificationToken string `short:"v" long:"verification-token" description:"callback URL verification token" env:"CHAT_VERIFICATION_TOKEN" required:"true"`
 
-	// Database.
-	DbHost     string `short:"h" long:"host" description:"database server host" env:"DB_HOST" default:"localhost"`
-	DbPort     uint   `short:"p" long:"port" description:"database server port" env:"DB_PORT" default:"5432"`
-	DbUser     string `short:"U" long:"username" description:"database user name" env:"DB_USER" default:"postgres"`
-	DbPassword string `short:"P" long:"password" description:"database password" env:"DB_PASSWORD" default:"postgres"`
-	DbName     string `short:"d" long:"dbname" description:"database name to connect to" env:"DB_NAME" default:"db"`
+	// Database Lab.
+	DBLabURL   string `long:"dblab-url" description:"Database Lab URL" env:"DBLAB_URL" default:"localhost"`
+	DBLabToken string `long:"dblab-token" description:"Database Lab token" env:"DBLAB_TOKEN" default:"xxx"`
+
+	DBName  string `short:"d" long:"dbname" description:"database name to connect to" env:"DBLAB_DBNAME" default:"db"`
+	SSLMode string `long:"ssl-mode" description:"ssl mode provides different protection levels of a Database Lab connection." env:"DBLAB_SSL_MODE" default:"require"`
 
 	// HTTP Server.
 	ServerPort uint `short:"s" long:"http-port" description:"HTTP server port" env:"SERVER_PORT" default:"3000"`
 
 	QuotaLimit    uint `long:"quota-limit" description:"limit request rates to up to 2x of this number" env:"QUOTA_LIMIT" default:"10"`
 	QuotaInterval uint `long:"quota-interval" description:"an time interval (in seconds) to apply a quota-limit" env:"QUOTA_INTERVAL" default:"60"`
-
-	IdleInterval uint `long:"idle-interval" description:"an time interval (in seconds) before user session can be stoped due to idle" env:"IDLE_INTERVAL" default:"3600"`
 
 	// Platform.
 	ApiUrl         string `long:"api-url" description:"Postgres.ai platform API base URL" env:"API_URL" default:"https://postgres.ai/api/general"`
@@ -57,24 +56,12 @@ var opts struct {
 	DevGitBranch     string `long:"git-branch" env:"GIT_BRANCH" default:""`
 	DevGitModified   bool   `long:"git-modified" env:"GIT_MODIFIED"`
 
+	Debug bool `long:"debug" description:"Enable a debug mode"`
+
 	ShowHelp func() error `long:"help" description:"Show this help message"`
 }
 
 // TODO(anatoly): Refactor configs and envs.
-type ProvisionConfig struct {
-	Mode    string                  `yaml:"mode"`
-	Aws     provision.AwsConfig     `yaml:"aws"`
-	Local   provision.LocalConfig   `yaml:"local"`
-	MuLocal provision.MuLocalConfig `yaml:"mulocal"`
-	Debug   bool                    `yaml:"debug"`
-
-	ZfsPool         string `yaml:"zfsPool"`
-	InitialSnapshot string `yaml:"initialSnapshot"`
-
-	PgVersion    string `yaml:"pgVersion"`
-	PgBindir     string `yaml:"pgBindir"`
-	PgDataSubdir string `yaml:"pgDataSubdir"`
-}
 
 func main() {
 	// Load CLI options.
@@ -89,69 +76,32 @@ func main() {
 		return
 	}
 
+	log.DEBUG = opts.Debug
+
 	// Load and validate configuration files.
 	explainConfig, err := loadExplainConfig()
 	if err != nil {
 		log.Err("Unable to load explain config", err)
 		return
 	}
-	provisionConfig, err := loadProvisionConfig()
-	if err != nil {
-		log.Err("Unable to load provision config", err)
-		return
-	}
-	log.DEBUG = provisionConfig.Debug
-	provConf := provision.Config{
-		Mode:    provisionConfig.Mode,
-		Aws:     provisionConfig.Aws,
-		Local:   provisionConfig.Local,
-		MuLocal: provisionConfig.MuLocal,
-		Debug:   provisionConfig.Debug,
-
-		// ZFS.
-		ZfsPool:         provisionConfig.ZfsPool,
-		InitialSnapshot: provisionConfig.InitialSnapshot,
-
-		// TODO(anatoly): Use opts.DbPort, opts.DbHost for local and direct mode.
-		DbHost:     opts.DbHost,
-		DbUsername: opts.DbUser,
-		DbPassword: opts.DbPassword,
-		DbName:     opts.DbName,
-
-		PgVersion:    provisionConfig.PgVersion,
-		PgBindir:     provisionConfig.PgBindir,
-		PgDataSubdir: provisionConfig.PgDataSubdir,
-	}
-	if !provision.IsValidConfig(provConf) {
-		log.Err("Wrong configuration format.")
-		os.Exit(1)
-	}
-
-	// Initialize provisioning.
-	prov, err := provision.NewProvision(provConf)
-	if err != nil {
-		log.Fatal("Provision constuct failed", err)
-	}
-
-	err = prov.Init()
-	if err != nil {
-		log.Fatal("Provision init error", err)
-	}
-	log.Dbg("Provision init ok", err)
 
 	log.Dbg("git: ", opts.DevGitCommitHash, opts.DevGitBranch, opts.DevGitModified)
 
 	version := formatBotVersion(opts.DevGitCommitHash, opts.DevGitBranch,
 		opts.DevGitModified)
 
-	config := bot.Config{
+	botCfg := config.Bot{
 		Port:          opts.ServerPort,
 		Explain:       explainConfig,
 		QuotaLimit:    opts.QuotaLimit,
 		QuotaInterval: opts.QuotaInterval,
-		IdleInterval:  opts.IdleInterval,
 
-		DbName: opts.DbName,
+		DBLab: config.DBLabInstance{
+			URL:     opts.DBLabURL,
+			Token:   opts.DBLabToken,
+			DBName:  opts.DBName,
+			SSLMode: opts.SSLMode,
+		},
 
 		ApiUrl:         opts.ApiUrl,
 		ApiToken:       opts.ApiToken,
@@ -161,9 +111,18 @@ func main() {
 		Version: version,
 	}
 
-	var chat = chatapi.NewChat(opts.AccessToken, opts.VerificationToken)
+	chat := chatapi.NewChat(opts.AccessToken, opts.VerificationToken)
 
-	joeBot := bot.NewBot(config, chat, prov)
+	dbLabClient, err := dblabapi.NewClient(dblabapi.Options{
+		Host:              botCfg.DBLab.URL,
+		VerificationToken: botCfg.DBLab.Token,
+	}, logrus.New())
+
+	if err != nil {
+		log.Fatal("Failed to create a Database Lab client", err)
+	}
+
+	joeBot := bot.NewBot(botCfg, chat, dbLabClient)
 	joeBot.RunServer()
 }
 
@@ -189,30 +148,6 @@ func loadExplainConfig() (pgexplain.ExplainConfig, error) {
 	var config pgexplain.ExplainConfig
 
 	err := loadConfig(&config, "explain.yaml")
-	if err != nil {
-		return config, err
-	}
-
-	return config, nil
-}
-
-func loadProvisionConfig() (ProvisionConfig, error) {
-	var config = ProvisionConfig{
-		Aws: provision.AwsConfig{
-			Ec2: ec2ctrl.Ec2Configuration{
-				AwsInstanceType: "r4.large",
-				AwsRegion:       "us-east-1",
-				AwsZone:         "a",
-			},
-		},
-		Mode:            "aws",
-		Debug:           true,
-		PgVersion:       "9.6",
-		ZfsPool:         "zpool",
-		InitialSnapshot: "db_state_1",
-	}
-
-	err := loadConfig(&config, "provisioning.yaml")
 	if err != nil {
 		return config, err
 	}

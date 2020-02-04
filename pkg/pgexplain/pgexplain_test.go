@@ -7,7 +7,7 @@ package pgexplain
 import (
 	"testing"
 
-	"../util"
+	"gitlab.com/postgres-ai/joe/pkg/util"
 
 	"github.com/sergi/go-diff/diffmatchpatch"
 )

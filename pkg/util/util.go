@@ -62,6 +62,11 @@ func SecondsAgo(ts time.Time) uint {
 	return uint(math.Floor(now.Sub(ts).Seconds()))
 }
 
+func MinutesAgo(ts time.Time) uint {
+	now := time.Now()
+	return uint(math.Floor(now.Sub(ts).Minutes()))
+}
+
 func RunInterval(d time.Duration, fn func()) chan struct{} {
 	ticker := time.NewTicker(d)
 	quit := make(chan struct{})

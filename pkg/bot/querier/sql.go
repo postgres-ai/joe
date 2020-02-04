@@ -2,41 +2,35 @@
 2019 © Postgres.ai
 */
 
-package bot
+package querier
 
 import (
-	"../log"
 	"database/sql"
+
+	"gitlab.com/postgres-ai/database-lab/pkg/log"
 )
 
 const QUERY_EXPLAIN = "EXPLAIN (FORMAT TEXT) "
 const QUERY_EXPLAIN_ANALYZE = "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) "
 
-func dbExec(connStr string, query string) error {
-	_, err := runQuery(connStr, query, true)
+func DBExec(db *sql.DB, query string) error {
+	_, err := runQuery(db, query, true)
 	return err
 }
 
-func dbExplain(connStr string, query string) (string, error) {
-	return runQuery(connStr, QUERY_EXPLAIN+query, false)
+func DBExplain(db *sql.DB, query string) (string, error) {
+	return runQuery(db, QUERY_EXPLAIN+query, false)
 }
 
-func dbExplainAnalyze(connStr string, query string) (string, error) {
-	return runQuery(connStr, QUERY_EXPLAIN_ANALYZE+query, false)
+func DBExplainAnalyze(db *sql.DB, query string) (string, error) {
+	return runQuery(db, QUERY_EXPLAIN_ANALYZE+query, false)
 }
 
-func runQuery(connStr string, query string, omitResp bool) (string, error) {
+func runQuery(db *sql.DB, query string, omitResp bool) (string, error) {
 	log.Dbg("DB query:", query)
 
 	// TODO(anatoly): Retry mechanic.
 	var result = ""
-
-	db, err := sql.Open("postgres", connStr)
-	if err != nil {
-		log.Err("DB connection:", err)
-		return "", err
-	}
-	defer db.Close()
 
 	rows, err := db.Query(query)
 	if err != nil {
