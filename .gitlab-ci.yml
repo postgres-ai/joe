@@ -8,15 +8,14 @@ cache:
     - /apt-cache
     - /go/pkg/mod/cache
 
-before_script:
-  - go mod download
-
 stages:
   - test
   - build-binary
   - build-image
 
 test:
+  before_script:
+    - go mod download
   stage: test
   script:
     - make vet
