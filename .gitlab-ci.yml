@@ -10,9 +10,23 @@ before_script:
 
 stages:
   - test
+  - build-binary
+#  - build-image
 
 test:
   stage: test
   script:
     - make vet
     - make test
+
+build-binary:
+  stage: build-binary
+  only:
+    refs:
+      - 18-dockerize-joe #TODO(akartasov): Change to "master" before merge.
+      - tags
+  artifacts:
+    paths:
+      - bin
+  script:
+    - make build
