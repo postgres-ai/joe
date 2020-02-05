@@ -36,7 +36,7 @@ build-binary:
 build-image:
   only:
     refs:
-      - master
+      - 18-dockerize-joe
       - tags
   image: docker:19
   stage: build-image
@@ -49,33 +49,13 @@ build-image:
   services:
     - docker:dind
   script:
-    - TAGS_BUILD=""
-    - TAGS_PUSH=""
-    - >
-      if [[ ! -z "${CI_COMMIT_TAG}" ]]; then
-        TAG_LATEST="${DOCKER_NAME}:latest"
-        TAGS_BUILD="${TAGS_BUILD} --tag ${TAG_LATEST}"
-        TAGS_PUSH="${TAGS_PUSH}${TAG_LATEST}\n"
+    - set -x #TODO: Remove before merge.
 
-        TAG_VERSION="${DOCKER_NAME}:${CI_COMMIT_TAG}"
-        TAGS_BUILD="${TAGS_BUILD} --tag ${TAG_VERSION}"
-        TAGS_PUSH="${TAGS_PUSH}${TAG_VERSION}\n"
-      else
-        TAG_ALPHA_LATEST="${DOCKER_NAME}:alpha"
-        TAGS_BUILD="${TAGS_BUILD} --tag ${TAG_ALPHA_LATEST}"
-        TAGS_PUSH="${TAGS_PUSH}${TAG_ALPHA_LATEST}\n"
+    - TAG_LATEST="${DOCKER_NAME}:latest"
+    - TAG_VERSION="${DOCKER_NAME}:${CI_COMMIT_TAG}"
 
-        TAG_ALPHA_VERSION="${DOCKER_NAME}:alpha-${CI_COMMIT_SHORT_SHA}"
-        TAGS_BUILD="${TAGS_BUILD} --tag $TAG_ALPHA_VERSION"
-        TAGS_PUSH="${TAGS_PUSH}$TAG_ALPHA_VERSION\n"
-      fi
+    - docker login --username $DH_CI_REGISTRY_USER --password "${DH_CI_REGISTRY_PASSWORD}" $DH_CI_REGISTRY
+    - docker build --tag $TAG_VERSION --tag $TAG_LATEST .
 
-    - docker login --username $DH_CI_REGISTRY_USER --password "$DH_CI_REGISTRY_PASSWORD" $DH_CI_REGISTRY
-    - docker build $TAGS_BUILD .
-
-    - >
-      echo -e "$TAGS_PUSH" | while read -r tag; do
-        [ -z "$tag" ] && continue
-
-        docker push "${tag}"
-      done
+    - docker push $TAG_VERSION
+    - docker push $TAG_LATEST
