@@ -38,7 +38,7 @@ build-image:
     refs:
       - 18-dockerize-joe #TODO(akartasov): Change to "master" before merge.
       - tags
-  image: alpine:3.11
+  image: docker:19
   stage: build-image
   variables:
     LATEST: latest
