@@ -25,7 +25,7 @@ build-binary:
   stage: build-binary
   only:
     refs:
-      - 18-dockerize-joe #TODO(akartasov): Change to "master" before merge.
+      - master
       - tags
   artifacts:
     paths:
@@ -36,7 +36,7 @@ build-binary:
 build-image:
   only:
     refs:
-      - 18-dockerize-joe #TODO(akartasov): Change to "master" before merge.
+      - master
       - tags
   image: docker:19
   stage: build-image
@@ -49,8 +49,6 @@ build-image:
   services:
     - docker:dind
   script:
-    - set -x #TODO(akartasov): Remove before merge.
-
     - TAGS_BUILD=""
     - TAGS_PUSH=""
     - >
