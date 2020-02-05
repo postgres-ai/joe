@@ -36,13 +36,9 @@ build-binary:
 build-image:
   only:
     refs:
-      - 18-dockerize-joe
       - tags
   image: docker:19
   stage: build-image
-  variables:
-    LATEST: latest
-    CURRENT: todo
   artifacts:
     paths:
       - bin
@@ -59,3 +55,27 @@ build-image:
 
     - docker push $TAG_VERSION
     - docker push $TAG_LATEST
+
+build-image-master:
+  only:
+    - 18-dockerize-joe
+  image: docker:19
+  stage: build-image
+  artifacts:
+    paths:
+      - bin
+  services:
+    - docker:dind
+  variables:
+    DOCKER_NAME: "registry.gitlab.com/postgres-ai/database-lab/joe"
+  script:
+    - set -x #TODO: Remove before merge.
+
+    - TAG_MASTER_LATEST="${DOCKER_NAME}:master"
+    - TAG_MASTER_VERSION="${DOCKER_NAME}:master-${CI_COMMIT_SHORT_SHA}"
+
+    - docker login --username $CI_REGISTRY_USER --password "${CI_REGISTRY_PASSWORD}" $CI_REGISTRY
+    - docker build --tag $TAG_MASTER_VERSION --tag $TAG_MASTER_LATEST .
+
+    - docker push $TAG_MASTER_LATEST
+    - docker push $TAG_MASTER_VERSION
