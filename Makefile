@@ -2,6 +2,7 @@
 
 BINARY = joe
 GOARCH = amd64
+GOOS = linux
 
 VERSION?=0.1
 BUILD_TIME?=$(shell date -u '+%Y%m%d-%H%M')
@@ -19,7 +20,7 @@ LDFLAGS = -ldflags "-s -w \
 	-X main.buildTime=${BUILD_TIME}"
 
 # Go tooling command aliases
-GOBUILD = GO111MODULE=on GOARCH=${GOARCH} go build ${LDFLAGS}
+GOBUILD = GO111MODULE=on CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build ${LDFLAGS}
 GOTEST = GO111MODULE=on go test
 GORUN = GO111MODULE=on go run ${LDFLAGS}
 

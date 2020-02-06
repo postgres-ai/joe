@@ -1,18 +1,77 @@
 image: golang:1.13
 
+variables:
+  DOCKER_NAME: postgresai/joe
+
 cache:
   paths:
     - /apt-cache
     - /go/pkg/mod/cache
 
-before_script:
-  - go mod download
-
 stages:
   - test
+  - build-binary
+  - build-image
 
 test:
+  before_script:
+    - go mod download
   stage: test
   script:
     - make vet
     - make test
+
+build-binary:
+  stage: build-binary
+  only:
+    refs:
+      - master
+      - tags
+  artifacts:
+    paths:
+      - bin
+  script:
+    - make build
+
+build-image:
+  only:
+    refs:
+      - tags
+  image: docker:19
+  stage: build-image
+  artifacts:
+    paths:
+      - bin
+  services:
+    - docker:dind
+  script:
+    - TAG_LATEST="${DOCKER_NAME}:latest"
+    - TAG_VERSION="${DOCKER_NAME}:${CI_COMMIT_TAG}"
+
+    - docker login --username $DH_CI_REGISTRY_USER --password "${DH_CI_REGISTRY_PASSWORD}" $DH_CI_REGISTRY
+    - docker build --tag $TAG_VERSION --tag $TAG_LATEST .
+
+    - docker push $TAG_VERSION
+    - docker push $TAG_LATEST
+
+build-image-master:
+  only:
+    - master
+  image: docker:19
+  stage: build-image
+  artifacts:
+    paths:
+      - bin
+  services:
+    - docker:dind
+  variables:
+    DOCKER_NAME: "registry.gitlab.com/postgres-ai/joe"
+  script:
+    - TAG_MASTER_LATEST="${DOCKER_NAME}:master"
+    - TAG_MASTER_VERSION="${DOCKER_NAME}:master-${CI_COMMIT_SHORT_SHA}"
+
+    - docker login --username $CI_REGISTRY_USER --password "${CI_REGISTRY_PASSWORD}" $CI_REGISTRY
+    - docker build --tag $TAG_MASTER_VERSION --tag $TAG_MASTER_LATEST .
+
+    - docker push $TAG_MASTER_LATEST
+    - docker push $TAG_MASTER_VERSION
