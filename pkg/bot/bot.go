@@ -113,23 +113,19 @@ const InactiveCloneCheckInterval = time.Minute
 
 const MSG_HELP = "• `explain` — analyze your query (SELECT, INSERT, DELETE, UPDATE or WITH) and generate recommendations\n" +
 	"• `exec` — execute any query (for example, CREATE INDEX)\n" +
-	"• `snapshot` — create a snapshot of the current database state\n" +
 	"• `reset` — revert the database to the initial state (usually takes less than a minute, :warning: all changes will be lost)\n" +
-	"• `hardreset` — re-provision the database instance (usually takes a couple of minutes, :warning: all changes will be lost)\n" +
 	"• `\\d`, `\\d+`, `\\dt`, `\\dt+`, `\\di`, `\\di+`, `\\l`, `\\l+`, `\\dv`, `\\dv+`, `\\dm`, `\\dm+` — psql meta information commands\n" +
 	"• `help` — this message\n"
 
 const MsgSessionStarting = "Starting new session...\n\n"
 
-const MsgSessionForewordTpl = "• Sessions are independent. You will have your own full-sized copy of the database.\n" +
-	"• Feel free to change anything: build and drop indexes, change schema, etc.\n" +
-	"• At any time, use `reset` to re-initialize the database. This will cancel the ongoing queries in your session. Say `help` to see the full list of commands.\n" +
-	"• I will mark my responses with `Session: N`, where `N` is the session number (you will get your number once your session is initialized).\n" +
-	"• The session will be destroyed after %s of inactivity. The corresponding DB clone will be deleted.\n" +
-	"• EXPLAIN plans here are expected to be identical to production plans, essential for SQL microanalysis and optimization.\n" +
-	"• The actual timing values may differ from those that production instances have because actual caches in DB Lab are smaller, therefore reading from disks is required more often. " +
-	"However, the number of bytes and pages/buffers involved into query execution are the same as those on a production server.\n" +
-	"\nMade with :hearts: by Postgres.ai. Bug reports, ideas, and MRs are welcome: https://gitlab.com/postgres-ai/joe \n"
+const MsgSessionForewordTpl = "• Say `help` to see the full list of commands.\n" +
+	"• Sessions are fully independent. Feel free to do anything.\n" +
+	"• The session will be destroyed after %s of inactivity." +
+	"• EXPLAIN plans here are expected to be identical to production plans.\n" +
+	"• The actual timing values may differ from production because actual caches in DB Lab are smaller. " +
+	"However, the number of bytes and pages/buffers in plans are identical to production.\n" +
+	"\nMade with :hearts: by Postgres.ai. Bug reports, ideas, and merge requests are welcome: https://gitlab.com/postgres-ai/joe \n"
 
 const RCTN_RUNNING = "hourglass_flowing_sand"
 const RCTN_OK = "white_check_mark"
