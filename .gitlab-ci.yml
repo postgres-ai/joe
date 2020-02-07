@@ -14,8 +14,6 @@ stages:
   - build-image
 
 test:
-  before_script:
-    - go mod download
   stage: test
   script:
     - make vet

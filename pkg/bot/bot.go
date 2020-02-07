@@ -44,9 +44,7 @@ import (
 
 const COMMAND_EXPLAIN = "explain"
 const COMMAND_EXEC = "exec"
-const COMMAND_SNAPSHOT = "snapshot"
 const COMMAND_RESET = "reset"
-const COMMAND_HARDRESET = "hardreset"
 const COMMAND_HELP = "help"
 
 const COMMAND_PSQL_D = `\d`
@@ -65,9 +63,7 @@ const COMMAND_PSQL_DMP = `\dm+`
 var supportedCommands = []string{
 	COMMAND_EXPLAIN,
 	COMMAND_EXEC,
-	COMMAND_SNAPSHOT,
 	COMMAND_RESET,
-	COMMAND_HARDRESET,
 	COMMAND_HELP,
 
 	COMMAND_PSQL_D,
@@ -121,11 +117,12 @@ const MsgSessionStarting = "Starting new session...\n\n"
 
 const MsgSessionForewordTpl = "• Say `help` to see the full list of commands.\n" +
 	"• Sessions are fully independent. Feel free to do anything.\n" +
-	"• The session will be destroyed after %s of inactivity." +
+	"• The session will be destroyed after %s of inactivity.\n" +
 	"• EXPLAIN plans here are expected to be identical to production plans.\n" +
 	"• The actual timing values may differ from production because actual caches in DB Lab are smaller. " +
 	"However, the number of bytes and pages/buffers in plans are identical to production.\n" +
-	"\nMade with :hearts: by Postgres.ai. Bug reports, ideas, and merge requests are welcome: https://gitlab.com/postgres-ai/joe \n"
+	"\nMade with :hearts: by Postgres.ai. Bug reports, ideas, and merge requests are welcome: https://gitlab.com/postgres-ai/joe \n" +
+	"\nSnapshot data state at: %s."
 
 const RCTN_RUNNING = "hourglass_flowing_sand"
 const RCTN_OK = "white_check_mark"
@@ -625,7 +622,7 @@ func (b *Bot) runSession(ctx context.Context, user *User, channelID string) erro
 		return err
 	}
 
-	if err := sMsg.Append(getForeword(time.Duration(clone.Metadata.MaxIdleMinutes) * time.Minute)); err != nil {
+	if err := sMsg.Append(getForeword(time.Duration(clone.Metadata.MaxIdleMinutes) * time.Minute, clone.Snapshot.DataStateAt)); err != nil {
 		sMsg.Fail(err.Error())
 		return errors.Wrap(err, "failed to append message with a foreword")
 	}
@@ -726,6 +723,10 @@ func (b *Bot) createDBLabClone(ctx context.Context, user *User) (*models.Clone, 
 	clone, err := b.DBLab.CreateClone(ctx, clientRequest)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create a new clone")
+	}
+
+	if clone.Snapshot == nil {
+		clone.Snapshot = &models.Snapshot{}
 	}
 
 	clone.DB.Password = pwd
@@ -915,7 +916,7 @@ func (u *User) requestQuota() error {
 	return nil
 }
 
-func getForeword(idleDuration time.Duration) string {
+func getForeword(idleDuration time.Duration, dataStateAt string) string {
 	duration := durafmt.Parse(idleDuration.Round(time.Minute))
-	return fmt.Sprintf(MsgSessionForewordTpl, duration)
+	return fmt.Sprintf(MsgSessionForewordTpl, duration, dataStateAt)
 }
