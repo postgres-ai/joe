@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dustin/go-humanize/english"
@@ -113,7 +114,7 @@ const MSG_HELP = "• `explain` — analyze your query (SELECT, INSERT, DELETE, 
 	"• `\\d`, `\\d+`, `\\dt`, `\\dt+`, `\\di`, `\\di+`, `\\l`, `\\l+`, `\\dv`, `\\dv+`, `\\dm`, `\\dm+` — psql meta information commands\n" +
 	"• `help` — this message\n"
 
-const MsgSessionStarting = "Starting new session...\n\n"
+const MsgSessionStarting = "Starting new session...\n"
 
 const MsgSessionForewordTpl = "• Say 'help' to see the full list of commands.\n" +
 	"• Sessions are fully independent. Feel free to do anything.\n" +
@@ -173,10 +174,11 @@ type DBLabInstance struct {
 }
 
 type Bot struct {
-	Config config.Bot
-	Chat   *chatapi.Chat
-	DBLab  *dblabapi.Client
-	Users  map[string]*User // Slack UID -> User.
+	Config     config.Bot
+	Chat       *chatapi.Chat
+	DBLab      *dblabapi.Client
+	usersMutex sync.RWMutex
+	Users      map[string]*User // Slack UID -> User.
 }
 
 type Audit struct {
@@ -400,21 +402,17 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 	message = strings.TrimRight(message, "`")
 
 	// Get user or create a new one.
-	user, ok := b.Users[ev.User]
-	if !ok {
-		chatUser, err := b.Chat.GetUserInfo(ev.User)
-		if err != nil {
-			log.Err(err)
+	user, err := b.createUser(ev.User)
+	if err != nil {
+		log.Err(errors.Wrap(err, "failed to get user"))
 
-			msg, _ := b.Chat.NewMessage(ch)
-			msg.Publish(" ")
-			msg.Fail(err.Error())
-			return
-		}
+		msg, _ := b.Chat.NewMessage(ch)
+		msg.Publish(" ")
+		msg.Fail(err.Error())
 
-		user = NewUser(chatUser, b.Config)
-		b.Users[ev.User] = user
+		return
 	}
+
 	user.Session.LastActionTs = time.Now()
 	if !util.Contains(user.Session.ChannelIDs, ch) {
 		user.Session.ChannelIDs = append(user.Session.ChannelIDs, ch)
