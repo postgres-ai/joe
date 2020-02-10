@@ -61,6 +61,9 @@ var opts struct {
 	ShowHelp func() error `long:"help" description:"Show this help message"`
 }
 
+// TODO (akartasov): Set the app version during build.
+const Version = "v0.4-rc1"
+
 // TODO(anatoly): Refactor configs and envs.
 
 func main() {
@@ -85,10 +88,10 @@ func main() {
 		return
 	}
 
-	log.Dbg("git: ", opts.DevGitCommitHash, opts.DevGitBranch, opts.DevGitModified)
-
 	version := formatBotVersion(opts.DevGitCommitHash, opts.DevGitBranch,
 		opts.DevGitModified)
+
+	log.Dbg("git: ", version)
 
 	botCfg := config.Bot{
 		Port:          opts.ServerPort,
@@ -179,7 +182,7 @@ func getConfigPath(name string) string {
 
 func formatBotVersion(commit string, branch string, modified bool) string {
 	if len(commit) < 7 {
-		return "unknown"
+		return Version
 	}
 
 	modifiedStr := ""
