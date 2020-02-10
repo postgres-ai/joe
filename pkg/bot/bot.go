@@ -623,7 +623,7 @@ func (b *Bot) runSession(ctx context.Context, user *User, channelID string) erro
 	}
 
 	if err := sMsg.Append(getForeword(time.Duration(clone.Metadata.MaxIdleMinutes)*time.Minute,
-		clone.Snapshot.DataStateAt, b.Config.Version)); err != nil {
+		b.Config.Version, clone.Snapshot.DataStateAt)); err != nil {
 		sMsg.Fail(err.Error())
 		return errors.Wrap(err, "failed to append message with a foreword")
 	}
@@ -917,7 +917,7 @@ func (u *User) requestQuota() error {
 	return nil
 }
 
-func getForeword(idleDuration time.Duration, dataStateAt, version string) string {
+func getForeword(idleDuration time.Duration, version, dataStateAt string) string {
 	duration := durafmt.Parse(idleDuration.Round(time.Minute))
-	return fmt.Sprintf(MsgSessionForewordTpl, duration, dataStateAt, version)
+	return fmt.Sprintf(MsgSessionForewordTpl, duration, version, dataStateAt)
 }
