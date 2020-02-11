@@ -58,14 +58,16 @@ Deploy Joe instance in your infrastructure. You would need to:
 
     ```bash
     docker run \
-    --env DBLAB_URL="https://dblab.domain.com" \
-    --env DBLAB_TOKEN="DBLAB_SECRET_TOKEN" \
-    --env DBLAB_DBNAME="YOUR_DATABASE_NAME" \
-    --env CHAT_TOKEN="YOUR_SLACK_CHAT_TOKEN" \
-    --env CHAT_VERIFICATION_TOKEN="YOUR_SLACK_VERIFICATION_TOKEN" \
-    --env SERVER_PORT=3001 \
-    -p 3001:3001 \
-    postgresai/joe:latest
+      --name joe_bot \
+      --publish 3001:3001 \
+      --restart=on-failure \
+      --env DBLAB_URL="https://dblab.domain.com" \
+      --env DBLAB_TOKEN="DBLAB_SECRET_TOKEN" \
+      --env CHAT_TOKEN="YOUR_SLACK_CHAT_TOKEN" \
+      --env CHAT_VERIFICATION_TOKEN="YOUR_SLACK_VERIFICATION_TOKEN" \
+      --env SERVER_PORT=3001 \
+      --detach \
+      postgresai/joe:latest
     ``` 
     The Joe instance will be running by port 3001 of the current machine.
     
