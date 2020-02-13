@@ -5,13 +5,21 @@
 package querier
 
 import (
+	"bytes"
 	"database/sql"
 
+	"github.com/lib/pq"
+	"github.com/pkg/errors"
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
 )
 
-const QUERY_EXPLAIN = "EXPLAIN (FORMAT TEXT) "
-const QUERY_EXPLAIN_ANALYZE = "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) "
+const (
+	QueryExplain        = "EXPLAIN (FORMAT TEXT) "
+	QueryExplainAnalyze = "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) "
+)
+
+// SyntaxPQErrorCode defines the pq syntax error code.
+const SyntaxPQErrorCode = "42601"
 
 func DBExec(db *sql.DB, query string) error {
 	_, err := runQuery(db, query, true)
@@ -19,11 +27,11 @@ func DBExec(db *sql.DB, query string) error {
 }
 
 func DBExplain(db *sql.DB, query string) (string, error) {
-	return runQuery(db, QUERY_EXPLAIN+query, false)
+	return runQuery(db, QueryExplain+query, false)
 }
 
 func DBExplainAnalyze(db *sql.DB, query string) (string, error) {
-	return runQuery(db, QUERY_EXPLAIN_ANALYZE+query, false)
+	return runQuery(db, QueryExplainAnalyze+query, false)
 }
 
 func runQuery(db *sql.DB, query string, omitResp bool) (string, error) {
@@ -35,7 +43,7 @@ func runQuery(db *sql.DB, query string, omitResp bool) (string, error) {
 	rows, err := db.Query(query)
 	if err != nil {
 		log.Err("DB query:", err)
-		return "", err
+		return "", clarifyQueryError([]byte(query), err)
 	}
 	defer rows.Close()
 
@@ -55,4 +63,26 @@ func runQuery(db *sql.DB, query string, omitResp bool) (string, error) {
 	}
 
 	return result, nil
+}
+
+func clarifyQueryError(query []byte, err error) error {
+	if err == nil {
+		return err
+	}
+
+	switch queryErr := err.(type) {
+	case *pq.Error:
+		switch queryErr.Code {
+		case SyntaxPQErrorCode:
+			// Check &nbsp; - ASCII code 160
+			if bytes.Contains(query, []byte{160}) {
+				return errors.WithMessage(err,
+					`There are "non-breaking spaces" in your input (ACSII code 160). Please edit your request and use regular spaces only (ASCII code 32).`)
+			}
+		default:
+			return err
+		}
+	}
+
+	return err
 }

@@ -42,6 +42,7 @@ team Workspace. Joe Bot should be available with public URL calls from Slack.
     * `incoming-webhook`
     * `reactions:write`
     * `users.profile:read`
+    * `users:read`
 1. Run Joe Bot with `Bot User OAuth Access Token ("xoxb-TOKEN")` from "OAuth & Permissions" Feature and `Verification Token` from "Basic Information" page (See **Run** below).
 1. Enable Incoming Webhooks Feature.
     * Press "Add New Webhook to Workspace" and select a previously created channel to post token.
@@ -72,7 +73,7 @@ Deploy Joe instance in your infrastructure. You would need to:
     The Joe instance will be running by port 3001 of the current machine.
     
 1. Make a publicly accessible HTTP(S) server port specified in the configuration for Slack Events Request URL.
-1. Send a command to the #db-lab channel. For example, `\d`.
+1. Send a command to the #db-lab channel. For example, `help`.
 
 
 ## Development
