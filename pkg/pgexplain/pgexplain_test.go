@@ -5,6 +5,7 @@
 package pgexplain
 
 import (
+	"bytes"
 	"testing"
 
 	"gitlab.com/postgres-ai/joe/pkg/util"
@@ -18,24 +19,24 @@ func TestVisualize(t *testing.T) {
 		expected  string
 	}{
 		{
-			inputJson: INPUT_JSON_0,
-			expected:  EXPECTED_TEXT_0,
+			inputJson: InputJSON0,
+			expected:  ExpectedText0,
 		},
 		{
-			inputJson: INPUT_JSON_1,
-			expected:  EXPECTED_TEXT_1,
+			inputJson: InputJSON1,
+			expected:  ExpectedText1,
 		},
 		{
-			inputJson: INPUT_JSON_2,
-			expected:  EXPECTED_TEXT_2,
+			inputJson: InputJSON2,
+			expected:  ExpectedText2,
 		},
 		{
-			inputJson: INPUT_JSON_3,
-			expected:  EXPECTED_TEXT_3,
+			inputJson: InputJSON3,
+			expected:  ExpectedText3,
 		},
 		{
-			inputJson: INPUT_JSON_4,
-			expected:  EXPECTED_TEXT_4,
+			inputJson: InputJSON4,
+			expected:  ExpectedText4,
 		},
 	}
 
@@ -54,6 +55,48 @@ func TestVisualize(t *testing.T) {
 
 		if actual != expected {
 			t.Errorf("(%d) got different than expected: \n%s\n", i, diff(expected, actual))
+		}
+	}
+}
+
+func TestVisualizeWithoutCosts(t *testing.T) {
+	testCases := []struct {
+		name      string
+		inputJson string
+		expected  string
+	}{
+		{
+			name:      "Hash Join And Nested Loop",
+			inputJson: InputJSON5HashJoinAndNestedLoop,
+			expected:  ExpectedText5HashJoinAndNestedLoop,
+		},
+		{
+			name:      "SubqueryScan",
+			inputJson: InputJSON6SubqueryScan,
+			expected:  ExpectedText6SubqueryScan,
+		},
+		{
+			name:      "AntiJoin",
+			inputJson: InputJSON7AntiJoin,
+			expected:  ExpectedText7AntiJoin,
+		},
+	}
+
+	for _, testCase := range testCases {
+		explainConfig := ExplainConfig{}
+
+		explain, err := NewExplain(testCase.inputJson, explainConfig)
+		if err != nil {
+			t.Errorf("(%s) explain parsing failed: %v", testCase.name, err)
+			t.FailNow()
+		}
+
+		buf := bytes.Buffer{}
+		explain.writeExplainTextWithoutCosts(&buf)
+		actual := buf.String()
+
+		if actual != testCase.expected {
+			t.Errorf("(%s) got different than expected: \n%s\n", testCase.name, diff(testCase.expected, actual))
 		}
 	}
 }
@@ -256,7 +299,7 @@ func diff(a string, b string) string {
 }
 
 // Test cases from Postgres 9.6.
-const INPUT_JSON_0 = `[{
+const InputJSON0 = `[{
   "Plan": {
    "Node Type": "Limit",
    "Parallel Aware": false,
@@ -313,7 +356,7 @@ const INPUT_JSON_0 = `[{
   "Execution Time": 6.834
 }]`
 
-const EXPECTED_TEXT_0 = ` Limit  (cost=0.00..452.37 rows=200 width=33) (actual time=0.071..6.723 rows=200 loops=1)
+const ExpectedText0 = ` Limit  (cost=0.00..452.37 rows=200 width=33) (actual time=0.071..6.723 rows=200 loops=1)
    Buffers: shared hit=1 read=326
    ->  Seq Scan on persons  (cost=0.00..159040.41 rows=70315 width=33) (actual time=0.071..6.704 rows=200 loops=1)
          Filter: ((tech)::text = 'scss'::text)
@@ -321,7 +364,7 @@ const EXPECTED_TEXT_0 = ` Limit  (cost=0.00..452.37 rows=200 width=33) (actual t
          Buffers: shared hit=1 read=326
 `
 
-const INPUT_JSON_1 = `[
+const InputJSON1 = `[
    {
      "Plan": {
        "Node Type": "Unique",
@@ -1150,7 +1193,7 @@ const INPUT_JSON_1 = `[
  ]
 `
 
-const EXPECTED_TEXT_1 = ` Unique  (cost=156506.25..156507.37 rows=225 width=149) (actual time=3684.547..3684.613 rows=204 loops=1)
+const ExpectedText1 = ` Unique  (cost=156506.25..156507.37 rows=225 width=149) (actual time=3684.547..3684.613 rows=204 loops=1)
    Buffers: shared hit=43757
    CTE table_5
      ->  Unique  (cost=111147.74..111155.68 rows=1588 width=4) (actual time=3649.950..3653.392 rows=204 loops=1)
@@ -1236,7 +1279,7 @@ const EXPECTED_TEXT_1 = ` Unique  (cost=156506.25..156507.37 rows=225 width=149)
                      Buffers: shared hit=624
 `
 
-const INPUT_JSON_2 = `[
+const InputJSON2 = `[
   {
     "Plan": {
       "Node Type": "Limit",
@@ -1299,7 +1342,7 @@ const INPUT_JSON_2 = `[
   }
 ]`
 
-const EXPECTED_TEXT_2 = ` Limit  (cost=0.43..8.45 rows=1 width=22) (actual time=0.026..0.035 rows=1 loops=1)
+const ExpectedText2 = ` Limit  (cost=0.43..8.45 rows=1 width=22) (actual time=0.026..0.035 rows=1 loops=1)
    Buffers: shared hit=4
    ->  Index Only Scan using i_user_col on table_1  (cost=0.43..8.45 rows=1 width=22) (actual time=0.021..0.026 rows=1 loops=1)
          Index Cond: (col = 'xxxx'::text)
@@ -1307,7 +1350,7 @@ const EXPECTED_TEXT_2 = ` Limit  (cost=0.43..8.45 rows=1 width=22) (actual time=
          Buffers: shared hit=4
 `
 
-const INPUT_JSON_3 = `[
+const InputJSON3 = `[
   {
     "Plan": {
       "Node Type": "Gather",
@@ -1370,7 +1413,7 @@ const INPUT_JSON_3 = `[
   }
 ]`
 
-const EXPECTED_TEXT_3 = ` Gather  (cost=1000.00..107758.40 rows=104 width=0) (actual time=0.772..1393.167 rows=101 loops=1)
+const ExpectedText3 = ` Gather  (cost=1000.00..107758.40 rows=104 width=0) (actual time=0.772..1393.167 rows=101 loops=1)
    Workers Planned: 2
    Workers Launched: 2
    Buffers: shared hit=2528 read=41720
@@ -1380,7 +1423,7 @@ const EXPECTED_TEXT_3 = ` Gather  (cost=1000.00..107758.40 rows=104 width=0) (ac
          Buffers: shared hit=2528 read=41720
 `
 
-const INPUT_JSON_4 = `[
+const InputJSON4 = `[
   {
     "Plan": {
       "Node Type": "Limit",
@@ -1441,10 +1484,364 @@ const INPUT_JSON_4 = `[
   }
 ]`
 
-const EXPECTED_TEXT_4 = ` Limit  (cost=110.74..111.85 rows=20 width=851) (actual time=9.347..9.357 rows=20 loops=1)
+const ExpectedText4 = ` Limit  (cost=110.74..111.85 rows=20 width=851) (actual time=9.347..9.357 rows=20 loops=1)
    Buffers: shared hit=8 read=71 dirtied=2 written=2
    I/O Timings: read=7.150 write=0.370
    ->  Seq Scan on users  (cost=0.00..384481.33 rows=6943833 width=851) (actual time=0.017..9.196 rows=2020 loops=1)
          Buffers: shared hit=8 read=71 dirtied=2 written=2
          I/O Timings: read=7.150 write=0.370
+`
+
+const InputJSON5HashJoinAndNestedLoop = `[
+  {
+    "Plan": {
+      "Node Type": "Nested Loop",
+      "Parallel Aware": false,
+      "Join Type": "Left",
+      "Inner Unique": false,
+      "Plans": [
+        {
+          "Node Type": "Values Scan",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Alias": "*VALUES*"
+        },
+        {
+          "Node Type": "Hash Join",
+          "Parent Relationship": "Inner",
+          "Parallel Aware": false,
+          "Join Type": "Right",
+          "Inner Unique": false,
+          "Hash Cond": "(u1.u1y = \"*VALUES*_1\".column2)",
+          "Filter": "(\"*VALUES*_1\".column1 = \"*VALUES*\".column1)",
+          "Plans": [
+            {
+              "Node Type": "Function Scan",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Function Name": "unnest",
+              "Alias": "u1"
+            },
+            {
+              "Node Type": "Hash",
+              "Parent Relationship": "Inner",
+              "Parallel Aware": false,
+              "Plans": [
+                {
+                  "Node Type": "Values Scan",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Alias": "*VALUES*_1"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+]`
+
+const ExpectedText5HashJoinAndNestedLoop = ` Nested Loop Left Join
+   ->  Values Scan on "*VALUES*"
+   ->  Hash Right Join
+         Hash Cond: (u1.u1y = "*VALUES*_1".column2)
+         Filter: ("*VALUES*_1".column1 = "*VALUES*".column1)
+         Rows Removed by Filter: 0
+         ->  Function Scan on unnest u1
+         ->  Hash
+               ->  Values Scan on "*VALUES*_1"
+`
+
+const InputJSON6SubqueryScan  =`[
+  {
+    "Plan": {
+      "Node Type": "Nested Loop",
+      "Parallel Aware": false,
+      "Join Type": "Inner",
+      "Inner Unique": false,
+      "Plans": [
+        {
+          "Node Type": "Hash Join",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Join Type": "Left",
+          "Inner Unique": false,
+          "Hash Cond": "(tt3.f1 = tt4.f1)",
+          "Plans": [
+            {
+              "Node Type": "Nested Loop",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Join Type": "Left",
+              "Inner Unique": false,
+              "Plans": [
+                {
+                  "Node Type": "Nested Loop",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Join Type": "Inner",
+                  "Inner Unique": false,
+                  "Plans": [
+                    {
+                      "Node Type": "Seq Scan",
+                      "Parent Relationship": "Outer",
+                      "Parallel Aware": false,
+                      "Relation Name": "text_tbl",
+                      "Alias": "tt2"
+                    },
+                    {
+                      "Node Type": "Materialize",
+                      "Parent Relationship": "Inner",
+                      "Parallel Aware": false,
+                      "Plans": [
+                        {
+                          "Node Type": "Seq Scan",
+                          "Parent Relationship": "Outer",
+                          "Parallel Aware": false,
+                          "Relation Name": "text_tbl",
+                          "Alias": "tt1",
+                          "Filter": "(f1 = 'foo'::text)"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "Node Type": "Materialize",
+                  "Parent Relationship": "Inner",
+                  "Parallel Aware": false,
+                  "Plans": [
+                    {
+                      "Node Type": "Seq Scan",
+                      "Parent Relationship": "Outer",
+                      "Parallel Aware": false,
+                      "Relation Name": "text_tbl",
+                      "Alias": "tt3",
+                      "Filter": "(f1 = 'foo'::text)"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "Node Type": "Hash",
+              "Parent Relationship": "Inner",
+              "Parallel Aware": false,
+              "Plans": [
+                {
+                  "Node Type": "Seq Scan",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Relation Name": "text_tbl",
+                  "Alias": "tt4",
+                  "Filter": "(f1 = 'foo'::text)"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "Node Type": "Subquery Scan",
+          "Parent Relationship": "Inner",
+          "Parallel Aware": false,
+          "Alias": "ss1",
+          "Filter": "(ss1.c0 = 'foo'::text)",
+          "Plans": [
+            {
+              "Node Type": "Limit",
+              "Parent Relationship": "Subquery",
+              "Parallel Aware": false,
+              "Plans": [
+                {
+                  "Node Type": "Seq Scan",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Relation Name": "text_tbl",
+                  "Alias": "tt5"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+]`
+
+const ExpectedText6SubqueryScan = ` Nested Loop
+   ->  Hash Left Join
+         Hash Cond: (tt3.f1 = tt4.f1)
+         ->  Nested Loop Left Join
+               ->  Nested Loop
+                     ->  Seq Scan on text_tbl tt2
+                     ->  Materialize
+                           ->  Seq Scan on text_tbl tt1
+                                 Filter: (f1 = 'foo'::text)
+                                 Rows Removed by Filter: 0
+               ->  Materialize
+                     ->  Seq Scan on text_tbl tt3
+                           Filter: (f1 = 'foo'::text)
+                           Rows Removed by Filter: 0
+         ->  Hash
+               ->  Seq Scan on text_tbl tt4
+                     Filter: (f1 = 'foo'::text)
+                     Rows Removed by Filter: 0
+   ->  Subquery Scan on ss1
+         Filter: (ss1.c0 = 'foo'::text)
+         Rows Removed by Filter: 0
+         ->  Limit
+               ->  Seq Scan on text_tbl tt5
+`
+
+const InputJSON7AntiJoin = `[
+  {
+    "Plan": {
+      "Node Type": "Hash Join",
+      "Parallel Aware": false,
+      "Join Type": "Anti",
+      "Inner Unique": false,
+      "Hash Cond": "(t1.c1 = t2.c2)",
+      "Plans": [
+        {
+          "Node Type": "Seq Scan",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Relation Name": "tt4x",
+          "Alias": "t1"
+        },
+        {
+          "Node Type": "Hash",
+          "Parent Relationship": "Inner",
+          "Parallel Aware": false,
+          "Plans": [
+            {
+              "Node Type": "Merge Join",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Join Type": "Right",
+              "Inner Unique": false,
+              "Merge Cond": "(t5.c1 = t3.c2)",
+              "Plans": [
+                {
+                  "Node Type": "Merge Join",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Join Type": "Inner",
+                  "Inner Unique": false,
+                  "Merge Cond": "(t4.c2 = t5.c1)",
+                  "Plans": [
+                    {
+                      "Node Type": "Sort",
+                      "Parent Relationship": "Outer",
+                      "Parallel Aware": false,
+                      "Sort Key": ["t4.c2"],
+                      "Plans": [
+                        {
+                          "Node Type": "Seq Scan",
+                          "Parent Relationship": "Outer",
+                          "Parallel Aware": false,
+                          "Relation Name": "tt4x",
+                          "Alias": "t4"
+                        }
+                      ]
+                    },
+                    {
+                      "Node Type": "Sort",
+                      "Parent Relationship": "Inner",
+                      "Parallel Aware": false,
+                      "Sort Key": ["t5.c1"],
+                      "Plans": [
+                        {
+                          "Node Type": "Seq Scan",
+                          "Parent Relationship": "Outer",
+                          "Parallel Aware": false,
+                          "Relation Name": "tt4x",
+                          "Alias": "t5"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "Node Type": "Sort",
+                  "Parent Relationship": "Inner",
+                  "Parallel Aware": false,
+                  "Sort Key": ["t3.c2"],
+                  "Plans": [
+                    {
+                      "Node Type": "Merge Join",
+                      "Parent Relationship": "Outer",
+                      "Parallel Aware": false,
+                      "Join Type": "Left",
+                      "Inner Unique": false,
+                      "Merge Cond": "(t2.c3 = t3.c1)",
+                      "Plans": [
+                        {
+                          "Node Type": "Sort",
+                          "Parent Relationship": "Outer",
+                          "Parallel Aware": false,
+                          "Sort Key": ["t2.c3"],
+                          "Plans": [
+                            {
+                              "Node Type": "Seq Scan",
+                              "Parent Relationship": "Outer",
+                              "Parallel Aware": false,
+                              "Relation Name": "tt4x",
+                              "Alias": "t2"
+                            }
+                          ]
+                        },
+                        {
+                          "Node Type": "Sort",
+                          "Parent Relationship": "Inner",
+                          "Parallel Aware": false,
+                          "Sort Key": ["t3.c1"],
+                          "Plans": [
+                            {
+                              "Node Type": "Seq Scan",
+                              "Parent Relationship": "Outer",
+                              "Parallel Aware": false,
+                              "Relation Name": "tt4x",
+                              "Alias": "t3"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+]`
+
+const ExpectedText7AntiJoin = ` Hash Anti Join
+   Hash Cond: (t1.c1 = t2.c2)
+   ->  Seq Scan on tt4x t1
+   ->  Hash
+         ->  Merge Right Join
+               Merge Cond: (t5.c1 = t3.c2)
+               ->  Merge Join
+                     Merge Cond: (t4.c2 = t5.c1)
+                     ->  Sort
+                           Sort Key: t4.c2
+                           ->  Seq Scan on tt4x t4
+                     ->  Sort
+                           Sort Key: t5.c1
+                           ->  Seq Scan on tt4x t5
+               ->  Sort
+                     Sort Key: t3.c2
+                     ->  Merge Left Join
+                           Merge Cond: (t2.c3 = t3.c1)
+                           ->  Sort
+                                 Sort Key: t2.c3
+                                 ->  Seq Scan on tt4x t2
+                           ->  Sort
+                                 Sort Key: t3.c1
+                                 ->  Seq Scan on tt4x t3
 `

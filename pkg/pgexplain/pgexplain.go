@@ -41,6 +41,9 @@ const (
 	BitmapHeapScan           = "Bitmap Heap Scan"
 	BitmapIndexScan          = "Bitmap Index Scan"
 	CTEScan                  = "CTE Scan"
+	FunctionScan             = "Function Scan"
+	SubqueryScan             = "Subquery Scan"
+	ValuesScan               = "Values Scan"
 	ModifyTable              = "Modify Table"
 )
 
@@ -117,6 +120,7 @@ type Plan struct {
 	Alias                     string   `json:"Alias"`
 	CteName                   string   `json:"CTE Name"`
 	Filter                    string   `json:"Filter"`
+	FunctionName              string   `json:"Function Name"`
 	GroupKey                  []string `json:"Group Key"`
 	HashBatches               uint64   `json:"Hash Batches"`
 	HashBuckets               uint64   `json:"Hash Buckets"`
@@ -124,6 +128,7 @@ type Plan struct {
 	HeapFetches               uint64   `json:"Heap Fetches"`
 	IndexCondition            string   `json:"Index Cond"`
 	IndexName                 string   `json:"Index Name"`
+	MergeCondition            string   `json:"Merge Cond"`
 	JoinType                  string   `json:"Join Type"`
 	NodeType                  NodeType `json:"Node Type"`
 	Operation                 string   `json:"Operation"`
@@ -428,7 +433,11 @@ func (config *ExplainConfig) getTipByCode(code string) (Tip, error) {
 }
 
 func (ex *Explain) writeExplainText(writer io.Writer) {
-	ex.writePlanText(writer, &ex.Plan, " ", 0, len(ex.Plan.Plans) == 1)
+	ex.writePlanText(writer, &ex.Plan, " ", 0, true)
+}
+
+func (ex *Explain) writeExplainTextWithoutCosts(writer io.Writer) {
+	ex.writePlanText(writer, &ex.Plan, " ", 0, false)
 }
 
 func (ex *Explain) writeStatsText(writer io.Writer) {
@@ -485,7 +494,7 @@ func (ex *Explain) writeBlocks(writer io.Writer, name string, blocks uint64, cmm
 	fmt.Fprintf(writer, "  - %s: %d (~%s)%s\n", name, blocks, blocksToBytes(blocks), cmmt)
 }
 
-func (ex *Explain) writePlanText(writer io.Writer, plan *Plan, prefix string, depth int, lastChild bool) {
+func (ex *Explain) writePlanText(writer io.Writer, plan *Plan, prefix string, depth int, withCosts bool) {
 	currentPrefix := prefix
 	subplanPrefix := ""
 
@@ -504,7 +513,7 @@ func (ex *Explain) writePlanText(writer io.Writer, plan *Plan, prefix string, de
 		currentPrefix = prefix + subplanPrefix + "->  "
 	}
 
-	writePlanTextNodeCaption(outputFn, plan)
+	writePlanTextNodeCaption(outputFn, plan, withCosts)
 
 	currentPrefix = prefix + "  "
 	if depth != 0 {
@@ -514,7 +523,7 @@ func (ex *Explain) writePlanText(writer io.Writer, plan *Plan, prefix string, de
 	writePlanTextNodeDetails(outputFn, plan)
 
 	for index := range plan.Plans {
-		ex.writePlanText(writer, &plan.Plans[index], currentPrefix, depth+1, index == len(plan.Plans)-1)
+		ex.writePlanText(writer, &plan.Plans[index], currentPrefix, depth+1, withCosts)
 	}
 }
 
@@ -522,9 +531,19 @@ func writeSubplanTextNodeCaption(outputFn func(string, ...interface{}) (int, err
 	outputFn("%s", plan.SubplanName)
 }
 
-func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error), plan *Plan) {
+func planCostsAndTiming(plan *Plan) string {
 	costs := fmt.Sprintf("(cost=%.2f..%.2f rows=%d width=%d)", plan.StartupCost, plan.TotalCost, plan.PlanRows, plan.PlanWidth)
 	timing := fmt.Sprintf("(actual time=%.3f..%.3f rows=%d loops=%d)", plan.ActualStartupTime, plan.ActualTotalTime, plan.ActualRows, plan.ActualLoops)
+
+	return fmt.Sprintf("  %s %s", costs, timing)
+}
+
+func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error), plan *Plan, withCostsAndTiming bool) {
+	costsAndTiming := ""
+
+	if withCostsAndTiming {
+		costsAndTiming = planCostsAndTiming(plan)
+	}
 
 	using := ""
 	if plan.IndexName != "" {
@@ -548,20 +567,38 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 	}
 
 	nodeType := string(plan.NodeType)
-	if plan.NodeType == ModifyTable { // E.g. for Insert.
+
+	switch plan.NodeType {
+	case ModifyTable: // E.g. for Insert.
 		nodeType = plan.Operation
-	}
 
-	if plan.NodeType == HashJoin && plan.JoinType == "Left" {
-		nodeType = "Hash Left Join"
-	}
+	case ValuesScan:
+		on = fmt.Sprintf(" on %q", plan.Alias)
 
-	if plan.NodeType == Aggregate && plan.Strategy == "Hashed" {
-		nodeType = fmt.Sprintf("Hash%v", Aggregate)
-	}
+	case FunctionScan:
+		on = fmt.Sprintf(" on %s %s", plan.FunctionName, plan.Alias)
 
-	if plan.NodeType == NestedLoop && plan.JoinType == "Left" {
-		nodeType = fmt.Sprintf("%v %s Join", NestedLoop, plan.JoinType)
+	case SubqueryScan:
+		nodeType = fmt.Sprintf("%s on %s", plan.NodeType, plan.Alias)
+
+	case MergeJoin:
+		if plan.JoinType != "Inner" {
+			nodeType = fmt.Sprintf("Merge %s Join", plan.JoinType)
+		}
+
+	case HashJoin:
+		if plan.JoinType != "Inner" {
+			nodeType = fmt.Sprintf("Hash %s Join", plan.JoinType)
+		}
+	case Aggregate:
+		if plan.Strategy == "Hashed" {
+			nodeType = fmt.Sprintf("Hash%v", Aggregate)
+		}
+
+	case NestedLoop:
+		if plan.JoinType != "Inner" {
+			nodeType = fmt.Sprintf("%v %s Join", plan.NodeType, plan.JoinType)
+		}
 	}
 
 	parallel := ""
@@ -569,7 +606,7 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 		parallel = "Parallel "
 	}
 
-	outputFn("%s%v%s%s  %v %v", parallel, nodeType, using, on, costs, timing)
+	outputFn("%s%v%s%s%s", parallel, nodeType, using, on, costsAndTiming)
 }
 
 func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error), plan *Plan) {
@@ -615,6 +652,10 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 
 	if plan.IndexCondition != "" {
 		outputFn("Index Cond: %v", plan.IndexCondition)
+	}
+
+	if plan.MergeCondition != "" {
+		outputFn("Merge Cond: %v", plan.MergeCondition)
 	}
 
 	if plan.NodeType == IndexOnlyScan {
