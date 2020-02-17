@@ -42,9 +42,6 @@ var opts struct {
 	// HTTP Server.
 	ServerPort uint `short:"s" long:"http-port" description:"HTTP server port" env:"SERVER_PORT" default:"3001"`
 
-	QuotaLimit    uint `long:"quota-limit" description:"limit request rates to up to 2x of this number" env:"QUOTA_LIMIT" default:"10"`
-	QuotaInterval uint `long:"quota-interval" description:"an time interval (in seconds) to apply a quota-limit" env:"QUOTA_INTERVAL" default:"60"`
-
 	// Platform.
 	ApiUrl         string `long:"api-url" description:"Postgres.ai platform API base URL" env:"API_URL" default:"https://postgres.ai/api/general"`
 	ApiToken       string `long:"api-token" description:"Postgres.ai platform API token" env:"API_TOKEN"`
@@ -59,6 +56,11 @@ var opts struct {
 	Debug bool `long:"debug" description:"Enable a debug mode"`
 
 	ShowHelp func() error `long:"help" description:"Show this help message"`
+
+	// Enterprise features (changing these options you confirm that you have active subscription to Postgres.ai Platform Enterprise Edition https://postgres.ai).
+	QuotaLimit    uint `long:"quota-limit" description:"limit request rates to up to 2x of this number" env:"EE_QUOTA_LIMIT" default:"10"`
+	QuotaInterval uint `long:"quota-interval" description:"a time interval (in seconds) to apply a quota-limit" env:"EE_QUOTA_INTERVAL" default:"60"`
+	AuditEnabled  bool `long:"audit-enabled" description:"enable logging of received commands" env:"EE_AUDIT_ENABLED"`
 }
 
 // TODO (akartasov): Set the app version during build.
@@ -98,6 +100,7 @@ func main() {
 		Explain:       explainConfig,
 		QuotaLimit:    opts.QuotaLimit,
 		QuotaInterval: opts.QuotaInterval,
+		AuditEnabled:  opts.AuditEnabled,
 
 		DBLab: config.DBLabInstance{
 			URL:     opts.DBLabURL,
