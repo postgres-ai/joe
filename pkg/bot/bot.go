@@ -476,20 +476,22 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 	queryPreview = strings.ReplaceAll(queryPreview, "\t", " ")
 	queryPreview, _ = text.CutText(queryPreview, QUERY_PREVIEW_SIZE, SEPARATOR_ELLIPSIS)
 
-	audit, err := json.Marshal(Audit{
-		Id:       user.ChatUser.ID,
-		Name:     user.ChatUser.Name,
-		RealName: user.ChatUser.RealName,
-		Command:  receivedCommand,
-		Query:    query,
-	})
-	if err != nil {
-		msg, _ := b.Chat.NewMessage(ch)
-		msg.Publish(" ")
-		msg.Fail(err.Error())
-		return
+	if b.Config.AuditEnabled {
+		audit, err := json.Marshal(Audit{
+			Id:       user.ChatUser.ID,
+			Name:     user.ChatUser.Name,
+			RealName: user.ChatUser.RealName,
+			Command:  receivedCommand,
+			Query:    query,
+		})
+		if err != nil {
+			msg, _ := b.Chat.NewMessage(ch)
+			msg.Publish(" ")
+			msg.Fail(err.Error())
+			return
+		}
+		log.Audit(string(audit))
 	}
-	log.Audit(string(audit))
 
 	msgText := fmt.Sprintf("```%s %s```\n", receivedCommand, queryPreview)
 
