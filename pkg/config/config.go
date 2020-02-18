@@ -7,12 +7,13 @@ package config
 import "gitlab.com/postgres-ai/joe/pkg/pgexplain"
 
 type Bot struct {
-	ConnStr       string
-	Port          uint
-	Explain       pgexplain.ExplainConfig
-	QuotaLimit    uint
-	QuotaInterval uint // Seconds.
-	AuditEnabled  bool
+	ConnStr              string
+	Port                 uint
+	Explain              pgexplain.ExplainConfig
+	QuotaLimit           uint
+	QuotaInterval        uint // Seconds.
+	AuditEnabled         bool
+	QueryReminderMinutes uint
 
 	DBLab DBLabInstance
 

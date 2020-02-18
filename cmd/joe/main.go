@@ -42,6 +42,8 @@ var opts struct {
 	// HTTP Server.
 	ServerPort uint `short:"s" long:"http-port" description:"HTTP server port" env:"SERVER_PORT" default:"3001"`
 
+	QueryReminderMinutes uint `long:"reminder-interval" description:"a time interval (in minutes) to notify a user about the finish of a long query" env:"REMINDER_INTERVAL" default:"1"`
+
 	// Platform.
 	ApiUrl         string `long:"api-url" description:"Postgres.ai platform API base URL" env:"API_URL" default:"https://postgres.ai/api/general"`
 	ApiToken       string `long:"api-token" description:"Postgres.ai platform API token" env:"API_TOKEN"`
@@ -96,11 +98,12 @@ func main() {
 	log.Dbg("git: ", version)
 
 	botCfg := config.Bot{
-		Port:          opts.ServerPort,
-		Explain:       explainConfig,
-		QuotaLimit:    opts.QuotaLimit,
-		QuotaInterval: opts.QuotaInterval,
-		AuditEnabled:  opts.AuditEnabled,
+		Port:                 opts.ServerPort,
+		Explain:              explainConfig,
+		QuotaLimit:           opts.QuotaLimit,
+		QuotaInterval:        opts.QuotaInterval,
+		AuditEnabled:         opts.AuditEnabled,
+		QueryReminderMinutes: opts.QueryReminderMinutes,
 
 		DBLab: config.DBLabInstance{
 			URL:     opts.DBLabURL,
