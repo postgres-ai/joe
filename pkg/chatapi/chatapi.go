@@ -5,7 +5,7 @@
 package chatapi
 
 import (
-	"encoding/json"
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -38,7 +38,7 @@ const (
 type Chat struct {
 	Api               *slack.Client
 	AccessToken       string
-	VerificationToken string
+	SigningSecret     string
 }
 
 type Message struct {
@@ -51,13 +51,13 @@ type Message struct {
 	Chat                 *Chat
 }
 
-func NewChat(accessToken string, verificationToken string) *Chat {
+func NewChat(accessToken string, signingSecret string) *Chat {
 	chatApi := slack.New(accessToken)
 
 	chat := Chat{
-		Api:               chatApi,
-		AccessToken:       accessToken,
-		VerificationToken: verificationToken,
+		Api:           chatApi,
+		AccessToken:   accessToken,
+		SigningSecret: signingSecret,
 	}
 
 	return &chat
@@ -342,10 +342,32 @@ func (c *Chat) GetUserInfo(id string) (*slack.User, error) {
 	return c.Api.GetUserInfo(id)
 }
 
-func (c *Chat) ParseEvent(rawEvent string) (slackevents.EventsAPIEvent, error) {
-	return slackevents.ParseEvent(json.RawMessage(rawEvent),
-		slackevents.OptionVerifyToken(
-			&slackevents.TokenComparator{
-				VerificationToken: c.VerificationToken,
-			}))
+func (c *Chat) ParseEvent(rawEvent []byte) (slackevents.EventsAPIEvent, error) {
+	return slackevents.ParseEvent(rawEvent, slackevents.OptionNoVerifyToken())
+}
+
+// VerifyRequest verifies a request coming from Slack
+func (c *Chat) VerifyRequest(r *http.Request) error {
+	secretsVerifier, err := slack.NewSecretsVerifier(r.Header, c.SigningSecret)
+	if err != nil {
+		return errors.Wrap(err, "failed to init the secrets verifier")
+	}
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return errors.Wrap(err, "failed to read the request body")
+	}
+
+	// Set a body with the same data we read.
+	r.Body = ioutil.NopCloser(bytes.NewBuffer(body))
+
+	if _, err := secretsVerifier.Write(body); err != nil {
+		return errors.Wrap(err, "failed to prepare the request body")
+	}
+
+	if err := secretsVerifier.Ensure(); err != nil {
+		return errors.Wrap(err, "failed to ensure a secret token")
+	}
+
+	return nil
 }

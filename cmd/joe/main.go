@@ -30,7 +30,7 @@ import (
 var opts struct {
 	// Chat API.
 	AccessToken       string `short:"t" long:"token" description:"\"Bot User OAuth Access Token\" which starts with \"xoxb-\"" env:"CHAT_TOKEN" required:"true"`
-	VerificationToken string `short:"v" long:"verification-token" description:"callback URL verification token" env:"CHAT_VERIFICATION_TOKEN" required:"true"`
+	SigningSecret     string `long:"signing-secret" description:"The secret confirms that each request comes from Slack by verifying its unique signature." env:"CHAT_SIGNING_SECRET" required:"true"`
 
 	// Database Lab.
 	DBLabURL   string `long:"dblab-url" description:"Database Lab URL" env:"DBLAB_URL" default:"localhost"`
@@ -120,7 +120,7 @@ func main() {
 		Version: version,
 	}
 
-	chat := chatapi.NewChat(opts.AccessToken, opts.VerificationToken)
+	chat := chatapi.NewChat(opts.AccessToken, opts.SigningSecret)
 
 	dbLabClient, err := dblabapi.NewClient(dblabapi.Options{
 		Host:              botCfg.DBLab.URL,
