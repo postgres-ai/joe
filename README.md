@@ -43,7 +43,7 @@ team Workspace. Joe Bot should be available with public URL calls from Slack.
     * `reactions:write`
     * `users.profile:read`
     * `users:read`
-1. Run Joe Bot with `Bot User OAuth Access Token ("xoxb-TOKEN")` from "OAuth & Permissions" Feature and `Verification Token` from "Basic Information" page (See **Run** below).
+1. Run Joe Bot with `Bot User OAuth Access Token ("xoxb-TOKEN")` from "OAuth & Permissions" Feature and `Signing Secret` from "Basic Information" page (See **Run** below).
 1. Enable Incoming Webhooks Feature.
     * Press "Add New Webhook to Workspace" and select a previously created channel to post token.
 1. Enable Event Subscriptions Feature.
@@ -65,7 +65,7 @@ Deploy Joe instance in your infrastructure. You would need to:
       --env DBLAB_URL="https://dblab.domain.com" \
       --env DBLAB_TOKEN="DBLAB_SECRET_TOKEN" \
       --env CHAT_TOKEN="YOUR_SLACK_CHAT_TOKEN" \
-      --env CHAT_VERIFICATION_TOKEN="YOUR_SLACK_VERIFICATION_TOKEN" \
+      --env CHAT_SIGNING_SECRET="YOUR_SLACK_SIGNING_SECRET" \
       --env SERVER_PORT=3001 \
       --detach \
       postgresai/joe:latest

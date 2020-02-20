@@ -314,13 +314,26 @@ func (b *Bot) handleEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := b.Chat.VerifyRequest(r); err != nil {
+		log.Dbg("Message filtered: Verification failed:", err.Error())
+
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+
 	buf := new(bytes.Buffer)
-	buf.ReadFrom(r.Body)
-	body := buf.String()
+	if _, err := buf.ReadFrom(r.Body); err != nil {
+		log.Err("Failed to read the request body:", err)
+
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	body := buf.Bytes()
 
 	eventsAPIEvent, err := b.Chat.ParseEvent(body)
 	if err != nil {
 		log.Err("Event parse error:", err)
+
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -331,7 +344,7 @@ func (b *Bot) handleEvent(w http.ResponseWriter, r *http.Request) {
 		log.Dbg("Event type: URL verification")
 		var r *slackevents.ChallengeResponse
 
-		err := json.Unmarshal([]byte(body), &r)
+		err := json.Unmarshal(body, &r)
 		if err != nil {
 			log.Err("Challenge parse error:", err)
 			w.WriteHeader(http.StatusInternalServerError)
