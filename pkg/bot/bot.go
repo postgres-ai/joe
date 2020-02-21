@@ -539,7 +539,7 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		return
 	}
 
-	remindDuration := time.Duration(b.Config.QueryReminderMinutes) * time.Minute
+	remindDuration := time.Duration(b.Config.MinNotifyDurationMinutes) * time.Minute
 	if err := msg.SetLongRunningTimestamp(remindDuration); err != nil {
 		log.Err(err)
 	}

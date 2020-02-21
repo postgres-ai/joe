@@ -7,6 +7,7 @@ package command
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/pkg/errors"
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
@@ -30,23 +31,36 @@ func Explain(chat *chatapi.Chat, apiCmd *api.ApiCommand, msg *chatapi.Message, b
 	}
 
 	// Explain request and show.
-	var res, err = querier.DBExplain(db, apiCmd.Query)
+	var explainResult, err = querier.DBExplain(db, apiCmd.Query)
 	if err != nil {
 		return err
 	}
 
-	apiCmd.PlanText = res
-	planPreview, trnd := text.CutText(res, PlanSize, SeparatorPlan)
+	apiCmd.PlanText = explainResult
+	planPreview, trnd := text.CutText(explainResult, PlanSize, SeparatorPlan)
 
 	msgInitText := msg.Text
 
-	err = msg.Append(fmt.Sprintf("*Plan:*\n```%s```", planPreview))
-	if err != nil {
+	includeHypoPG := false
+	explainPlanTitle := ""
+
+	if hypoIndexes, err := listHypoIndexes(db); err == nil && len(hypoIndexes) > 0 {
+		if isHypoIndexInvolved(explainResult, hypoIndexes) {
+			explainPlanTitle = " (HypoPG involved)"
+			includeHypoPG = true
+		}
+	}
+
+	if err := msg.Append(fmt.Sprintf("*Plan%s:*\n```%s```", explainPlanTitle, planPreview)); err != nil {
 		log.Err("Show plan: ", err)
 		return err
 	}
 
-	filePlanWoExec, err := chat.UploadFile("plan-wo-execution-text", res, msg.ChannelID, msg.Timestamp)
+	if includeHypoPG {
+		msgInitText = msg.Text
+	}
+
+	filePlanWoExec, err := chat.UploadFile("plan-wo-execution-text", explainResult, msg.ChannelID, msg.Timestamp)
 	if err != nil {
 		log.Err("File upload failed:", err)
 		return err
@@ -64,15 +78,15 @@ func Explain(chat *chatapi.Chat, apiCmd *api.ApiCommand, msg *chatapi.Message, b
 	}
 
 	// Explain analyze request and processing.
-	res, err = querier.DBExplainAnalyze(db, apiCmd.Query)
+	explainAnalyze, err := querier.DBExplainAnalyze(db, apiCmd.Query)
 	if err != nil {
 		return err
 	}
 
-	apiCmd.PlanExecJson = res
+	apiCmd.PlanExecJson = explainAnalyze
 
 	// Visualization.
-	explain, err := pgexplain.NewExplain(res, explainConfig)
+	explain, err := pgexplain.NewExplain(explainAnalyze, explainConfig)
 	if err != nil {
 		log.Err("Explain parsing: ", err)
 
@@ -92,7 +106,7 @@ func Explain(chat *chatapi.Chat, apiCmd *api.ApiCommand, msg *chatapi.Message, b
 		return err
 	}
 
-	_, err = chat.UploadFile("plan-json", res, msg.ChannelID, msg.Timestamp)
+	_, err = chat.UploadFile("plan-json", explainAnalyze, msg.ChannelID, msg.Timestamp)
 	if err != nil {
 		log.Err("File upload failed:", err)
 		return err
@@ -152,4 +166,33 @@ func Explain(chat *chatapi.Chat, apiCmd *api.ApiCommand, msg *chatapi.Message, b
 	}
 
 	return nil
+}
+
+func listHypoIndexes(db *sql.DB) ([]string, error) {
+	rows, err := db.Query("SELECT indexname FROM hypopg_list_indexes()")
+	if err != nil {
+		return nil, err
+	}
+
+	hypoIndexes := []string{}
+	for rows.Next() {
+		var indexName string
+		if err := rows.Scan(&indexName); err != nil {
+			return nil, err
+		}
+
+		hypoIndexes = append(hypoIndexes, indexName)
+	}
+
+	return hypoIndexes, nil
+}
+
+func isHypoIndexInvolved(explainResult string, hypoIndexes []string) bool {
+	for _, index := range hypoIndexes {
+		if strings.Contains(explainResult, index) {
+			return true
+		}
+	}
+
+	return false
 }

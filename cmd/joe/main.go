@@ -42,7 +42,7 @@ var opts struct {
 	// HTTP Server.
 	ServerPort uint `short:"s" long:"http-port" description:"HTTP server port" env:"SERVER_PORT" default:"3001"`
 
-	QueryReminderMinutes uint `long:"reminder-interval" description:"a time interval (in minutes) to notify a user about the finish of a long query" env:"REMINDER_INTERVAL" default:"1"`
+	MinNotifyDuration uint `long:"min-notify-duration" description:"a time interval (in minutes) to notify a user about the finish of a long query" env:"MIN_NOTIFY_DURATION" default:"1"`
 
 	// Platform.
 	ApiUrl         string `long:"api-url" description:"Postgres.ai platform API base URL" env:"API_URL" default:"https://postgres.ai/api/general"`
@@ -66,7 +66,7 @@ var opts struct {
 }
 
 // TODO (akartasov): Set the app version during build.
-const Version = "v0.4.1"
+const Version = "v0.5.0"
 
 // TODO(anatoly): Refactor configs and envs.
 
@@ -98,12 +98,12 @@ func main() {
 	log.Dbg("git: ", version)
 
 	botCfg := config.Bot{
-		Port:                 opts.ServerPort,
-		Explain:              explainConfig,
-		QuotaLimit:           opts.QuotaLimit,
-		QuotaInterval:        opts.QuotaInterval,
-		AuditEnabled:         opts.AuditEnabled,
-		QueryReminderMinutes: opts.QueryReminderMinutes,
+		Port:                     opts.ServerPort,
+		Explain:                  explainConfig,
+		QuotaLimit:               opts.QuotaLimit,
+		QuotaInterval:            opts.QuotaInterval,
+		AuditEnabled:             opts.AuditEnabled,
+		MinNotifyDurationMinutes: opts.MinNotifyDuration,
 
 		DBLab: config.DBLabInstance{
 			URL:     opts.DBLabURL,
