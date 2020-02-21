@@ -328,7 +328,7 @@ func (m *Message) notifyAboutRequestFinish() error {
 		return nil
 	}
 
-	text := fmt.Sprintf("<@%s> The request has been finished.", m.chatUserID)
+	text := fmt.Sprintf("<@%s> :point_up_2:", m.chatUserID)
 
 	if err := m.PublishToThread(text, m.Timestamp); err != nil {
 		return errors.Wrap(err, "failed to publish a user mention")
