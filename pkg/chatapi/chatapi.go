@@ -36,9 +36,9 @@ const (
 )
 
 type Chat struct {
-	Api               *slack.Client
-	AccessToken       string
-	SigningSecret     string
+	Api           *slack.Client
+	AccessToken   string
+	SigningSecret string
 }
 
 type Message struct {

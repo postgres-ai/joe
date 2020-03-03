@@ -15,7 +15,7 @@ import (
 
 	"github.com/pkg/errors"
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
-	"gitlab.com/postgres-ai/database-lab/pkg/services/provision"
+	"gitlab.com/postgres-ai/database-lab/pkg/services/provision/runners"
 
 	"gitlab.com/postgres-ai/joe/pkg/dblab"
 )
@@ -45,8 +45,8 @@ func (tr Transmitter) Run(commandParam string) (string, error) {
 
 	out, err := tr.runPsql(cmdStr)
 	if err != nil {
-		if runnerError, ok := err.(provision.RunnerError); ok {
-			return "", fmt.Errorf("Pqsl error: %s", runnerError.Stderr)
+		if runnerError, ok := err.(runners.RunnerError); ok {
+			return "", fmt.Errorf("Psql error: %s", runnerError.Stderr)
 		}
 
 		return "", errors.Wrapf(err, "failed to execute command")
@@ -154,7 +154,7 @@ func executeCommand(cmdStr string) ([]byte, error) {
 	// to treat the case as error and read proper output.
 	err := cmd.Run()
 	if err != nil || stderr.String() != "" {
-		runnerError := provision.NewRunnerError(cmdStr, stderr.String(), err)
+		runnerError := runners.NewRunnerError(cmdStr, stderr.String(), err)
 
 		log.Err(runnerError)
 		return nil, runnerError
