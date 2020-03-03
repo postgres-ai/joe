@@ -46,7 +46,7 @@ func Explain(chat *chatapi.Chat, apiCmd *api.ApiCommand, msg *chatapi.Message, b
 
 	if hypoIndexes, err := listHypoIndexes(db); err == nil && len(hypoIndexes) > 0 {
 		if isHypoIndexInvolved(explainResult, hypoIndexes) {
-			explainPlanTitle = " (HypoPG involved)"
+			explainPlanTitle = " (HypoPG involved :ghost:)"
 			includeHypoPG = true
 		}
 	}
