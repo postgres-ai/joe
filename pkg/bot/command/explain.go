@@ -20,65 +20,30 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/util/text"
 )
 
-func Explain(chat *chatapi.Chat, apiCmd *api.ApiCommand, msg *chatapi.Message, botCfg config.Bot, db *sql.DB) error {
-	var detailsText string
-	var trnd bool
+// MsgExplainOptionReq describes an explain error.
+const MsgExplainOptionReq = "Use `explain` to see the query's plan, e.g. `explain select 1`"
 
+// Query Explain prefixes.
+const (
+	queryExplain        = "EXPLAIN (FORMAT TEXT) "
+	queryExplainAnalyze = "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) "
+)
+
+func Explain(chat *chatapi.Chat, apiCmd *api.ApiCommand, msg *chatapi.Message, botCfg config.Bot, db *sql.DB) error {
 	explainConfig := botCfg.Explain
 
 	if apiCmd.Query == "" {
 		return errors.New(MsgExplainOptionReq)
 	}
 
-	// Explain request and show.
-	var explainResult, err = querier.DBExplain(db, apiCmd.Query)
+	cmd := NewPlan(apiCmd, msg, db, chat)
+	msgInitText, isTruncated, err := cmd.explainWithoutExecution()
 	if err != nil {
-		return err
-	}
-
-	apiCmd.PlanText = explainResult
-	planPreview, trnd := text.CutText(explainResult, PlanSize, SeparatorPlan)
-
-	msgInitText := msg.Text
-
-	includeHypoPG := false
-	explainPlanTitle := ""
-
-	if hypoIndexes, err := listHypoIndexes(db); err == nil && len(hypoIndexes) > 0 {
-		if isHypoIndexInvolved(explainResult, hypoIndexes) {
-			explainPlanTitle = " (HypoPG involved :ghost:)"
-			includeHypoPG = true
-		}
-	}
-
-	if err := msg.Append(fmt.Sprintf("*Plan%s:*\n```%s```", explainPlanTitle, planPreview)); err != nil {
-		log.Err("Show plan: ", err)
-		return err
-	}
-
-	if includeHypoPG {
-		msgInitText = msg.Text
-	}
-
-	filePlanWoExec, err := chat.UploadFile("plan-wo-execution-text", explainResult, msg.ChannelID, msg.Timestamp)
-	if err != nil {
-		log.Err("File upload failed:", err)
-		return err
-	}
-
-	detailsText = ""
-	if trnd {
-		detailsText = " " + CutText
-	}
-
-	err = msg.Append(fmt.Sprintf("<%s|Full plan (w/o execution)>%s", filePlanWoExec.Permalink, detailsText))
-	if err != nil {
-		log.Err("File: ", err)
-		return err
+		return errors.Wrap(err, "failed to run explain without execution")
 	}
 
 	// Explain analyze request and processing.
-	explainAnalyze, err := querier.DBExplainAnalyze(db, apiCmd.Query)
+	explainAnalyze, err := querier.DBQueryWithResponse(db, queryExplainAnalyze+apiCmd.Query)
 	if err != nil {
 		return err
 	}
@@ -96,7 +61,7 @@ func Explain(chat *chatapi.Chat, apiCmd *api.ApiCommand, msg *chatapi.Message, b
 	vis := explain.RenderPlanText()
 	apiCmd.PlanExecText = vis
 
-	planExecPreview, trnd := text.CutText(vis, PlanSize, SeparatorPlan)
+	planExecPreview, isTruncated := text.CutText(vis, PlanSize, SeparatorPlan)
 
 	err = msg.Replace(msgInitText + chatapi.CHAT_APPEND_SEPARATOR +
 		fmt.Sprintf("*Plan with execution:*\n```%s```", planExecPreview))
@@ -118,8 +83,8 @@ func Explain(chat *chatapi.Chat, apiCmd *api.ApiCommand, msg *chatapi.Message, b
 		return err
 	}
 
-	detailsText = ""
-	if trnd {
+	detailsText := ""
+	if isTruncated {
 		detailsText = " " + CutText
 	}
 
