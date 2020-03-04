@@ -16,11 +16,6 @@ import (
 )
 
 const (
-	QueryExplain        = "EXPLAIN (FORMAT TEXT) "
-	QueryExplainAnalyze = "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) "
-)
-
-const (
 	// SyntaxPQErrorCode defines the pq syntax error code.
 	SyntaxPQErrorCode = "42601"
 
@@ -28,7 +23,7 @@ const (
 	SystemPQErrorCodeUndefinedFile = "58P01"
 )
 
-// DBExec runs query without returning results.
+// DBExec executes query without returning results.
 func DBExec(db *sql.DB, query string) error {
 	_, err := runQuery(db, query, true)
 	return err
@@ -39,12 +34,9 @@ func DBQuery(db *sql.DB, query string, args ...interface{}) ([][]string, error) 
 	return runTableQuery(db, query, args...)
 }
 
-func DBExplain(db *sql.DB, query string) (string, error) {
-	return runQuery(db, QueryExplain+query, false)
-}
-
-func DBExplainAnalyze(db *sql.DB, query string) (string, error) {
-	return runQuery(db, QueryExplainAnalyze+query, false)
+// DBQueryWithResponse runs query with returning results.
+func DBQueryWithResponse(db *sql.DB, query string) (string, error) {
+	return runQuery(db, query, false)
 }
 
 func runQuery(db *sql.DB, query string, omitResp bool, args ...interface{}) (string, error) {

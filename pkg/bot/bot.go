@@ -49,6 +49,7 @@ const COMMAND_EXEC = "exec"
 const COMMAND_RESET = "reset"
 const COMMAND_HELP = "help"
 const COMMAND_HYPO = "hypo"
+const COMMAND_PLAN = "plan"
 
 const COMMAND_PSQL_D = `\d`
 const COMMAND_PSQL_DP = `\d+`
@@ -65,6 +66,7 @@ const COMMAND_PSQL_DMP = `\dm+`
 
 var supportedCommands = []string{
 	COMMAND_EXPLAIN,
+	COMMAND_PLAN,
 	COMMAND_HYPO,
 	COMMAND_EXEC,
 	COMMAND_RESET,
@@ -112,6 +114,7 @@ const QUERY_PREVIEW_SIZE = 400
 const InactiveCloneCheckInterval = time.Minute
 
 const MSG_HELP = "• `explain` — analyze your query (SELECT, INSERT, DELETE, UPDATE or WITH) and generate recommendations\n" +
+	"• `plan` — analyze your query (SELECT, INSERT, DELETE, UPDATE or WITH) without execution\n" +
 	"• `exec` — execute any query (for example, CREATE INDEX)\n" +
 	"• `reset` — revert the database to the initial state (usually takes less than a minute, :warning: all changes will be lost)\n" +
 	"• `\\d`, `\\d+`, `\\dt`, `\\dt+`, `\\di`, `\\di+`, `\\l`, `\\l+`, `\\dv`, `\\dv+`, `\\dm`, `\\dm+` — psql meta information commands\n" +
@@ -570,6 +573,10 @@ func (b *Bot) processMessageEvent(ev *slackevents.MessageEvent) {
 		switch {
 		case receivedCommand == COMMAND_EXPLAIN:
 			err = command.Explain(b.Chat, apiCmd, msg, b.Config, user.Session.CloneConnection)
+
+		case receivedCommand == COMMAND_PLAN:
+			planCmd := command.NewPlan(apiCmd, msg, user.Session.CloneConnection, b.Chat)
+			err = planCmd.Execute()
 
 		case receivedCommand == COMMAND_EXEC:
 			execCmd := command.NewExec(apiCmd, msg, user.Session.CloneConnection)
