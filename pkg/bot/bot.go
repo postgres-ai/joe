@@ -29,6 +29,7 @@ import (
 	"github.com/sethvargo/go-password/password"
 
 	"gitlab.com/postgres-ai/database-lab/pkg/client/dblabapi"
+	"gitlab.com/postgres-ai/database-lab/pkg/client/dblabapi/types"
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
 	"gitlab.com/postgres-ai/database-lab/pkg/models"
 
@@ -731,11 +732,11 @@ func (b *Bot) createDBLabClone(ctx context.Context, user *User) (*models.Clone, 
 		return nil, errors.Wrap(err, "failed to generate a password to a new clone")
 	}
 
-	clientRequest := dblabapi.CreateRequest{
+	clientRequest := types.CloneCreateRequest{
 		ID:        "joe-" + xid.New().String(),
 		Project:   b.Config.ApiProject,
 		Protected: false,
-		DB: &dblabapi.DatabaseRequest{
+		DB: &types.DatabaseRequest{
 			Username: joeUserNamePrefix + user.ChatUser.Name,
 			Password: pwd,
 		},
