@@ -1,7 +1,7 @@
 image: golang:1.13
 
 variables:
-  DOCKER_NAME: postgresai/joe
+  DOCKER_FILE: "Dockerfile"
 
 cache:
   paths:
@@ -23,7 +23,7 @@ build-binary:
   stage: build-binary
   only:
     refs:
-      - master
+      - branches
       - tags
   artifacts:
     paths:
@@ -31,10 +31,7 @@ build-binary:
   script:
     - make build
 
-build-image:
-  only:
-    refs:
-      - tags
+.job_template: &build_image_definition
   image: docker:19
   stage: build-image
   artifacts:
@@ -43,33 +40,62 @@ build-image:
   services:
     - docker:dind
   script:
-    - TAG_LATEST="${DOCKER_NAME}:latest"
-    - TAG_VERSION="${DOCKER_NAME}:${CI_COMMIT_TAG}"
+    - apk add --no-cache bash # TODO(anatoly): Remove dependency.
+    - bash ./scripts/ci_docker_build_push.sh
 
-    - docker login --username $DH_CI_REGISTRY_USER --password "${DH_CI_REGISTRY_PASSWORD}" $DH_CI_REGISTRY
-    - docker build --tag $TAG_VERSION --tag $TAG_LATEST .
+.only_var_template: &only_tag_release
+  only:
+    variables:
+      - $CI_COMMIT_TAG =~ /^[0-9.]+$/
 
-    - docker push $TAG_VERSION
-    - docker push $TAG_LATEST
+.only_var_template: &only_tag_rc
+  only:
+    variables:
+      - $CI_COMMIT_TAG =~ /^[0-9.]+[\-_]*[a-zA-Z]+[a-zA-Z0-9.\-_]*[a-zA-Z0-9]+$/
 
-build-image-master:
+.only_var_template: &only_master
   only:
     - master
-  image: docker:19
-  stage: build-image
-  artifacts:
-    paths:
-      - bin
-  services:
-    - docker:dind
+
+.only_var_template: &only_feature
+  only:
+    variables:
+      - $CI_COMMIT_TAG == null
+      - $CI_COMMIT_REF_SLUG != "master"
+
+build-image-feature:
+  <<: *build_image_definition
+  <<: *only_feature
+  variables:
+    REGISTRY_USER: "${CI_REGISTRY_USER}"
+    REGISTRY_PASSWORD: "${CI_REGISTRY_PASSWORD}"
+    REGISTRY: "${CI_REGISTRY}"
+    DOCKER_NAME: "registry.gitlab.com/postgres-ai/joe"
+    TAGS: "${DOCKER_NAME}:${CI_COMMIT_REF_SLUG}"
+
+build-image-master:
+  <<: *build_image_definition
+  <<: *only_master
   variables:
     DOCKER_NAME: "registry.gitlab.com/postgres-ai/joe"
-  script:
-    - TAG_MASTER_LATEST="${DOCKER_NAME}:master"
-    - TAG_MASTER_VERSION="${DOCKER_NAME}:master-${CI_COMMIT_SHORT_SHA}"
+    TAGS: "${DOCKER_NAME}:master,${DOCKER_NAME}:master-${CI_COMMIT_SHORT_SHA}"
 
-    - docker login --username $CI_REGISTRY_USER --password "${CI_REGISTRY_PASSWORD}" $CI_REGISTRY
-    - docker build --tag $TAG_MASTER_VERSION --tag $TAG_MASTER_LATEST .
+build-image-latest:
+  <<: *build_image_definition
+  <<: *only_tag_release
+  variables:
+    REGISTRY_USER: "${DH_CI_REGISTRY_USER}"
+    REGISTRY_PASSWORD: "${DH_CI_REGISTRY_PASSWORD}"
+    REGISTRY: "${DH_CI_REGISTRY}"
+    DOCKER_NAME: postgresai/joe
+    TAGS: "${DOCKER_NAME}:latest,${DOCKER_NAME}:${CI_COMMIT_TAG}"
 
-    - docker push $TAG_MASTER_LATEST
-    - docker push $TAG_MASTER_VERSION
+build-image-rc:
+  <<: *build_image_definition
+  <<: *only_tag_rc
+  variables:
+    REGISTRY_USER: "${DH_CI_REGISTRY_USER}"
+    REGISTRY_PASSWORD: "${DH_CI_REGISTRY_PASSWORD}"
+    REGISTRY: "${DH_CI_REGISTRY}"
+    DOCKER_NAME: postgresai/joe
+    TAGS: "${DOCKER_NAME}:${CI_COMMIT_TAG}"
