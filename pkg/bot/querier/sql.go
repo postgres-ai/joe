@@ -143,7 +143,7 @@ func clarifyQueryError(query []byte, err error) error {
 			// Check &nbsp; - ASCII code 160
 			if bytes.Contains(query, []byte{160}) {
 				return errors.WithMessage(err,
-					`There are "non-breaking spaces" in your input (ASCII code 160). Please edit your request and use regular spaces only (ASCII code 32).`)
+					`There are "non-breaking spaces" in your input (ASCII code 160). Repeat your request using regular spaces instead (ASCII code 32).`)
 			}
 		default:
 			return err
