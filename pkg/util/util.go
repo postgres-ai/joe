@@ -36,18 +36,6 @@ func EqualStringSlicesUnordered(x, y []string) bool {
 	return true
 }
 
-func Unique(list []string) []string {
-	keys := make(map[string]bool)
-	uqList := []string{}
-	for _, entry := range list {
-		if _, value := keys[entry]; !value {
-			keys[entry] = true
-			uqList = append(uqList, entry)
-		}
-	}
-	return uqList
-}
-
 func Contains(list []string, s string) bool {
 	for _, item := range list {
 		if s == item {

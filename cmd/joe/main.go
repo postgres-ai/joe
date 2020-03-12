@@ -10,27 +10,29 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 
 	"github.com/jessevdk/go-flags"
+	"github.com/nlopes/slack"
 	"github.com/sirupsen/logrus"
 	"gitlab.com/postgres-ai/database-lab/pkg/client/dblabapi"
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
 	"gopkg.in/yaml.v2"
 
 	"gitlab.com/postgres-ai/joe/pkg/bot"
-	"gitlab.com/postgres-ai/joe/pkg/chatapi"
 	"gitlab.com/postgres-ai/joe/pkg/config"
+	slackConnection "gitlab.com/postgres-ai/joe/pkg/connection/slack"
 	"gitlab.com/postgres-ai/joe/pkg/pgexplain"
 )
 
 var opts struct {
 	// Chat API.
-	AccessToken       string `short:"t" long:"token" description:"\"Bot User OAuth Access Token\" which starts with \"xoxb-\"" env:"CHAT_TOKEN" required:"true"`
-	SigningSecret     string `long:"signing-secret" description:"The secret confirms that each request comes from Slack by verifying its unique signature." env:"CHAT_SIGNING_SECRET" required:"true"`
+	AccessToken   string `short:"t" long:"token" description:"\"Bot User OAuth Access Token\" which starts with \"xoxb-\"" env:"CHAT_TOKEN" required:"true"`
+	SigningSecret string `long:"signing-secret" description:"The secret confirms that each request comes from Slack by verifying its unique signature." env:"CHAT_SIGNING_SECRET" required:"true"`
 
 	// Database Lab.
 	DBLabURL   string `long:"dblab-url" description:"Database Lab URL" env:"DBLAB_URL" default:"localhost"`
@@ -66,7 +68,7 @@ var opts struct {
 }
 
 // TODO (akartasov): Set the app version during build.
-const Version = "v0.5.0"
+const Version = "v0.6.0-rc1"
 
 // TODO(anatoly): Refactor configs and envs.
 
@@ -98,10 +100,12 @@ func main() {
 	log.Dbg("git: ", version)
 
 	botCfg := config.Bot{
-		Port:                     opts.ServerPort,
-		Explain:                  explainConfig,
-		QuotaLimit:               opts.QuotaLimit,
-		QuotaInterval:            opts.QuotaInterval,
+		Port:    opts.ServerPort,
+		Explain: explainConfig,
+		Quota: config.Quota{
+			Limit:    opts.QuotaLimit,
+			Interval: opts.QuotaInterval,
+		},
 		AuditEnabled:             opts.AuditEnabled,
 		MinNotifyDurationMinutes: opts.MinNotifyDuration,
 
@@ -120,7 +124,7 @@ func main() {
 		Version: version,
 	}
 
-	chat := chatapi.NewChat(opts.AccessToken, opts.SigningSecret)
+	chatAPI := slack.New(opts.AccessToken)
 
 	dbLabClient, err := dblabapi.NewClient(dblabapi.Options{
 		Host:              botCfg.DBLab.URL,
@@ -131,8 +135,17 @@ func main() {
 		log.Fatal("Failed to create a Database Lab client", err)
 	}
 
-	joeBot := bot.NewBot(botCfg, chat, dbLabClient)
-	joeBot.RunServer()
+	slackCfg := &slackConnection.SlackConfig{
+		AccessToken:   opts.AccessToken,
+		SigningSecret: opts.SigningSecret,
+	}
+
+	messenger := slackConnection.NewMessenger(chatAPI, slackCfg)
+	userInformer := slackConnection.NewUserInformer(chatAPI)
+	assistant := slackConnection.NewAssistant(slackCfg, botCfg, messenger, userInformer, dbLabClient)
+
+	joeBot := bot.NewApp(botCfg)
+	joeBot.RunServer(context.Background(), assistant)
 }
 
 func parseArgs() ([]string, error) {

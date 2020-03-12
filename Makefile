@@ -28,6 +28,15 @@ GORUN = GO111MODULE=on go run ${LDFLAGS}
 # Build the project
 all: clean vet build
 
+# Install the linter to $GOPATH/bin which is expected to be in $PATH
+install-lint:
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.22.2
+
+run-lint:
+	golangci-lint run
+
+lint: install-lint run-lint
+
 build:
 	${GOBUILD} -o bin/${BINARY} ./cmd/joe/main.go
 

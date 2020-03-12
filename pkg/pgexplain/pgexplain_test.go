@@ -1553,7 +1553,7 @@ const ExpectedText5HashJoinAndNestedLoop = ` Nested Loop Left Join
                ->  Values Scan on "*VALUES*_1"
 `
 
-const InputJSON6SubqueryScan  =`[
+const InputJSON6SubqueryScan = `[
   {
     "Plan": {
       "Node Type": "Nested Loop",

@@ -14,7 +14,8 @@ import (
 
 	"gitlab.com/postgres-ai/joe/pkg/bot/api"
 	"gitlab.com/postgres-ai/joe/pkg/bot/querier"
-	"gitlab.com/postgres-ai/joe/pkg/chatapi"
+	"gitlab.com/postgres-ai/joe/pkg/connection"
+	"gitlab.com/postgres-ai/joe/pkg/models"
 	"gitlab.com/postgres-ai/joe/pkg/util"
 )
 
@@ -24,16 +25,18 @@ const MsgExecOptionReq = "Use `exec` to run query, e.g. `exec drop index some_in
 // ExecCmd defines the exec command.
 type ExecCmd struct {
 	apiCommand *api.ApiCommand
-	message    *chatapi.Message
+	message    *models.Message
 	db         *sql.DB
+	messenger  connection.Messenger
 }
 
 // NewExec return a new exec command.
-func NewExec(apiCmd *api.ApiCommand, msg *chatapi.Message, db *sql.DB) *ExecCmd {
+func NewExec(apiCmd *api.ApiCommand, msg *models.Message, db *sql.DB, messengerSvc connection.Messenger) *ExecCmd {
 	return &ExecCmd{
 		apiCommand: apiCmd,
 		message:    msg,
 		db:         db,
+		messenger:  messengerSvc,
 	}
 }
 
@@ -55,7 +58,8 @@ func (cmd ExecCmd) Execute() error {
 	result := fmt.Sprintf("The query has been executed. Duration: %s", duration)
 	cmd.apiCommand.Response = result
 
-	if err = cmd.message.Append(result); err != nil {
+	cmd.message.AppendText(result)
+	if err = cmd.messenger.UpdateText(cmd.message); err != nil {
 		log.Err("Exec:", err)
 		return err
 	}
