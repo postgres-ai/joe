@@ -10,8 +10,7 @@ type Bot struct {
 	ConnStr                  string
 	Port                     uint
 	Explain                  pgexplain.ExplainConfig
-	QuotaLimit               uint
-	QuotaInterval            uint // Seconds.
+	Quota                    Quota
 	AuditEnabled             bool
 	MinNotifyDurationMinutes uint
 
@@ -23,6 +22,12 @@ type Bot struct {
 	HistoryEnabled bool
 
 	Version string
+}
+
+// Quota contains quota configuration parameters.
+type Quota struct {
+	Limit    uint
+	Interval uint // Seconds.
 }
 
 // DBLabInstance contains Database Lab config.

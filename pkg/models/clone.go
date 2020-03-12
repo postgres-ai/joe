@@ -1,4 +1,9 @@
-package dblab
+/*
+2019 © Postgres.ai
+*/
+
+// Package structs provides domain entities.
+package models
 
 import "fmt"
 

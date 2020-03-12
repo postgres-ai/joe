@@ -12,12 +12,13 @@ import (
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
 
 	"gitlab.com/postgres-ai/joe/pkg/bot/api"
-	"gitlab.com/postgres-ai/joe/pkg/chatapi"
+	"gitlab.com/postgres-ai/joe/pkg/connection"
+	"gitlab.com/postgres-ai/joe/pkg/models"
 	"gitlab.com/postgres-ai/joe/pkg/transmission"
 	"gitlab.com/postgres-ai/joe/pkg/util/text"
 )
 
-func Transmit(apiCmd *api.ApiCommand, msg *chatapi.Message, chat *chatapi.Chat, runner transmission.Runner) error {
+func Transmit(apiCmd *api.ApiCommand, msg *models.Message, msgSvc connection.Messenger, runner transmission.Runner) error {
 	// See transmission.prepareCommandParam for more comments.
 	if strings.ContainsAny(apiCmd.Query, "\n;\\ ") {
 		err := errors.New("query should not contain semicolons, new lines, spaces, and excess backslashes")
@@ -37,12 +38,13 @@ func Transmit(apiCmd *api.ApiCommand, msg *chatapi.Message, chat *chatapi.Chat, 
 
 	cmdPreview, trnd := text.CutText(cmd, PlanSize, SeparatorPlan)
 
-	if err = msg.Append(fmt.Sprintf("*Command output:*\n```%s```", cmdPreview)); err != nil {
+	msg.AppendText(fmt.Sprintf("*Command output:*\n```%s```", cmdPreview))
+	if err = msgSvc.UpdateText(msg); err != nil {
 		log.Err("Show command output:", err)
 		return err
 	}
 
-	fileCmd, err := chat.UploadFile("command", cmd, msg.ChannelID, msg.Timestamp)
+	fileCmdPermalink, err := msgSvc.AddArtifact("command", cmd, msg.ChannelID, msg.MessageID)
 	if err != nil {
 		log.Err("File upload failed:", err)
 		return err
@@ -53,7 +55,8 @@ func Transmit(apiCmd *api.ApiCommand, msg *chatapi.Message, chat *chatapi.Chat, 
 		detailsText = " " + CutText
 	}
 
-	if err = msg.Append(fmt.Sprintf("<%s|Full command output>%s\n", fileCmd.Permalink, detailsText)); err != nil {
+	msg.AppendText(fmt.Sprintf("<%s|Full command output>%s\n", fileCmdPermalink, detailsText))
+	if err = msgSvc.UpdateText(msg); err != nil {
 		log.Err("File: ", err)
 		return err
 	}

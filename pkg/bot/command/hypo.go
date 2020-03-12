@@ -13,7 +13,8 @@ import (
 
 	"gitlab.com/postgres-ai/joe/pkg/bot/api"
 	"gitlab.com/postgres-ai/joe/pkg/bot/querier"
-	"gitlab.com/postgres-ai/joe/pkg/chatapi"
+	"gitlab.com/postgres-ai/joe/pkg/connection"
+	"gitlab.com/postgres-ai/joe/pkg/models"
 )
 
 // Hypo sub-commands
@@ -27,7 +28,7 @@ const (
 // HypoPGCaption contains caption for rendered tables.
 const HypoPGCaption = "*HypoPG response:*\n"
 
-// hypoPGExceptionMessage  defines an error message on failure of extension initialize.
+// hypoPGExceptionMessage defines an error message on failure of extension initialize.
 const hypoPGExceptionMessage = `:warning: Cannot init the HypoPG extension.
 Make sure that the extension has been installed in your Postgres image for Database Lab: https://postgres.ai/docs/database-lab/supported_databases.
 For a quick start, you can use prepared images: https://hub.docker.com/repository/docker/postgresai/extended-postgres created by *Postgres.ai*, or prepare your own.`
@@ -35,16 +36,18 @@ For a quick start, you can use prepared images: https://hub.docker.com/repositor
 // HypoCmd defines a hypo command.
 type HypoCmd struct {
 	apiCommand *api.ApiCommand
-	message    *chatapi.Message
+	message    *models.Message
 	db         *sql.DB
+	messenger  connection.Messenger
 }
 
 // NewHypo creates a new Hypo command.
-func NewHypo(apiCmd *api.ApiCommand, msg *chatapi.Message, db *sql.DB) *HypoCmd {
+func NewHypo(apiCmd *api.ApiCommand, msg *models.Message, db *sql.DB, msgSvc connection.Messenger) *HypoCmd {
 	return &HypoCmd{
 		apiCommand: apiCmd,
 		message:    msg,
 		db:         db,
+		messenger:  msgSvc,
 	}
 }
 
@@ -54,7 +57,9 @@ func (h *HypoCmd) Execute() error {
 
 	if err := h.initExtension(); err != nil {
 		if pqError, ok := err.(*pq.Error); ok && pqError.Code == querier.SystemPQErrorCodeUndefinedFile {
-			if err := h.message.Append(hypoPGExceptionMessage); err != nil {
+			h.message.AppendText(hypoPGExceptionMessage)
+
+			if err := h.messenger.UpdateText(h.message); err != nil {
 				return errors.Wrap(err, "failed to publish message")
 			}
 
@@ -108,8 +113,9 @@ func (h *HypoCmd) create() error {
 	tableString := &strings.Builder{}
 	tableString.WriteString(HypoPGCaption)
 	querier.RenderTable(tableString, res)
+	h.message.AppendText(tableString.String())
 
-	if err := h.message.Append(tableString.String()); err != nil {
+	if err := h.messenger.UpdateText(h.message); err != nil {
 		return errors.Wrap(err, "failed to publish message")
 	}
 
@@ -136,7 +142,8 @@ func (h *HypoCmd) describe(indexID string) error {
 	tableString.WriteString(HypoPGCaption)
 	querier.RenderTable(tableString, res)
 
-	if err := h.message.Append(tableString.String()); err != nil {
+	h.message.AppendText(tableString.String())
+	if err := h.messenger.UpdateText(h.message); err != nil {
 		return errors.Wrap(err, "failed to publish message")
 	}
 

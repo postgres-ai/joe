@@ -14,10 +14,11 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
+
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
 	"gitlab.com/postgres-ai/database-lab/pkg/services/provision/runners"
 
-	"gitlab.com/postgres-ai/joe/pkg/dblab"
+	"gitlab.com/postgres-ai/joe/pkg/models"
 )
 
 const (
@@ -26,11 +27,11 @@ const (
 )
 
 type Transmitter struct {
-	clone      dblab.Clone
+	clone      models.Clone
 	logEnabled bool
 }
 
-func NewPgTransmitter(clone dblab.Clone, logEnabled bool) *Transmitter {
+func NewPgTransmitter(clone models.Clone, logEnabled bool) *Transmitter {
 	return &Transmitter{
 		clone:      clone,
 		logEnabled: logEnabled,
@@ -46,7 +47,7 @@ func (tr Transmitter) Run(commandParam string) (string, error) {
 	out, err := tr.runPsql(cmdStr)
 	if err != nil {
 		if runnerError, ok := err.(runners.RunnerError); ok {
-			return "", fmt.Errorf("Psql error: %s", runnerError.Stderr)
+			return "", fmt.Errorf("psql error: %s", runnerError.Stderr)
 		}
 
 		return "", errors.Wrapf(err, "failed to execute command")
@@ -104,7 +105,7 @@ func (tr Transmitter) format(out []byte) string {
 func prepareCommandParam(command string) (string, error) {
 	command = strings.Trim(command, " \n")
 	if len(command) == 0 {
-		return "", fmt.Errorf("Empty command")
+		return "", errors.New("empty command")
 	}
 
 	// Psql file option (-f) allows to run any number of commands.
@@ -115,10 +116,10 @@ func prepareCommandParam(command string) (string, error) {
 	// backslash command (even without space separator),
 	// e.g. `\d table1\d table2`.
 
-	// Remove all backslashes except the one in the beggining.
+	// Remove all backslashes except the one in the beginning.
 	command = string(command[0]) + strings.ReplaceAll(command[1:], "\\", "")
 
-	// Semicolumn creates possibility to run consequent command.
+	// Semicolon creates possibility to run consequent command.
 	command = strings.ReplaceAll(command, ";", "")
 
 	// User can run any command (including DML queries) on other lines.
@@ -129,11 +130,11 @@ func prepareCommandParam(command string) (string, error) {
 }
 
 // commandEnvString returns a string of environment variables to use.
-func commandEnvString(clone dblab.Clone) string {
+func commandEnvString(clone models.Clone) string {
 	return fmt.Sprintf("PGPASSWORD=%s PGSSLMODE=%s", clone.Password, clone.SSLMode)
 }
 
-func commandConnString(clone dblab.Clone) string {
+func commandConnString(clone models.Clone) string {
 	return fmt.Sprintf("--host=%s --port=%s --user=%q --dbname=%q",
 		clone.Host, clone.Port, clone.Username, clone.Name)
 }
@@ -149,7 +150,7 @@ func executeCommand(cmdStr string) ([]byte, error) {
 	cmd.Stdout = &out
 	cmd.Stderr = &stderr
 
-	// Psql with the file option returns error reponse to stderr with
+	// Psql with the file option returns error response to stderr with
 	// success exit code. In that case err will be nil, but we need
 	// to treat the case as error and read proper output.
 	err := cmd.Run()

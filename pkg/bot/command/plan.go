@@ -14,7 +14,8 @@ import (
 
 	"gitlab.com/postgres-ai/joe/pkg/bot/api"
 	"gitlab.com/postgres-ai/joe/pkg/bot/querier"
-	"gitlab.com/postgres-ai/joe/pkg/chatapi"
+	"gitlab.com/postgres-ai/joe/pkg/connection"
+	"gitlab.com/postgres-ai/joe/pkg/models"
 	"gitlab.com/postgres-ai/joe/pkg/util/text"
 )
 
@@ -24,18 +25,18 @@ const MsgPlanOptionReq = "Use `plan` to see the query's plan without execution, 
 // PlanCmd defines the plan command.
 type PlanCmd struct {
 	apiCommand *api.ApiCommand
-	message    *chatapi.Message
+	message    *models.Message
 	db         *sql.DB
-	chat       *chatapi.Chat
+	messenger  connection.Messenger
 }
 
 // NewPlan return a new plan command.
-func NewPlan(apiCmd *api.ApiCommand, msg *chatapi.Message, db *sql.DB, chat *chatapi.Chat) *PlanCmd {
+func NewPlan(apiCmd *api.ApiCommand, msg *models.Message, db *sql.DB, messengerSvc connection.Messenger) *PlanCmd {
 	return &PlanCmd{
 		apiCommand: apiCmd,
 		message:    msg,
 		db:         db,
-		chat:       chat,
+		messenger:  messengerSvc,
 	}
 }
 
@@ -77,12 +78,14 @@ func (cmd *PlanCmd) explainWithoutExecution() (string, bool, error) {
 		}
 	}
 
-	if err := cmd.message.Append(fmt.Sprintf("*Plan%s:*\n```%s```", explainPlanTitle, planPreview)); err != nil {
+	cmd.message.AppendText(fmt.Sprintf("*Plan%s:*\n```%s```", explainPlanTitle, planPreview))
+
+	if err := cmd.messenger.UpdateText(cmd.message); err != nil {
 		log.Err("Show plan: ", err)
 		return "", false, err
 	}
 
-	filePlanWoExec, err := cmd.chat.UploadFile("plan-wo-execution-text", explainResult, cmd.message.ChannelID, cmd.message.Timestamp)
+	permalink, err := cmd.messenger.AddArtifact("plan-wo-execution-text", explainResult, cmd.message.ChannelID, cmd.message.MessageID)
 	if err != nil {
 		log.Err("File upload failed:", err)
 		return "", false, err
@@ -98,7 +101,8 @@ func (cmd *PlanCmd) explainWithoutExecution() (string, bool, error) {
 		if err == nil {
 			planPreview, isTruncated = text.CutText(explainResultWithoutHypo, PlanSize, SeparatorPlan)
 
-			if err := cmd.message.Append(fmt.Sprintf("*Plan without HypoPG indexes:*\n```%s```", planPreview)); err != nil {
+			cmd.message.AppendText(fmt.Sprintf("*Plan without HypoPG indexes:*\n```%s```", planPreview))
+			if err := cmd.messenger.UpdateText(cmd.message); err != nil {
 				log.Err("Show plan: ", err)
 				return "", false, err
 			}
@@ -112,7 +116,8 @@ func (cmd *PlanCmd) explainWithoutExecution() (string, bool, error) {
 		detailsText = " " + CutText
 	}
 
-	err = cmd.message.Append(fmt.Sprintf("<%s|Full plan (w/o execution)>%s", filePlanWoExec.Permalink, detailsText))
+	cmd.message.AppendText(fmt.Sprintf("<%s|Full plan (w/o execution)>%s", permalink, detailsText))
+	err = cmd.messenger.UpdateText(cmd.message)
 	if err != nil {
 		log.Err("File: ", err)
 		return "", false, err

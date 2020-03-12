@@ -11,11 +11,15 @@ import (
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
 
 	"gitlab.com/postgres-ai/joe/pkg/bot/api"
-	"gitlab.com/postgres-ai/joe/pkg/chatapi"
+	"gitlab.com/postgres-ai/joe/pkg/connection"
+	"gitlab.com/postgres-ai/joe/pkg/models"
 )
 
-func ResetSession(ctx context.Context, apiCmd *api.ApiCommand, msg *chatapi.Message, dbLab *dblabapi.Client, cloneID string) error {
-	msg.Append("Resetting the state of the database...")
+func ResetSession(ctx context.Context, apiCmd *api.ApiCommand, msg *models.Message, dbLab *dblabapi.Client, cloneID string,
+	msgSvc connection.Messenger) error {
+
+	msg.AppendText("Resetting the state of the database...")
+	msgSvc.UpdateText(msg)
 
 	// TODO(anatoly): "zfs rollback" deletes newer snapshots. Users will be able
 	// to jump across snapshots if we solve it.
@@ -27,7 +31,8 @@ func ResetSession(ctx context.Context, apiCmd *api.ApiCommand, msg *chatapi.Mess
 	result := "The state of the database has been reset."
 	apiCmd.Response = result
 
-	if err := msg.Append(result); err != nil {
+	msg.AppendText(result)
+	if err := msgSvc.UpdateText(msg); err != nil {
 		log.Err("Reset:", err)
 		return err
 	}
