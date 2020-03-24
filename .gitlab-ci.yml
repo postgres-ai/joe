@@ -3,11 +3,6 @@ image: golang:1.13
 variables:
   DOCKER_FILE: "Dockerfile"
 
-cache:
-  paths:
-    - /apt-cache
-    - /go/pkg/mod/cache
-
 stages:
   - test
   - build-binary
@@ -18,6 +13,11 @@ test:
   script:
     - make vet
     - make test
+
+lint:
+  stage: test
+  script:
+    - make lint
 
 build-binary:
   stage: build-binary

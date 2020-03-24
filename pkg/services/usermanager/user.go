@@ -27,13 +27,12 @@ type User struct {
 // UserSession defines a user session.
 type UserSession struct {
 	PlatformSessionID string
+	ChannelID         string
 
 	Quota Quota
 
 	LastActionTs time.Time
 	IdleInterval uint
-
-	ChannelIDs []string
 
 	Clone           *dblabmodels.Clone
 	ConnParams      models.Clone
