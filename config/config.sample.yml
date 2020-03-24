@@ -1,0 +1,21 @@
+connections:
+  slack:
+    - name: WORKSPACE
+      credentials:
+        accessToken: access_token
+        signingSecret: secret_signing
+      channels:
+        - channelID: channelID1
+          dblab: prod1
+        - channelID: channelID2
+          dblab: dev02
+
+dblabs:
+  prod1:
+    url: "https://127.0.0.1:3000"
+    token: "secret_token"
+    dbname: postgres
+    sslmode: disable
+
+  dev02:
+    url: "dev2.local:8000"

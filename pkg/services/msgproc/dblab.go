@@ -26,8 +26,8 @@ import (
 	dblabmodels "gitlab.com/postgres-ai/database-lab/pkg/models"
 
 	"gitlab.com/postgres-ai/joe/pkg/bot/api"
-	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"
 	"gitlab.com/postgres-ai/joe/pkg/models"
+	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"
 )
 
 // HelpMessage defines available commands provided with the help message.
@@ -104,7 +104,7 @@ func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.Us
 	}
 
 	sMsg.AppendText(getForeword(time.Duration(clone.Metadata.MaxIdleMinutes)*time.Minute,
-		s.Config.Version, clone.Snapshot.DataStateAt))
+		s.config.App.Version, clone.Snapshot.DataStateAt))
 
 	if err := s.messenger.UpdateText(sMsg); err != nil {
 		s.messenger.Fail(sMsg, err.Error())
@@ -126,7 +126,7 @@ func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.Us
 	user.Session.Clone = clone
 	user.Session.CloneConnection = db
 
-	if s.Config.HistoryEnabled {
+	if s.config.Platform.HistoryEnabled {
 		if err := s.createPlatformSession(user, sMsg.ChannelID); err != nil {
 			s.messenger.Fail(sMsg, err.Error())
 			return err
@@ -155,12 +155,12 @@ func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.Us
 
 func (s *ProcessingService) buildDBLabCloneConn(dbParams *dblabmodels.Database) models.Clone {
 	return models.Clone{
-		Name:     s.Config.DBLab.DBName,
+		Name:     s.config.DBLab.DBName,
 		Host:     dbParams.Host,
 		Port:     dbParams.Port,
 		Username: dbParams.Username,
 		Password: dbParams.Password,
-		SSLMode:  s.Config.DBLab.SSLMode,
+		SSLMode:  s.config.DBLab.SSLMode,
 	}
 }
 
@@ -187,7 +187,7 @@ func (s *ProcessingService) createDBLabClone(ctx context.Context, user *usermana
 
 	clientRequest := types.CloneCreateRequest{
 		ID:        "joe-" + xid.New().String(),
-		Project:   s.Config.ApiProject,
+		Project:   s.config.Platform.Project,
 		Protected: false,
 		DB: &types.DatabaseRequest{
 			Username: joeUserNamePrefix + user.UserInfo.Name,
@@ -232,8 +232,8 @@ func (s *ProcessingService) APICreatePlatformSession(uid string, username string
 	log.Dbg("API: Create session")
 
 	reqData, err := json.Marshal(&api.ApiSession{
-		ProjectName:   s.Config.ApiProject,
-		AccessToken:   s.Config.ApiToken,
+		ProjectName:   s.config.Platform.Project,
+		AccessToken:   s.config.Platform.Token,
 		SlackUid:      uid,
 		SlackUsername: username,
 		SlackChannel:  channel,
@@ -242,7 +242,7 @@ func (s *ProcessingService) APICreatePlatformSession(uid string, username string
 		return "", err
 	}
 
-	resp, err := http.Post(s.Config.ApiUrl+"/rpc/joe_session_create", "application/json", bytes.NewBuffer(reqData))
+	resp, err := http.Post(s.config.Platform.URL+"/rpc/joe_session_create", "application/json", bytes.NewBuffer(reqData))
 	if err != nil {
 		return "", err
 	}

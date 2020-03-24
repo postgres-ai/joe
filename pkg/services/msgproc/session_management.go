@@ -14,8 +14,8 @@ import (
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
 	dblabmodels "gitlab.com/postgres-ai/database-lab/pkg/models"
 
-	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"
 	"gitlab.com/postgres-ai/joe/pkg/models"
+	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"
 	"gitlab.com/postgres-ai/joe/pkg/util"
 )
 
@@ -49,11 +49,7 @@ func (s *ProcessingService) CheckIdleSessions(ctx context.Context) {
 
 		s.stopSession(user)
 
-		for _, channelID := range user.Session.ChannelIDs {
-			chatUserID := user.UserInfo.ID
-
-			channelsToNotify[channelID] = append(channelsToNotify[channelID], chatUserID)
-		}
+		channelsToNotify[user.Session.ChannelID] = append(channelsToNotify[user.Session.ChannelID], user.UserInfo.ID)
 	}
 
 	// Publish message in every channel with a list of users.

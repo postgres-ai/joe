@@ -17,40 +17,26 @@ import (
 	"path/filepath"
 
 	"github.com/jessevdk/go-flags"
-	"github.com/nlopes/slack"
-	"github.com/sirupsen/logrus"
-	"gitlab.com/postgres-ai/database-lab/pkg/client/dblabapi"
-	"gitlab.com/postgres-ai/database-lab/pkg/log"
 	"gopkg.in/yaml.v2"
+
+	"gitlab.com/postgres-ai/database-lab/pkg/log"
 
 	"gitlab.com/postgres-ai/joe/pkg/bot"
 	"gitlab.com/postgres-ai/joe/pkg/config"
-	slackConnection "gitlab.com/postgres-ai/joe/pkg/connection/slack"
 	"gitlab.com/postgres-ai/joe/pkg/pgexplain"
 )
 
 var opts struct {
-	// Chat API.
-	AccessToken   string `short:"t" long:"token" description:"\"Bot User OAuth Access Token\" which starts with \"xoxb-\"" env:"CHAT_TOKEN" required:"true"`
-	SigningSecret string `long:"signing-secret" description:"The secret confirms that each request comes from Slack by verifying its unique signature." env:"CHAT_SIGNING_SECRET" required:"true"`
-
-	// Database Lab.
-	DBLabURL   string `long:"dblab-url" description:"Database Lab URL" env:"DBLAB_URL" default:"localhost"`
-	DBLabToken string `long:"dblab-token" description:"Database Lab token" env:"DBLAB_TOKEN" default:"xxx"`
-
-	DBName  string `short:"d" long:"dbname" description:"database name to connect to" env:"DBLAB_DBNAME" default:"db"`
-	SSLMode string `long:"ssl-mode" description:"ssl mode provides different protection levels of a Database Lab connection." env:"DBLAB_SSL_MODE" default:"require"`
-
 	// HTTP Server.
 	ServerPort uint `short:"s" long:"http-port" description:"HTTP server port" env:"SERVER_PORT" default:"3001"`
 
 	MinNotifyDuration uint `long:"min-notify-duration" description:"a time interval (in minutes) to notify a user about the finish of a long query" env:"MIN_NOTIFY_DURATION" default:"1"`
 
 	// Platform.
-	ApiUrl         string `long:"api-url" description:"Postgres.ai platform API base URL" env:"API_URL" default:"https://postgres.ai/api/general"`
-	ApiToken       string `long:"api-token" description:"Postgres.ai platform API token" env:"API_TOKEN"`
-	ApiProject     string `long:"api-project" description:"Postgres.ai platform project to assign user sessions" env:"API_PROJECT"`
-	HistoryEnabled bool   `long:"history-enabled" description:"send command and queries history to Postgres.ai platform for collaboration and visualization" env:"HISTORY_ENABLED"`
+	PlatformURL     string `long:"api-url" description:"Postgres.ai platform API base URL" env:"API_URL" default:"https://postgres.ai/api/general"` // nolint:lll
+	PlatformToken   string `long:"api-token" description:"Postgres.ai platform API token" env:"API_TOKEN"`
+	PlatformProject string `long:"api-project" description:"Postgres.ai platform project to assign user sessions" env:"API_PROJECT"`
+	HistoryEnabled  bool   `long:"history-enabled" description:"send command and queries history to Postgres.ai platform for collaboration and visualization" env:"HISTORY_ENABLED"` // nolint:lll
 
 	// Dev.
 	DevGitCommitHash string `long:"git-commit-hash" env:"GIT_COMMIT_HASH" default:""`
@@ -68,7 +54,7 @@ var opts struct {
 }
 
 // TODO (akartasov): Set the app version during build.
-const Version = "v0.6.0"
+const Version = "v0.6.1-rc1"
 
 // TODO(anatoly): Refactor configs and envs.
 
@@ -94,58 +80,41 @@ func main() {
 		return
 	}
 
-	version := formatBotVersion(opts.DevGitCommitHash, opts.DevGitBranch,
-		opts.DevGitModified)
+	version := formatBotVersion(opts.DevGitCommitHash, opts.DevGitBranch, opts.DevGitModified)
 
 	log.Dbg("git: ", version)
 
-	botCfg := config.Bot{
-		Port:    opts.ServerPort,
+	spaceCfg, err := config.Load("config/config.yml")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	botCfg := config.Config{
+		App: config.App{
+			Version:                  version,
+			Port:                     opts.ServerPort,
+			AuditEnabled:             opts.AuditEnabled,
+			MinNotifyDurationMinutes: opts.MinNotifyDuration,
+		},
 		Explain: explainConfig,
 		Quota: config.Quota{
 			Limit:    opts.QuotaLimit,
 			Interval: opts.QuotaInterval,
 		},
-		AuditEnabled:             opts.AuditEnabled,
-		MinNotifyDurationMinutes: opts.MinNotifyDuration,
 
-		DBLab: config.DBLabInstance{
-			URL:     opts.DBLabURL,
-			Token:   opts.DBLabToken,
-			DBName:  opts.DBName,
-			SSLMode: opts.SSLMode,
+
+		Platform: config.Platform{
+			URL:            opts.PlatformURL,
+			Token:          opts.PlatformToken,
+			Project:        opts.PlatformProject,
+			HistoryEnabled: opts.HistoryEnabled,
 		},
-
-		ApiUrl:         opts.ApiUrl,
-		ApiToken:       opts.ApiToken,
-		ApiProject:     opts.ApiProject,
-		HistoryEnabled: opts.HistoryEnabled,
-
-		Version: version,
 	}
 
-	chatAPI := slack.New(opts.AccessToken)
-
-	dbLabClient, err := dblabapi.NewClient(dblabapi.Options{
-		Host:              botCfg.DBLab.URL,
-		VerificationToken: botCfg.DBLab.Token,
-	}, logrus.New())
-
-	if err != nil {
-		log.Fatal("Failed to create a Database Lab client", err)
+	joeBot := bot.NewApp(botCfg, spaceCfg)
+	if err := joeBot.RunServer(context.Background()); err != nil {
+		log.Err("HTTP server error:", err)
 	}
-
-	slackCfg := &slackConnection.SlackConfig{
-		AccessToken:   opts.AccessToken,
-		SigningSecret: opts.SigningSecret,
-	}
-
-	messenger := slackConnection.NewMessenger(chatAPI, slackCfg)
-	userInformer := slackConnection.NewUserInformer(chatAPI)
-	assistant := slackConnection.NewAssistant(slackCfg, botCfg, messenger, userInformer, dbLabClient)
-
-	joeBot := bot.NewApp(botCfg)
-	joeBot.RunServer(context.Background(), assistant)
 }
 
 func parseArgs() ([]string, error) {
