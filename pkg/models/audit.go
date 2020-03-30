@@ -2,8 +2,8 @@
 2019 © Postgres.ai
 */
 
-// Package ee provides the Enterprise features.
-package ee
+// Package models provides domain entities.
+package models
 
 // Audit represents audit log actions.
 type Audit struct {

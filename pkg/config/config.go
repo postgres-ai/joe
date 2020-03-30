@@ -2,6 +2,7 @@
 2019 © Postgres.ai
 */
 
+// Package config provides the App configuration.
 package config
 
 import (

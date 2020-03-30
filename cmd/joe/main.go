@@ -12,18 +12,16 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
-	"os"
-	"path/filepath"
 
 	"github.com/jessevdk/go-flags"
-	"gopkg.in/yaml.v2"
+	"github.com/pkg/errors"
 
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
 
+	"gitlab.com/postgres-ai/joe/features"
+	"gitlab.com/postgres-ai/joe/features/definition"
 	"gitlab.com/postgres-ai/joe/pkg/bot"
 	"gitlab.com/postgres-ai/joe/pkg/config"
-	"gitlab.com/postgres-ai/joe/pkg/pgexplain"
 )
 
 var opts struct {
@@ -46,23 +44,18 @@ var opts struct {
 	Debug bool `long:"debug" description:"Enable a debug mode"`
 
 	ShowHelp func() error `long:"help" description:"Show this help message"`
-
-	// Enterprise features (changing these options you confirm that you have active subscription to Postgres.ai Platform Enterprise Edition https://postgres.ai).
-	QuotaLimit    uint `long:"quota-limit" description:"limit request rates to up to 2x of this number" env:"EE_QUOTA_LIMIT" default:"10"`
-	QuotaInterval uint `long:"quota-interval" description:"a time interval (in seconds) to apply a quota-limit" env:"EE_QUOTA_INTERVAL" default:"60"`
-	AuditEnabled  bool `long:"audit-enabled" description:"enable logging of received commands" env:"EE_AUDIT_ENABLED"`
 }
 
 // TODO (akartasov): Set the app version during build.
-const Version = "v0.6.1-rc1"
+const Version = "v0.7.0"
 
 // TODO(anatoly): Refactor configs and envs.
 
 func main() {
-	// Load CLI options.
-	var _, err = parseArgs()
+	enterpriseFlagProvider := features.GetFlagProvider()
 
-	if err != nil {
+	// Load CLI options.
+	if _, err := parseArgs(enterpriseFlagProvider); err != nil {
 		if flags.WroteHelp(err) {
 			return
 		}
@@ -74,11 +67,13 @@ func main() {
 	log.DEBUG = opts.Debug
 
 	// Load and validate configuration files.
-	explainConfig, err := loadExplainConfig()
+	explainConfig, err := config.LoadExplainConfig()
 	if err != nil {
 		log.Err("Unable to load explain config", err)
 		return
 	}
+
+	log.Dbg("Explain config loaded", explainConfig)
 
 	version := formatBotVersion(opts.DevGitCommitHash, opts.DevGitBranch, opts.DevGitModified)
 
@@ -89,19 +84,20 @@ func main() {
 		log.Fatal(err)
 	}
 
+	enterpriseOptions := enterpriseFlagProvider.ToOpts()
+
 	botCfg := config.Config{
 		App: config.App{
 			Version:                  version,
 			Port:                     opts.ServerPort,
-			AuditEnabled:             opts.AuditEnabled,
+			AuditEnabled:             enterpriseOptions.AuditEnabled,
 			MinNotifyDurationMinutes: opts.MinNotifyDuration,
 		},
 		Explain: explainConfig,
 		Quota: config.Quota{
-			Limit:    opts.QuotaLimit,
-			Interval: opts.QuotaInterval,
+			Limit:    enterpriseOptions.QuotaLimit,
+			Interval: enterpriseOptions.QuotaInterval,
 		},
-
 
 		Platform: config.Platform{
 			URL:            opts.PlatformURL,
@@ -111,61 +107,38 @@ func main() {
 		},
 	}
 
-	joeBot := bot.NewApp(botCfg, spaceCfg)
+	enterprise := bot.NewEnterprise(features.GetBuilder())
+
+	joeBot := bot.NewApp(botCfg, spaceCfg, enterprise)
 	if err := joeBot.RunServer(context.Background()); err != nil {
 		log.Err("HTTP server error:", err)
 	}
 }
 
-func parseArgs() ([]string, error) {
-	var parser = flags.NewParser(&opts, flags.Default & ^flags.HelpFlag)
+func parseArgs(ent definition.FlagProvider) ([]string, error) {
+	var optParser = flags.NewParser(&opts, flags.Default & ^flags.HelpFlag)
+
+	entGroup, err := optParser.AddGroup("Enterprise Options",
+		"Available only for Postgres.ai Platform Enterprise Edition https://postgres.ai", ent)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to init Enterprise options")
+	}
+
+	entGroup.EnvNamespace = "EE"
 
 	// jessevdk/go-flags lib doesn't allow to use short flag -h because it's binded to usage help.
 	// We need to hack it a bit to use -h for as a hostname option. See https://github.com/jessevdk/go-flags/issues/240
 	opts.ShowHelp = func() error {
 		var b bytes.Buffer
 
-		parser.WriteHelp(&b)
+		optParser.WriteHelp(&b)
 		return &flags.Error{
 			Type:    flags.ErrHelp,
 			Message: b.String(),
 		}
 	}
 
-	return parser.Parse()
-}
-
-func loadExplainConfig() (pgexplain.ExplainConfig, error) {
-	var config pgexplain.ExplainConfig
-
-	err := loadConfig(&config, "explain.yaml")
-	if err != nil {
-		return config, err
-	}
-
-	return config, nil
-}
-
-func loadConfig(config interface{}, name string) error {
-	b, err := ioutil.ReadFile(getConfigPath(name))
-	if err != nil {
-		return fmt.Errorf("Error loading %s config file: %v", name, err)
-	}
-
-	err = yaml.Unmarshal(b, config)
-	if err != nil {
-		return fmt.Errorf("Error parsing %s config: %v", name, err)
-	}
-
-	log.Dbg("Config loaded", name, config)
-	return nil
-}
-
-func getConfigPath(name string) string {
-	bindir, _ := filepath.Abs(filepath.Dir(os.Args[0]))
-	dir, _ := filepath.Abs(filepath.Dir(bindir))
-	path := dir + string(os.PathSeparator) + "config" + string(os.PathSeparator) + name
-	return path
+	return optParser.Parse()
 }
 
 func formatBotVersion(commit string, branch string, modified bool) string {

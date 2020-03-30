@@ -21,6 +21,7 @@ import (
 	"github.com/pkg/errors"
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
 
+	"gitlab.com/postgres-ai/joe/features"
 	"gitlab.com/postgres-ai/joe/pkg/config"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/models"
@@ -36,6 +37,7 @@ type Assistant struct {
 	msgProcessors  map[string]connection.MessageProcessor
 	prefix         string
 	appCfg         *config.Config
+	commandBuilder features.CommandFactoryMethod
 }
 
 // SlackConfig defines a slack configuration parameters.
@@ -45,7 +47,7 @@ type SlackConfig struct {
 }
 
 // NewAssistant returns a new assistant service.
-func NewAssistant(cfg *config.Credentials, appCfg *config.Config) (*Assistant, error) {
+func NewAssistant(cfg *config.Credentials, appCfg *config.Config, cmdBuilder features.CommandFactoryMethod) (*Assistant, error) {
 	if err := validateCredentials(cfg); err != nil {
 		return nil, errors.Wrap(err, "invalid credentials given")
 	}
@@ -54,6 +56,7 @@ func NewAssistant(cfg *config.Credentials, appCfg *config.Config) (*Assistant, e
 		credentialsCfg: cfg,
 		appCfg:         appCfg,
 		msgProcessors:  make(map[string]connection.MessageProcessor),
+		commandBuilder: cmdBuilder,
 	}
 
 	return assistant, nil
@@ -122,7 +125,8 @@ func (a *Assistant) buildMessageProcessor(appCfg *config.Config, dbLabInstance *
 		DBLab:    dbLabInstance.Config(),
 	}
 
-	return msgproc.NewProcessingService(messenger, MessageValidator{}, dbLabInstance.Client(), userManager, processingCfg)
+	return msgproc.NewProcessingService(messenger, MessageValidator{}, dbLabInstance.Client(), userManager,
+		processingCfg, a.commandBuilder)
 }
 
 // getProcessingService returns processing service by channelID.
