@@ -3,6 +3,7 @@
 Based on the code from Simon Engledew @ https://github.com/simon-engledew/gocmdpev
 */
 
+// Package pgexplain provides tools for Postgres explain processing.
 package pgexplain
 
 import (

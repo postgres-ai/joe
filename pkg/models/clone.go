@@ -2,7 +2,7 @@
 2019 © Postgres.ai
 */
 
-// Package structs provides domain entities.
+// Package models provides domain entities.
 package models
 
 import "fmt"

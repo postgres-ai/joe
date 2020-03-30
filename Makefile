@@ -40,6 +40,9 @@ lint: install-lint run-lint
 build:
 	${GOBUILD} -o bin/${BINARY} ./cmd/joe/main.go
 
+build-ee:
+	${GOBUILD} -tags ee -o bin/${BINARY} ./cmd/joe/main.go
+
 test:
 	go test ./pkg/...
 
