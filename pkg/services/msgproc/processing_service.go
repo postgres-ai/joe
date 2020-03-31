@@ -152,7 +152,6 @@ func (s *ProcessingService) ProcessMessageEvent(incomingMessage models.IncomingM
 		return
 	}
 
-	user.Session.LastActionTs = time.Now()
 	user.Session.ChannelID = incomingMessage.ChannelID
 
 	// Filter and prepare message.
@@ -371,6 +370,8 @@ func (s *ProcessingService) ProcessMessageEvent(incomingMessage models.IncomingM
 			return
 		}
 	}
+
+	user.Session.LastActionTs = time.Now()
 
 	if err := s.messenger.OK(msg); err != nil {
 		log.Err(err)

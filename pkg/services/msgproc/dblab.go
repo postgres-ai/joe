@@ -80,14 +80,14 @@ var hintExecDdlWords = []string{"alter", "create", "drop", "set"}
 func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.User, channelID string) error {
 	sMsg := models.NewMessage(channelID)
 
-	messageText := strings.Builder{}
-
 	if user.Session.Clone != nil {
 		return nil
 	}
 
 	// Stop clone session if not active.
 	s.stopSession(user)
+
+	messageText := strings.Builder{}
 
 	messageText.WriteString(MsgSessionStarting)
 	sMsg.SetText(messageText.String())
@@ -125,6 +125,7 @@ func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.Us
 	user.Session.ConnParams = dblabClone
 	user.Session.Clone = clone
 	user.Session.CloneConnection = db
+	user.Session.LastActionTs = time.Now()
 
 	if s.config.Platform.HistoryEnabled {
 		if err := s.createPlatformSession(user, sMsg.ChannelID); err != nil {
