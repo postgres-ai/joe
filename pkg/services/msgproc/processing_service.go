@@ -306,7 +306,7 @@ func (s *ProcessingService) ProcessMessageEvent(incomingMessage models.IncomingM
 			// TODO(akartasov): Find permanent solution,
 			//  it's a temporary fix for https://gitlab.com/postgres-ai/joe/-/issues/132.
 			if err != nil {
-				// try to reboot
+				// Try to reboot the session.
 				if err := s.rebootSession(msg, user); err != nil {
 					log.Err(err)
 				}
