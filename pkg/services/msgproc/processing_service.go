@@ -303,6 +303,16 @@ func (s *ProcessingService) ProcessMessageEvent(incomingMessage models.IncomingM
 
 		case receivedCommand == CommandReset:
 			err = command.ResetSession(context.TODO(), apiCmd, msg, s.DBLab, user.Session.Clone.ID, s.messenger)
+			// TODO(akartasov): Find permanent solution,
+			//  it's a temporary fix for https://gitlab.com/postgres-ai/joe/-/issues/132.
+			if err != nil {
+				// try to reboot
+				if err := s.rebootSession(msg, user); err != nil {
+					log.Err(err)
+				}
+
+				return
+			}
 
 		case receivedCommand == CommandHypo:
 			hypoCmd := command.NewHypo(apiCmd, msg, user.Session.CloneConnection, s.messenger)
@@ -352,6 +362,23 @@ func (s *ProcessingService) ProcessMessageEvent(incomingMessage models.IncomingM
 	if err := s.messenger.OK(msg); err != nil {
 		log.Err(err)
 	}
+}
+
+// rebootSession stops a Joe session and creates a new one.
+func (s *ProcessingService) rebootSession(msg *models.Message, user *usermanager.User) error {
+	msg.AppendText("Session was closed by Database Lab.\n")
+
+	if err := s.messenger.UpdateText(msg); err != nil {
+		return errors.Wrapf(err, "failed to append message on session close: %+v", err)
+	}
+
+	s.stopSession(user)
+
+	if err := s.runSession(context.TODO(), user, msg.ChannelID); err != nil {
+		return errors.Wrap(err, "failed to run session")
+	}
+
+	return nil
 }
 
 // ProcessAppMentionEvent replies to an application mention event.
