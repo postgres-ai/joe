@@ -21,18 +21,14 @@ import (
 	"gitlab.com/postgres-ai/joe/features"
 	"gitlab.com/postgres-ai/joe/pkg/config"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
-	slackConnection "gitlab.com/postgres-ai/joe/pkg/connection/slack"
+	"gitlab.com/postgres-ai/joe/pkg/connection/slack"
+	"gitlab.com/postgres-ai/joe/pkg/connection/webui"
 	"gitlab.com/postgres-ai/joe/pkg/services/dblab"
 	"gitlab.com/postgres-ai/joe/pkg/util"
 )
 
 // InactiveCloneCheckInterval defines an interval for check of idleness sessions.
 const InactiveCloneCheckInterval = time.Minute
-
-// Workspace types
-const (
-	slackWorkspace = "slack"
-)
 
 // App defines a application struct.
 type App struct {
@@ -83,10 +79,10 @@ func (a *App) RunServer(ctx context.Context) error {
 			return errors.Wrap(err, "failed to init an assistant")
 		}
 
+		svc := assistantSvc
 		// Check idle sessions.
 		_ = util.RunInterval(InactiveCloneCheckInterval, func() {
-			log.Dbg("Check idle sessions")
-			assistantSvc.CheckIdleSessions(ctx)
+			svc.CheckIdleSessions(ctx)
 		})
 	}
 
@@ -101,6 +97,13 @@ func (a *App) RunServer(ctx context.Context) error {
 }
 
 func (a *App) initDBLabInstances() error {
+	const maxDBLabInstance = 1
+
+	if len(a.spaceCfg.DBLabInstances) > maxDBLabInstance {
+		return errors.Errorf("available limit exceeded, the maximum amount is %d. "+
+			"Please correct the `dblabs` section in the configuration file or upgrade your plan to Enterprise Edition", maxDBLabInstance)
+	}
+
 	for name, dbLab := range a.spaceCfg.DBLabInstances {
 		if err := a.validateDBLabInstance(dbLab); err != nil {
 			return errors.Wrapf(err, "failed to init %q", name)
@@ -141,8 +144,6 @@ func (a *App) getAllAssistants() ([]connection.Assistant, error) {
 				return nil, errors.Wrap(err, "failed to register workspace assistants")
 			}
 
-			assist.SetHandlerPrefix(fmt.Sprintf("/%s", workspaceType))
-
 			if err := a.setupDBLabInstances(assist, workspace); err != nil {
 				return nil, errors.Wrap(err, "failed to register workspace assistants")
 			}
@@ -155,9 +156,14 @@ func (a *App) getAllAssistants() ([]connection.Assistant, error) {
 }
 
 func (a *App) getAssistant(workspaceType string, workspaceCfg config.Workspace) (connection.Assistant, error) {
+	handlerPrefix := fmt.Sprintf("/%s", workspaceType)
+
 	switch workspaceType {
-	case slackWorkspace:
-		return slackConnection.NewAssistant(&workspaceCfg.Credentials, &a.Config, a.enterprise.cmdBuilder)
+	case slack.WorkspaceType:
+		return slack.NewAssistant(&workspaceCfg.Credentials, &a.Config, handlerPrefix, a.enterprise.cmdBuilder), nil
+
+	case webui.WorkspaceType:
+		return webui.NewAssistant(&workspaceCfg.Credentials, &a.Config, handlerPrefix, a.enterprise.cmdBuilder), nil
 
 	default:
 		return nil, errors.New("unknown workspace type given")
@@ -176,7 +182,9 @@ func (a *App) setupDBLabInstances(assistant connection.Assistant, workspace conf
 
 		a.dblabMu.RUnlock()
 
-		assistant.AddDBLabInstanceForChannel(channel.ChannelID, dbLabInstance)
+		if err := assistant.AddDBLabInstanceForChannel(channel.ChannelID, dbLabInstance); err != nil {
+			return errors.Wrap(err, "failed to add a DBLab instance")
+		}
 	}
 
 	return nil

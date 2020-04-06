@@ -63,9 +63,9 @@ Deploy Joe instance in your infrastructure. You would need to:
     docker run \
       --name joe_bot \
       --publish 3001:3001 \
-      --restart=on-failure \
-      --volume ~/.dblab/joe_configs/config.yml:/home/configs/config.yml \
       --env SERVER_PORT=3001 \
+      --volume ~/.dblab/joe_configs/config.yml:/home/configs/config.yml \
+      --restart=on-failure \
       --detach \
       postgresai/joe:latest
     ``` 

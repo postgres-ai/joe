@@ -23,6 +23,7 @@ type Config struct {
 	AuditEnabled             bool
 	MinNotifyDurationMinutes uint
 	Platform                 Platform
+	Space                    *Space
 }
 
 // App defines a general application configuration.
@@ -76,8 +77,8 @@ type Credentials struct {
 
 // Channel defines a connection channel configuration.
 type Channel struct {
-	ChannelID string `yaml:"channelID"`
-	DBLabID   string `yaml:"dblab"`
+	ChannelID string `yaml:"channelID" json:"channel_id"`
+	DBLabID   string `yaml:"dblab" json:"-"`
 }
 
 // Load loads configuration from file.

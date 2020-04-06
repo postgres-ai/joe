@@ -12,10 +12,10 @@ import (
 	"github.com/pkg/errors"
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
 
-	"gitlab.com/postgres-ai/joe/pkg/bot/api"
 	"gitlab.com/postgres-ai/joe/pkg/bot/querier"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/models"
+	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 	"gitlab.com/postgres-ai/joe/pkg/util/text"
 )
 
@@ -24,25 +24,25 @@ const MsgPlanOptionReq = "Use `plan` to see the query's plan without execution, 
 
 // PlanCmd defines the plan command.
 type PlanCmd struct {
-	apiCommand *api.ApiCommand
-	message    *models.Message
-	db         *sql.DB
-	messenger  connection.Messenger
+	command   *platform.Command
+	message   *models.Message
+	db        *sql.DB
+	messenger connection.Messenger
 }
 
 // NewPlan return a new plan command.
-func NewPlan(apiCmd *api.ApiCommand, msg *models.Message, db *sql.DB, messengerSvc connection.Messenger) *PlanCmd {
+func NewPlan(cmd *platform.Command, msg *models.Message, db *sql.DB, messengerSvc connection.Messenger) *PlanCmd {
 	return &PlanCmd{
-		apiCommand: apiCmd,
-		message:    msg,
-		db:         db,
-		messenger:  messengerSvc,
+		command:   cmd,
+		message:   msg,
+		db:        db,
+		messenger: messengerSvc,
 	}
 }
 
 // Execute runs the plan command.
 func (cmd PlanCmd) Execute() error {
-	if cmd.apiCommand.Query == "" {
+	if cmd.command.Query == "" {
 		return errors.New(MsgPlanOptionReq)
 	}
 
@@ -58,12 +58,12 @@ func (cmd PlanCmd) Execute() error {
 // explainWithoutExecution runs explain without execution.
 func (cmd *PlanCmd) explainWithoutExecution() (string, bool, error) {
 	// Explain request and show.
-	explainResult, err := querier.DBQueryWithResponse(cmd.db, queryExplain+cmd.apiCommand.Query)
+	explainResult, err := querier.DBQueryWithResponse(cmd.db, queryExplain+cmd.command.Query)
 	if err != nil {
 		return "", false, err
 	}
 
-	cmd.apiCommand.PlanText = explainResult
+	cmd.command.PlanText = explainResult
 	planPreview, isTruncated := text.CutText(explainResult, PlanSize, SeparatorPlan)
 
 	msgInitText := cmd.message.Text
@@ -95,7 +95,7 @@ func (cmd *PlanCmd) explainWithoutExecution() (string, bool, error) {
 		msgInitText = cmd.message.Text
 
 		queryWithoutHypo := fmt.Sprintf(`set hypopg.enabled to false; %s %s; reset hypopg.enabled;`, queryExplain,
-			strings.Trim(cmd.apiCommand.Query, ";"))
+			strings.Trim(cmd.command.Query, ";"))
 
 		explainResultWithoutHypo, err := querier.DBQueryWithResponse(cmd.db, queryWithoutHypo)
 		if err == nil {

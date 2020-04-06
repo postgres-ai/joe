@@ -12,14 +12,14 @@ import (
 	"fmt"
 
 	"gitlab.com/postgres-ai/joe/features/definition"
-	"gitlab.com/postgres-ai/joe/pkg/bot/api"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/models"
+	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 )
 
 // ActivityCmd defines the activity command.
 type ActivityCmd struct {
-	apiCommand *api.ApiCommand
+	apiCommand *platform.Command
 	message    *models.Message
 	db         *sql.DB
 	messenger  connection.Messenger
@@ -28,7 +28,7 @@ type ActivityCmd struct {
 var _ definition.Executor = (*ActivityCmd)(nil)
 
 // NewActivityCmd return a new exec command.
-func NewActivityCmd(apiCmd *api.ApiCommand, msg *models.Message, db *sql.DB, messengerSvc connection.Messenger) *ActivityCmd {
+func NewActivityCmd(apiCmd *platform.Command, msg *models.Message, db *sql.DB, messengerSvc connection.Messenger) *ActivityCmd {
 	return &ActivityCmd{
 		apiCommand: apiCmd,
 		message:    msg,

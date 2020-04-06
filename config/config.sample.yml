@@ -1,14 +1,19 @@
 connections:
   slack:
-    - name: WORKSPACE
+    - name: Workspace
       credentials:
         accessToken: access_token
         signingSecret: secret_signing
       channels:
         - channelID: channelID1
           dblab: prod1
-        - channelID: channelID2
-          dblab: dev02
+  webui:
+    - name: WebUI
+      credentials:
+        signingSecret: secret_signing
+      channels:
+        - channelID: channelID1
+          dblab: prod1
 
 dblabs:
   prod1:
@@ -16,6 +21,3 @@ dblabs:
     token: "secret_token"
     dbname: postgres
     sslmode: disable
-
-  dev02:
-    url: "dev2.local:8000"

@@ -12,14 +12,14 @@ import (
 	"fmt"
 
 	"gitlab.com/postgres-ai/joe/features/definition"
-	"gitlab.com/postgres-ai/joe/pkg/bot/api"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/models"
+	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 )
 
 // TerminateCmd defines the terminate command.
 type TerminateCmd struct {
-	apiCommand *api.ApiCommand
+	apiCommand *platform.Command
 	message    *models.Message
 	db         *sql.DB
 	messenger  connection.Messenger
@@ -28,7 +28,7 @@ type TerminateCmd struct {
 var _ definition.Executor = (*TerminateCmd)(nil)
 
 // NewTerminateCmd return a new terminate command.
-func NewTerminateCmd(apiCmd *api.ApiCommand, msg *models.Message, db *sql.DB, messengerSvc connection.Messenger) *TerminateCmd {
+func NewTerminateCmd(apiCmd *platform.Command, msg *models.Message, db *sql.DB, messengerSvc connection.Messenger) *TerminateCmd {
 	return &TerminateCmd{
 		apiCommand: apiCmd,
 		message:    msg,
