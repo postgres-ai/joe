@@ -8,12 +8,14 @@
 package features
 
 import (
-	"gitlab.com/postgres-ai/joe/features/ce/command/builder"
-	"gitlab.com/postgres-ai/joe/features/ce/options"
+	"gitlab.com/postgres-ai/joe/features/edition/ce/command/builder"
+	"gitlab.com/postgres-ai/joe/features/edition/ce/entertainer"
+	"gitlab.com/postgres-ai/joe/features/edition/ce/options"
 )
 
 // nolint:gochecknoinits
 func init() {
 	commandBuilder = builder.NewBuilder
 	flagProvider = &options.Extra{}
+	entertainerService = entertainer.New()
 }

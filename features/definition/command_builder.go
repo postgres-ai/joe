@@ -9,13 +9,6 @@ package definition
 type CmdBuilder interface {
 	BuildActivityCmd() Executor
 	BuildTerminateCmd() Executor
-
-	EnterpriseHelpMessenger
-}
-
-// EnterpriseHelpMessenger provides a help message for Enterprise commands.
-type EnterpriseHelpMessenger interface {
-	GetEnterpriseHelpMessage() string
 }
 
 // Executor describes a command interface.

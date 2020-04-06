@@ -6,10 +6,11 @@ package querier
 
 import (
 	"bytes"
-	"database/sql"
+	"context"
 	"strings"
 
-	"github.com/lib/pq"
+	"github.com/jackc/pgconn"
+	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/olekukonko/tablewriter"
 	"github.com/pkg/errors"
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
@@ -23,86 +24,81 @@ const (
 	SystemPQErrorCodeUndefinedFile = "58P01"
 )
 
-// DBExec executes query without returning results.
-func DBExec(db *sql.DB, query string) error {
-	_, err := runQuery(db, query, true)
-	return err
-}
-
 // DBQuery runs query and returns table results.
-func DBQuery(db *sql.DB, query string, args ...interface{}) ([][]string, error) {
-	return runTableQuery(db, query, args...)
+func DBQuery(ctx context.Context, db *pgxpool.Pool, query string, args ...interface{}) ([][]string, error) {
+	return runTableQuery(ctx, db, query, args...)
 }
 
 // DBQueryWithResponse runs query with returning results.
-func DBQueryWithResponse(db *sql.DB, query string) (string, error) {
-	return runQuery(db, query, false)
+func DBQueryWithResponse(db *pgxpool.Pool, query string) (string, error) {
+	return runQuery(context.TODO(), db, query)
 }
 
-func runQuery(db *sql.DB, query string, omitResp bool, args ...interface{}) (string, error) {
+func runQuery(ctx context.Context, db *pgxpool.Pool, query string) (string, error) {
 	log.Dbg("DB query:", query)
 
 	// TODO(anatoly): Retry mechanic.
 	var result = ""
 
-	rows, err := db.Query(query, args...)
+	rows, err := db.Query(ctx, query)
 	if err != nil {
 		log.Err("DB query:", err)
 		return "", clarifyQueryError([]byte(query), err)
 	}
 	defer rows.Close()
 
-	if !omitResp {
-		for rows.Next() {
-			var s string
-			if err := rows.Scan(&s); err != nil {
-				log.Err("DB query traversal:", err)
-				return s, err
-			}
-			result += s + "\n"
-		}
-		if err := rows.Err(); err != nil {
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
 			log.Err("DB query traversal:", err)
-			return result, err
+			return s, err
 		}
+
+		result += s + "\n"
+	}
+
+	if err := rows.Err(); err != nil {
+		log.Err("DB query traversal:", err)
+		return result, err
 	}
 
 	return result, nil
 }
 
 // runTableQuery runs query and returns results in the table view.
-func runTableQuery(db *sql.DB, query string, args ...interface{}) ([][]string, error) {
+func runTableQuery(ctx context.Context, db *pgxpool.Pool, query string, args ...interface{}) ([][]string, error) {
 	log.Dbg("DB table query:", query)
 
-	rows, err := db.Query(query, args...)
+	rows, err := db.Query(ctx, query, args...)
 	if err != nil {
 		log.Err("DB query:", err)
 		return nil, clarifyQueryError([]byte(query), err)
 	}
 	defer rows.Close()
 
-	columns, err := rows.Columns()
-	if err != nil {
-		log.Err("Failed to get columns:", err)
-		return nil, errors.Wrap(err, "failed to read column names")
-	}
-
 	// Prepare a result table.
-	resultTable := [][]string{columns}
-
-	row := make([]string, len(columns))
-	scanInterfaces := make([]interface{}, len(columns))
-
-	for i := range scanInterfaces {
-		scanInterfaces[i] = &row[i]
-	}
+	resultTable := make([][]string, 0)
+	head := make([]string, 0)
 
 	for rows.Next() {
-		if err := rows.Scan(scanInterfaces...); err != nil {
-			log.Err("DB query traversal:", err)
-			return nil, err
+		if len(head) == 0 {
+			// We have to get the descriptions of fields after rows.Next only https://github.com/jackc/pgx/issues/459
+			fieldDescriptions := rows.FieldDescriptions()
+			for _, column := range fieldDescriptions {
+				head = append(head, string(column.Name))
+			}
+
+			resultTable = append(resultTable, head)
 		}
-		resultTable = append(resultTable, row)
+
+		rawValues := rows.RawValues()
+		resultRow := make([]string, 0, len(head))
+
+		for _, rawValue := range rawValues {
+			resultRow = append(resultRow, string(rawValue))
+		}
+
+		resultTable = append(resultTable, resultRow)
 	}
 
 	if err := rows.Err(); err != nil {
@@ -137,7 +133,7 @@ func clarifyQueryError(query []byte, err error) error {
 	}
 
 	switch queryErr := err.(type) {
-	case *pq.Error:
+	case *pgconn.PgError:
 		switch queryErr.Code {
 		case SyntaxPQErrorCode:
 			// Check &nbsp; - ASCII code 160

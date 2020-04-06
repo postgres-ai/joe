@@ -19,5 +19,5 @@ var _ definition.Executor = (*ActivityCmd)(nil)
 
 // Execute runs the activity command.
 func (c *ActivityCmd) Execute() error {
-	return errors.New("Enterprise feature. Not supported in CE version") // nolint:stylecheck
+	return errors.New("feature is locked. Not supported in CE version. Upgrade plan")
 }

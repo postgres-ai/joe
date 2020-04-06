@@ -107,9 +107,7 @@ func main() {
 		Space: spaceCfg,
 	}
 
-	enterprise := bot.NewEnterprise(features.GetBuilder())
-
-	joeBot := bot.NewApp(botCfg, spaceCfg, enterprise)
+	joeBot := bot.NewApp(botCfg, spaceCfg, features.NewPack())
 	if err := joeBot.RunServer(context.Background()); err != nil {
 		log.Err("HTTP server error:", err)
 	}

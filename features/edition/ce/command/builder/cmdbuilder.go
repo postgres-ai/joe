@@ -6,28 +6,23 @@
 package builder
 
 import (
-	"database/sql"
+	"github.com/jackc/pgx/v4/pgxpool"
 
-	"gitlab.com/postgres-ai/joe/features/ce/command"
 	"gitlab.com/postgres-ai/joe/features/definition"
+	"gitlab.com/postgres-ai/joe/features/edition/ce/command"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/models"
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 )
 
-const featuresDescription = ""
-
 // CommunityBuilder represents a builder for non enterprise activity command.
 type CommunityBuilder struct {
 }
 
-var (
-	_ definition.CmdBuilder              = (*CommunityBuilder)(nil)
-	_ definition.EnterpriseHelpMessenger = (*CommunityBuilder)(nil)
-)
+var _ definition.CmdBuilder = (*CommunityBuilder)(nil)
 
 // NewBuilder creates a new activity builder.
-func NewBuilder(_ *platform.Command, _ *models.Message, _ *sql.DB, _ connection.Messenger) definition.CmdBuilder {
+func NewBuilder(_ *platform.Command, _ *models.Message, _ *pgxpool.Pool, _ connection.Messenger) definition.CmdBuilder {
 	return &CommunityBuilder{}
 }
 
@@ -39,9 +34,4 @@ func (builder *CommunityBuilder) BuildActivityCmd() definition.Executor {
 // BuildTerminateCmd build a new Terminate command.
 func (builder *CommunityBuilder) BuildTerminateCmd() definition.Executor {
 	return &command.TerminateCmd{}
-}
-
-// GetEnterpriseHelpMessage provides description enterprise features.
-func (builder *CommunityBuilder) GetEnterpriseHelpMessage() string {
-	return featuresDescription
 }
