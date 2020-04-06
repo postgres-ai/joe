@@ -377,16 +377,14 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 		}
 	}
 
-	if s.config.Platform.HistoryEnabled {
-		if _, err := s.platformManager.PostCommand(ctx, platformCmd); err != nil {
+	if err := s.saveHistory(ctx, msg, platformCmd); err != nil {
+		log.Err(err)
+
+		if err := s.messenger.Fail(msg, err.Error()); err != nil {
 			log.Err(err)
-
-			if err := s.messenger.Fail(msg, err.Error()); err != nil {
-				log.Err(err)
-			}
-
-			return
 		}
+
+		return
 	}
 
 	user.Session.LastActionTs = time.Now()
@@ -394,6 +392,29 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 	if err := s.messenger.OK(msg); err != nil {
 		log.Err(err)
 	}
+}
+
+// saveHistory posts a command to Platform and add the response link to the message.
+func (s *ProcessingService) saveHistory(ctx context.Context, msg *models.Message, platformCmd *platform.Command) error {
+	if !s.config.Platform.HistoryEnabled {
+		return nil
+	}
+
+	commandResponse, err := s.platformManager.PostCommand(ctx, platformCmd)
+	if err != nil {
+		return errors.Wrap(err, "failed to post a command")
+	}
+
+	if commandResponse.CommandLink != "" && platformCmd.Command == CommandExplain {
+		msg.AppendText(fmt.Sprintf("See detailed explanation in the Postgres.ai Console: %s.", commandResponse.CommandLink))
+
+		if err := s.messenger.UpdateText(msg); err != nil {
+			// It's not a critical error if we cannot add the link.
+			log.Err(err)
+		}
+	}
+
+	return nil
 }
 
 // rebootSession stops a Joe session and creates a new one.
