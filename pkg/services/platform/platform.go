@@ -121,24 +121,24 @@ func (p *Client) doPost(ctx context.Context, path string, data interface{}, resp
 }
 
 // PostCommand makes an HTTP request to post a command to Platform.
-func (p *Client) PostCommand(ctx context.Context, command *Command) (string, error) {
+func (p *Client) PostCommand(ctx context.Context, command *Command) (PostCommandResponse, error) {
 	log.Dbg("Platform API: post command")
 
 	commandResp := PostCommandResponse{}
 
 	if err := p.doPost(ctx, "/rpc/joe_session_command_post", command, &commandResp); err != nil {
-		return "", errors.Wrap(err, "failed to do request")
+		return commandResp, errors.Wrap(err, "failed to do request")
 	}
 
 	if commandResp.Code != "" || commandResp.Message != "" {
 		log.Dbg(fmt.Sprintf("Unsuccessful response given. Request: %v", command))
 
-		return "", errors.Errorf("error: %v", commandResp)
+		return commandResp, errors.Errorf("error: %v", commandResp)
 	}
 
 	log.Dbg("API: Post command success", commandResp.CommandID)
 
-	return strconv.FormatUint(uint64(commandResp.CommandID), 10), nil
+	return commandResp, nil
 }
 
 // CreatePlatformSession makes an HTTP request to create a new Platform session.
@@ -264,7 +264,8 @@ type CreateSessionResponse struct {
 // PostCommandResponse represents a response of a posting command request.
 type PostCommandResponse struct {
 	APIResponse
-	CommandID uint `json:"command_id"`
+	CommandID   uint   `json:"command_id"`
+	CommandLink string `json:"command_link"`
 }
 
 // PostMessageResponse represents a response of a posting message request.
