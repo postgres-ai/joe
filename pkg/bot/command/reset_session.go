@@ -10,12 +10,13 @@ import (
 	"gitlab.com/postgres-ai/database-lab/pkg/client/dblabapi"
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
 
-	"gitlab.com/postgres-ai/joe/pkg/bot/api"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/models"
+	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 )
 
-func ResetSession(ctx context.Context, apiCmd *api.ApiCommand, msg *models.Message, dbLab *dblabapi.Client, cloneID string,
+// ResetSession provides a command to reset a Database Lab session.
+func ResetSession(ctx context.Context, cmd *platform.Command, msg *models.Message, dbLab *dblabapi.Client, cloneID string,
 	msgSvc connection.Messenger) error {
 
 	msg.AppendText("Resetting the state of the database...")
@@ -29,7 +30,7 @@ func ResetSession(ctx context.Context, apiCmd *api.ApiCommand, msg *models.Messa
 	}
 
 	result := "The state of the database has been reset."
-	apiCmd.Response = result
+	cmd.Response = result
 
 	msg.AppendText(result)
 	if err := msgSvc.UpdateText(msg); err != nil {

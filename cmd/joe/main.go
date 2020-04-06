@@ -41,7 +41,7 @@ var opts struct {
 	DevGitBranch     string `long:"git-branch" env:"GIT_BRANCH" default:""`
 	DevGitModified   bool   `long:"git-modified" env:"GIT_MODIFIED"`
 
-	Debug bool `long:"debug" description:"Enable a debug mode"`
+	Debug bool `long:"debug" description:"Enable a debug mode" env:"JOE_DEBUG"`
 
 	ShowHelp func() error `long:"help" description:"Show this help message"`
 }
@@ -98,13 +98,13 @@ func main() {
 			Limit:    enterpriseOptions.QuotaLimit,
 			Interval: enterpriseOptions.QuotaInterval,
 		},
-
 		Platform: config.Platform{
 			URL:            opts.PlatformURL,
 			Token:          opts.PlatformToken,
 			Project:        opts.PlatformProject,
 			HistoryEnabled: opts.HistoryEnabled,
 		},
+		Space: spaceCfg,
 	}
 
 	enterprise := bot.NewEnterprise(features.GetBuilder())

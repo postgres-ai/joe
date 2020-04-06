@@ -28,6 +28,7 @@ type User struct {
 type UserSession struct {
 	PlatformSessionID string
 	ChannelID         string
+	Direct            bool
 
 	Quota Quota
 

@@ -10,9 +10,9 @@ import (
 
 	"gitlab.com/postgres-ai/joe/features/ce/command"
 	"gitlab.com/postgres-ai/joe/features/definition"
-	"gitlab.com/postgres-ai/joe/pkg/bot/api"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/models"
+	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 )
 
 const featuresDescription = ""
@@ -27,7 +27,7 @@ var (
 )
 
 // NewBuilder creates a new activity builder.
-func NewBuilder(_ *api.ApiCommand, _ *models.Message, _ *sql.DB, _ connection.Messenger) definition.CmdBuilder {
+func NewBuilder(_ *platform.Command, _ *models.Message, _ *sql.DB, _ connection.Messenger) definition.CmdBuilder {
 	return &CommunityBuilder{}
 }
 

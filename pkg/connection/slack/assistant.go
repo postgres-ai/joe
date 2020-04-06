@@ -27,8 +27,12 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/models"
 	"gitlab.com/postgres-ai/joe/pkg/services/dblab"
 	"gitlab.com/postgres-ai/joe/pkg/services/msgproc"
+	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"
 )
+
+// WorkspaceType defines a workspace type.
+const WorkspaceType = "slack"
 
 // Assistant provides a service for interaction with a communication channel.
 type Assistant struct {
@@ -47,23 +51,23 @@ type SlackConfig struct {
 }
 
 // NewAssistant returns a new assistant service.
-func NewAssistant(cfg *config.Credentials, appCfg *config.Config, cmdBuilder features.CommandFactoryMethod) (*Assistant, error) {
-	if err := validateCredentials(cfg); err != nil {
-		return nil, errors.Wrap(err, "invalid credentials given")
-	}
+func NewAssistant(cfg *config.Credentials, appCfg *config.Config, handlerPrefix string,
+	cmdBuilder features.CommandFactoryMethod) *Assistant {
+	prefix := fmt.Sprintf("/%s", strings.Trim(handlerPrefix, "/"))
 
 	assistant := &Assistant{
 		credentialsCfg: cfg,
 		appCfg:         appCfg,
 		msgProcessors:  make(map[string]connection.MessageProcessor),
+		prefix:         prefix,
 		commandBuilder: cmdBuilder,
 	}
 
-	return assistant, nil
+	return assistant
 }
 
-func validateCredentials(credentials *config.Credentials) error {
-	if credentials == nil || credentials.AccessToken == "" || credentials.SigningSecret == "" {
+func (a *Assistant) validateCredentials() error {
+	if a.credentialsCfg == nil || a.credentialsCfg.AccessToken == "" || a.credentialsCfg.SigningSecret == "" {
 		return errors.New(`"accessToken" and "signingSecret" must not be empty`)
 	}
 
@@ -73,6 +77,10 @@ func validateCredentials(credentials *config.Credentials) error {
 // Init registers assistant handlers.
 func (a *Assistant) Init() error {
 	log.Dbg("URL-path prefix: ", a.prefix)
+
+	if err := a.validateCredentials(); err != nil {
+		return errors.Wrap(err, "invalid credentials given")
+	}
 
 	if a.lenMessageProcessor() == 0 {
 		return errors.New("no message processor set")
@@ -85,28 +93,19 @@ func (a *Assistant) Init() error {
 	return nil
 }
 
-func (a *Assistant) lenMessageProcessor() int {
-	a.procMu.RLock()
-	defer a.procMu.RUnlock()
-
-	return len(a.msgProcessors)
-}
-
-// SetHandlerPrefix prepares and sets a handler URL-path prefix.
-func (a *Assistant) SetHandlerPrefix(prefix string) {
-	a.prefix = fmt.Sprintf("/%s", strings.Trim(prefix, "/"))
-}
-
 // AddDBLabInstanceForChannel sets a message processor for a specific channel.
-func (a *Assistant) AddDBLabInstanceForChannel(channelID string, dbLabInstance *dblab.Instance) {
-	messageProcessor := a.buildMessageProcessor(a.appCfg, dbLabInstance)
+func (a *Assistant) AddDBLabInstanceForChannel(channelID string, dbLabInstance *dblab.Instance) error {
+	messageProcessor, err := a.buildMessageProcessor(a.appCfg, dbLabInstance)
+	if err != nil {
+		return errors.Wrap(err, "failed to build a message processor")
+	}
 
-	a.procMu.Lock()
-	a.msgProcessors[channelID] = messageProcessor
-	a.procMu.Unlock()
+	a.addProcessingService(channelID, messageProcessor)
+
+	return nil
 }
 
-func (a *Assistant) buildMessageProcessor(appCfg *config.Config, dbLabInstance *dblab.Instance) *msgproc.ProcessingService {
+func (a *Assistant) buildMessageProcessor(appCfg *config.Config, dbLabInstance *dblab.Instance) (*msgproc.ProcessingService, error) {
 	slackCfg := &SlackConfig{
 		AccessToken:   a.credentialsCfg.AccessToken,
 		SigningSecret: a.credentialsCfg.SigningSecret,
@@ -125,8 +124,20 @@ func (a *Assistant) buildMessageProcessor(appCfg *config.Config, dbLabInstance *
 		DBLab:    dbLabInstance.Config(),
 	}
 
-	return msgproc.NewProcessingService(messenger, MessageValidator{}, dbLabInstance.Client(), userManager,
-		processingCfg, a.commandBuilder)
+	platformManager, err := platform.NewClient(appCfg.Platform)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create a Platform client")
+	}
+
+	return msgproc.NewProcessingService(messenger, MessageValidator{}, dbLabInstance.Client(), userManager, platformManager,
+		processingCfg, a.commandBuilder), nil
+}
+
+// addProcessingService adds a message processor for a specific channel.
+func (a *Assistant) addProcessingService(channelID string, messageProcessor connection.MessageProcessor) {
+	a.procMu.Lock()
+	a.msgProcessors[channelID] = messageProcessor
+	a.procMu.Unlock()
 }
 
 // getProcessingService returns processing service by channelID.
@@ -144,11 +155,20 @@ func (a *Assistant) getProcessingService(channelID string) (connection.MessagePr
 
 // CheckIdleSessions check the running user sessions for idleness.
 func (a *Assistant) CheckIdleSessions(ctx context.Context) {
+	log.Dbg("Check idle sessions", a.prefix)
+
 	a.procMu.RLock()
 	for _, proc := range a.msgProcessors {
 		proc.CheckIdleSessions(ctx)
 	}
 	a.procMu.RUnlock()
+}
+
+func (a *Assistant) lenMessageProcessor() int {
+	a.procMu.RLock()
+	defer a.procMu.RUnlock()
+
+	return len(a.msgProcessors)
 }
 
 func (a *Assistant) handlers() map[string]http.HandlerFunc {
@@ -161,7 +181,7 @@ func (a *Assistant) handleEvent(w http.ResponseWriter, r *http.Request) {
 	log.Msg("Request received:", html.EscapeString(r.URL.Path))
 
 	// TODO(anatoly): Respond time according to Slack API timeouts policy.
-	// Slack sends retries in case of timedout responses.
+	// Slack sends retries in case of timeout responses.
 	if r.Header.Get("X-Slack-Retry-Num") != "" {
 		log.Dbg("Message filtered: Slack Retry")
 		return
@@ -241,7 +261,7 @@ func (a *Assistant) handleEvent(w http.ResponseWriter, r *http.Request) {
 			}
 
 			msg := a.messageEventToIncomingMessage(ev)
-			msgProcessor.ProcessMessageEvent(msg)
+			msgProcessor.ProcessMessageEvent(context.TODO(), msg)
 
 		default:
 			log.Dbg("Event filtered: Inner event type not supported")

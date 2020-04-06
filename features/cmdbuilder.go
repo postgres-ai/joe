@@ -9,13 +9,13 @@ import (
 	"database/sql"
 
 	"gitlab.com/postgres-ai/joe/features/definition"
-	"gitlab.com/postgres-ai/joe/pkg/bot/api"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/models"
+	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 )
 
 // CommandFactoryMethod defines a factory method to create Enterprise commands.
-type CommandFactoryMethod func(*api.ApiCommand, *models.Message, *sql.DB, connection.Messenger) definition.CmdBuilder
+type CommandFactoryMethod func(*platform.Command, *models.Message, *sql.DB, connection.Messenger) definition.CmdBuilder
 
 var commandBuilder CommandFactoryMethod
 

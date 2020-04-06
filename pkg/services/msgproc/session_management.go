@@ -21,7 +21,11 @@ import (
 
 // CheckIdleSessions checks user idleness sessions and notifies about their finishing.
 func (s *ProcessingService) CheckIdleSessions(ctx context.Context) {
+	// List of channelIDs with a users to notify.
 	channelsToNotify := make(map[string][]string)
+
+	// List of sessionIDs.
+	directToNotify := make([]string, 0)
 
 	// TODO(akartasov): Fix data races.
 	for _, user := range s.UserManager.Users() {
@@ -47,13 +51,23 @@ func (s *ProcessingService) CheckIdleSessions(ctx context.Context) {
 
 		log.Dbg("Session idle: %v %v", user, user.Session)
 
+		if user.Session.Direct {
+			directToNotify = append(directToNotify, getSessionID(user))
+			continue
+		}
+
 		s.stopSession(user)
 
 		channelsToNotify[user.Session.ChannelID] = append(channelsToNotify[user.Session.ChannelID], user.UserInfo.ID)
 	}
 
-	// Publish message in every channel with a list of users.
-	for channelID, chatUserIDs := range channelsToNotify {
+	s.notifyDirectly(directToNotify)
+	s.notifyChannels(channelsToNotify)
+}
+
+// notifyChannels publishes messages in every channel with a list of users.
+func (s *ProcessingService) notifyChannels(channels map[string][]string) {
+	for channelID, chatUserIDs := range channels {
 		if len(chatUserIDs) == 0 {
 			continue
 		}
@@ -65,13 +79,42 @@ func (s *ProcessingService) CheckIdleSessions(ctx context.Context) {
 
 		msgText := "Stopped idle sessions for: " + strings.Join(formattedUserList, ", ")
 
-		msg := models.NewMessage(channelID)
+		msg := models.NewMessage(models.IncomingMessage{ChannelID: channelID})
 		msg.SetText(msgText)
 
 		if err := s.messenger.Publish(msg); err != nil {
 			log.Err("Bot: Cannot publish a message", err)
 		}
 	}
+}
+
+// notifyDirectly publishes a direct message about idle sessions.
+func (s *ProcessingService) notifyDirectly(sessionList []string) {
+	for _, sessionID := range sessionList {
+		msg := models.NewMessage(models.IncomingMessage{})
+		msg.SessionID = sessionID
+		msg.SetStatus(models.StatusOK)
+		msg.SetText("Stopped idle session")
+
+		if err := s.messenger.Publish(msg); err != nil {
+			log.Err("Bot: Cannot publish a direct message", err)
+		}
+	}
+}
+
+func getSessionID(u *usermanager.User) string {
+	if u == nil || u.Session.Clone == nil || u.Session.Clone.ID == "" {
+		return ""
+	}
+
+	sessionID := u.Session.Clone.ID
+
+	// Use session ID from platform if it's defined.
+	if u.Session.PlatformSessionID != "" {
+		sessionID = u.Session.PlatformSessionID
+	}
+
+	return sessionID
 }
 
 // isActiveSession checks if current user session is active.

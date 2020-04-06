@@ -36,11 +36,16 @@ type IncomingMessage struct {
 	UserID      string
 	Timestamp   string
 	ThreadID    string
+	CommandID   string
+	SessionID   string
+	Direct      bool
 }
 
 // Message struct defines an output message.
 type Message struct {
 	MessageID   string
+	CommandID   string
+	SessionID   string
 	MessageType int
 	Status      MessageStatus
 	ChannelID   string
@@ -55,9 +60,10 @@ type Message struct {
 type MessageStatus string
 
 // NewMessage creates a new message.
-func NewMessage(channelID string) *Message {
+func NewMessage(incomingMessage IncomingMessage) *Message {
 	return &Message{
-		ChannelID: channelID,
+		ChannelID: incomingMessage.ChannelID,
+		CommandID: incomingMessage.CommandID,
 		CreatedAt: time.Now(),
 	}
 }

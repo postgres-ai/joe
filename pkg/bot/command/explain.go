@@ -12,11 +12,11 @@ import (
 	"github.com/pkg/errors"
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
 
-	"gitlab.com/postgres-ai/joe/pkg/bot/api"
 	"gitlab.com/postgres-ai/joe/pkg/bot/querier"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/models"
 	"gitlab.com/postgres-ai/joe/pkg/pgexplain"
+	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 	"gitlab.com/postgres-ai/joe/pkg/util/text"
 )
 
@@ -30,25 +30,25 @@ const (
 )
 
 // Explain runs an explain query.
-func Explain(msgSvc connection.Messenger, apiCmd *api.ApiCommand, msg *models.Message,
+func Explain(msgSvc connection.Messenger, command *platform.Command, msg *models.Message,
 	explainConfig pgexplain.ExplainConfig, db *sql.DB) error {
-	if apiCmd.Query == "" {
+	if command.Query == "" {
 		return errors.New(MsgExplainOptionReq)
 	}
 
-	cmd := NewPlan(apiCmd, msg, db, msgSvc)
+	cmd := NewPlan(command, msg, db, msgSvc)
 	msgInitText, isTruncated, err := cmd.explainWithoutExecution()
 	if err != nil {
 		return errors.Wrap(err, "failed to run explain without execution")
 	}
 
 	// Explain analyze request and processing.
-	explainAnalyze, err := querier.DBQueryWithResponse(db, queryExplainAnalyze+apiCmd.Query)
+	explainAnalyze, err := querier.DBQueryWithResponse(db, queryExplainAnalyze+command.Query)
 	if err != nil {
 		return err
 	}
 
-	apiCmd.PlanExecJson = explainAnalyze
+	command.PlanExecJSON = explainAnalyze
 
 	// Visualization.
 	explain, err := pgexplain.NewExplain(explainAnalyze, explainConfig)
@@ -58,10 +58,10 @@ func Explain(msgSvc connection.Messenger, apiCmd *api.ApiCommand, msg *models.Me
 		return err
 	}
 
-	vis := explain.RenderPlanText()
-	apiCmd.PlanExecText = vis
+	planText := explain.RenderPlanText()
+	command.PlanExecText = planText
 
-	planExecPreview, isTruncated := text.CutText(vis, PlanSize, SeparatorPlan)
+	planExecPreview, isTruncated := text.CutText(planText, PlanSize, SeparatorPlan)
 
 	msg.SetText(msgInitText)
 	msg.AppendText(fmt.Sprintf("*Plan with execution:*\n```%s```", planExecPreview))
@@ -77,7 +77,7 @@ func Explain(msgSvc connection.Messenger, apiCmd *api.ApiCommand, msg *models.Me
 		return err
 	}
 
-	filePlanPermalink, err := msgSvc.AddArtifact("plan-text", vis, msg.ChannelID, msg.MessageID)
+	filePlanPermalink, err := msgSvc.AddArtifact("plan-text", planText, msg.ChannelID, msg.MessageID)
 	if err != nil {
 		log.Err("File upload failed:", err)
 		return err
@@ -114,7 +114,7 @@ func Explain(msgSvc connection.Messenger, apiCmd *api.ApiCommand, msg *models.Me
 		}
 	}
 
-	apiCmd.Recommendations = recommends
+	command.Recommendations = recommends
 
 	msg.AppendText("*Recommendations:*\n" + recommends)
 	if err = msgSvc.UpdateText(msg); err != nil {
@@ -124,7 +124,7 @@ func Explain(msgSvc connection.Messenger, apiCmd *api.ApiCommand, msg *models.Me
 
 	// Summary.
 	stats := explain.RenderStats()
-	apiCmd.Stats = stats
+	command.Stats = stats
 
 	msg.AppendText(fmt.Sprintf("*Summary:*\n```%s```", stats))
 	if err = msgSvc.UpdateText(msg); err != nil {

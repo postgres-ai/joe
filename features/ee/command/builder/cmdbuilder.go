@@ -12,16 +12,16 @@ import (
 
 	"gitlab.com/postgres-ai/joe/features/definition"
 	"gitlab.com/postgres-ai/joe/features/ee/command"
-	"gitlab.com/postgres-ai/joe/pkg/bot/api"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/models"
+	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 )
 
 const featuresDescription = ""
 
 // EnterpriseBuilder defines an enterprise command builder.
 type EnterpriseBuilder struct {
-	apiCommand *api.ApiCommand
+	apiCommand *platform.Command
 	message    *models.Message
 	db         *sql.DB
 	messenger  connection.Messenger
@@ -33,7 +33,7 @@ var (
 )
 
 // NewBuilder creates a new enterprise command builder.
-func NewBuilder(apiCmd *api.ApiCommand, msg *models.Message, db *sql.DB, msgSvc connection.Messenger) definition.CmdBuilder {
+func NewBuilder(apiCmd *platform.Command, msg *models.Message, db *sql.DB, msgSvc connection.Messenger) definition.CmdBuilder {
 	return &EnterpriseBuilder{
 		apiCommand: apiCmd,
 		message:    msg,
