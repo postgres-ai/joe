@@ -5,10 +5,11 @@
 package command
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/pkg/errors"
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
 
@@ -26,12 +27,12 @@ const MsgPlanOptionReq = "Use `plan` to see the query's plan without execution, 
 type PlanCmd struct {
 	command   *platform.Command
 	message   *models.Message
-	db        *sql.DB
+	db        *pgxpool.Pool
 	messenger connection.Messenger
 }
 
 // NewPlan return a new plan command.
-func NewPlan(cmd *platform.Command, msg *models.Message, db *sql.DB, messengerSvc connection.Messenger) *PlanCmd {
+func NewPlan(cmd *platform.Command, msg *models.Message, db *pgxpool.Pool, messengerSvc connection.Messenger) *PlanCmd {
 	return &PlanCmd{
 		command:   cmd,
 		message:   msg,
@@ -71,7 +72,7 @@ func (cmd *PlanCmd) explainWithoutExecution() (string, bool, error) {
 	includeHypoPG := false
 	explainPlanTitle := ""
 
-	if hypoIndexes, err := listHypoIndexes(cmd.db); err == nil && len(hypoIndexes) > 0 {
+	if hypoIndexes, err := listHypoIndexes(context.TODO(), cmd.db); err == nil && len(hypoIndexes) > 0 {
 		if isHypoIndexInvolved(explainResult, hypoIndexes) {
 			explainPlanTitle = " (HypoPG involved :ghost:)"
 			includeHypoPG = true

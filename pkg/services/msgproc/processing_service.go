@@ -20,7 +20,6 @@ import (
 	"gitlab.com/postgres-ai/database-lab/pkg/util"
 
 	"gitlab.com/postgres-ai/joe/features"
-	"gitlab.com/postgres-ai/joe/features/definition"
 	"gitlab.com/postgres-ai/joe/pkg/bot/command"
 	"gitlab.com/postgres-ai/joe/pkg/config"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
@@ -63,6 +62,8 @@ var supportedCommands = []string{
 	CommandHypo,
 	CommandExec,
 	CommandReset,
+	CommandActivity,
+	CommandTerminate,
 	CommandHelp,
 
 	CommandPsqlD,
@@ -95,7 +96,7 @@ var allowedPsqlCommands = []string{
 }
 
 type ProcessingService struct {
-	commandBuilder   features.CommandFactoryMethod
+	featurePack      *features.Pack
 	messageValidator connection.MessageValidator
 	messenger        connection.Messenger
 	DBLab            *dblabapi.Client
@@ -121,9 +122,9 @@ var spaceRegex = regexp.MustCompile(`\s+`)
 // NewProcessingService creates a new processing service.
 func NewProcessingService(messengerSvc connection.Messenger, msgValidator connection.MessageValidator, dblab *dblabapi.Client,
 	userSvc *usermanager.UserManager, platform *platform.Client, cfg ProcessingConfig,
-	cmdBuilder features.CommandFactoryMethod) *ProcessingService {
+	featurePack *features.Pack) *ProcessingService {
 	return &ProcessingService{
-		commandBuilder:   cmdBuilder,
+		featurePack:      featurePack,
 		messageValidator: msgValidator,
 		messenger:        messengerSvc,
 		DBLab:            dblab,
@@ -253,10 +254,7 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 	if receivedCommand == CommandHelp {
 		msg := models.NewMessage(incomingMessage)
 
-		// TODO (akartasov): make a separate interface.
-		helper := s.commandBuilder(nil, nil, nil, nil)
-
-		msgText = s.appendHelp(helper, msgText)
+		msgText = s.appendHelp(msgText)
 		msgText = appendSessionID(msgText, user)
 		msg.SetText(msgText)
 
@@ -302,68 +300,65 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 		Timestamp: incomingMessage.Timestamp,
 	}
 
-	const maxRetryCounter = 1
+	switch {
+	case receivedCommand == CommandExplain:
+		err = command.Explain(s.messenger, platformCmd, msg, s.config.Explain, user.Session.CloneConnection)
 
-	// TODO(akartasov): Refactor commands and create retrier.
-	for iteration := 0; iteration <= maxRetryCounter; iteration++ {
-		switch {
-		case receivedCommand == CommandExplain:
-			err = command.Explain(s.messenger, platformCmd, msg, s.config.Explain, user.Session.CloneConnection)
+	case receivedCommand == CommandPlan:
+		planCmd := command.NewPlan(platformCmd, msg, user.Session.CloneConnection, s.messenger)
+		err = planCmd.Execute()
 
-		case receivedCommand == CommandPlan:
-			planCmd := command.NewPlan(platformCmd, msg, user.Session.CloneConnection, s.messenger)
-			err = planCmd.Execute()
+	case receivedCommand == CommandExec:
+		execCmd := command.NewExec(platformCmd, msg, user.Session.CloneConnection, s.messenger)
+		err = execCmd.Execute()
 
-		case receivedCommand == CommandExec:
-			execCmd := command.NewExec(platformCmd, msg, user.Session.CloneConnection, s.messenger)
-			err = execCmd.Execute()
-
-		case receivedCommand == CommandReset:
-			err = command.ResetSession(ctx, platformCmd, msg, s.DBLab, user.Session.Clone.ID, s.messenger)
-			// TODO(akartasov): Find permanent solution,
-			//  it's a temporary fix for https://gitlab.com/postgres-ai/joe/-/issues/132.
-			if err != nil {
-				// Try to reboot the session.
-				if err := s.rebootSession(msg, user); err != nil {
-					log.Err(err)
-				}
-
-				return
+	case receivedCommand == CommandReset:
+		err = command.ResetSession(ctx, platformCmd, msg, s.DBLab, user.Session.Clone.ID, s.messenger)
+		// TODO(akartasov): Find permanent solution,
+		//  it's a temporary fix for https://gitlab.com/postgres-ai/joe/-/issues/132.
+		if err != nil {
+			// Try to reboot the session.
+			if err := s.rebootSession(msg, user); err != nil {
+				log.Err(err)
 			}
 
-		case receivedCommand == CommandHypo:
-			hypoCmd := command.NewHypo(platformCmd, msg, user.Session.CloneConnection, s.messenger)
-			err = hypoCmd.Execute()
-
-		case receivedCommand == CommandActivity:
-			activityCmd := s.commandBuilder(platformCmd, msg, user.Session.CloneConnection, s.messenger).BuildActivityCmd()
-			err = activityCmd.Execute()
-
-		case receivedCommand == CommandTerminate:
-			terminateCmd := s.commandBuilder(platformCmd, msg, user.Session.CloneConnection, s.messenger).BuildTerminateCmd()
-			err = terminateCmd.Execute()
-
-		case util.Contains(allowedPsqlCommands, receivedCommand):
-			runner := pgtransmission.NewPgTransmitter(user.Session.ConnParams, pgtransmission.LogsEnabledDefault)
-			err = command.Transmit(platformCmd, msg, s.messenger, runner)
+			return
 		}
 
-		if err != nil {
-			if _, ok := err.(*net.OpError); !ok || iteration == maxRetryCounter {
-				s.messenger.Fail(msg, err.Error())
+	case receivedCommand == CommandHypo:
+		hypoCmd := command.NewHypo(platformCmd, msg, user.Session.CloneConnection, s.messenger)
+		err = hypoCmd.Execute()
 
-				platformCmd.Error = err.Error()
-				if _, err := s.platformManager.PostCommand(ctx, platformCmd); err != nil {
-					log.Err(fmt.Sprintf("failed to post platform command: %+v", err))
-				}
+	case receivedCommand == CommandActivity:
+		cmdBuilder := s.featurePack.CmdBuilder()
+		activityCmd := cmdBuilder(platformCmd, msg, user.Session.CloneConnection, s.messenger).BuildActivityCmd()
+		err = activityCmd.Execute()
 
-				return
+	case receivedCommand == CommandTerminate:
+		cmdBuilder := s.featurePack.CmdBuilder()
+		terminateCmd := cmdBuilder(platformCmd, msg, user.Session.CloneConnection, s.messenger).BuildTerminateCmd()
+		err = terminateCmd.Execute()
+
+	case util.Contains(allowedPsqlCommands, receivedCommand):
+		runner := pgtransmission.NewPgTransmitter(user.Session.ConnParams, pgtransmission.LogsEnabledDefault)
+		err = command.Transmit(platformCmd, msg, s.messenger, runner)
+	}
+
+	if err != nil {
+		if _, ok := err.(*net.OpError); !ok {
+			if err := s.messenger.Fail(msg, err.Error()); err != nil {
+				log.Err(err)
 			}
 
-			if s.isActiveSession(ctx, user.Session.Clone.ID) {
-				continue
+			platformCmd.Error = err.Error()
+			if _, err := s.platformManager.PostCommand(ctx, platformCmd); err != nil {
+				log.Err(fmt.Sprintf("failed to post platform command: %+v", err))
 			}
 
+			return
+		}
+
+		if !s.isActiveSession(ctx, user.Session.Clone.ID) {
 			msg.AppendText("Session was closed by Database Lab.\n")
 			if err := s.messenger.UpdateText(msg); err != nil {
 				log.Err(fmt.Sprintf("failed to append message on session close: %+v", err))
@@ -380,14 +375,15 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 				return
 			}
 		}
-
-		break
 	}
 
 	if s.config.Platform.HistoryEnabled {
 		if _, err := s.platformManager.PostCommand(ctx, platformCmd); err != nil {
 			log.Err(err)
-			s.messenger.Fail(msg, err.Error())
+
+			if err := s.messenger.Fail(msg, err.Error()); err != nil {
+				log.Err(err)
+			}
 
 			return
 		}
@@ -461,16 +457,14 @@ func (s *ProcessingService) showBotHints(incomingMessage models.IncomingMessage,
 	}
 }
 
-func (s *ProcessingService) appendHelp(helper definition.EnterpriseHelpMessenger, text string) string {
+func (s *ProcessingService) appendHelp(text string) string {
 	sb := strings.Builder{}
+	entertainerSvc := s.featurePack.Entertainer()
 
 	sb.WriteString(text)
 	sb.WriteString(HelpMessage)
-	sb.WriteString(helper.GetEnterpriseHelpMessage())
-
-	sb.WriteString("Version: ")
-	sb.WriteString(s.config.App.Version)
-	sb.WriteString("\n")
+	sb.WriteString(entertainerSvc.GetEnterpriseHelpMessage())
+	sb.WriteString(fmt.Sprintf("Version: %s (%s)\n", s.config.App.Version, entertainerSvc.GetEdition()))
 
 	return sb.String()
 }

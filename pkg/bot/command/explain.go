@@ -5,10 +5,11 @@
 package command
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/pkg/errors"
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
 
@@ -31,7 +32,7 @@ const (
 
 // Explain runs an explain query.
 func Explain(msgSvc connection.Messenger, command *platform.Command, msg *models.Message,
-	explainConfig pgexplain.ExplainConfig, db *sql.DB) error {
+	explainConfig pgexplain.ExplainConfig, db *pgxpool.Pool) error {
 	if command.Query == "" {
 		return errors.New(MsgExplainOptionReq)
 	}
@@ -135,8 +136,8 @@ func Explain(msgSvc connection.Messenger, command *platform.Command, msg *models
 	return nil
 }
 
-func listHypoIndexes(db *sql.DB) ([]string, error) {
-	rows, err := db.Query("SELECT indexname FROM hypopg_list_indexes()")
+func listHypoIndexes(ctx context.Context, db *pgxpool.Pool) ([]string, error) {
+	rows, err := db.Query(ctx, "SELECT indexname FROM hypopg_list_indexes()")
 	if err != nil {
 		return nil, err
 	}

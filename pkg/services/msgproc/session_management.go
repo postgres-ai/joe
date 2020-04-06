@@ -138,6 +138,7 @@ func (s *ProcessingService) stopSession(user *usermanager.User) {
 
 	if user.Session.CloneConnection != nil {
 		user.Session.CloneConnection.Close()
+		user.Session.CloneConnection = nil
 	}
 }
 

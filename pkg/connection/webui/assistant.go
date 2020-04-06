@@ -39,12 +39,11 @@ type Assistant struct {
 	msgProcessors  map[string]connection.MessageProcessor
 	prefix         string
 	appCfg         *config.Config
-	commandBuilder features.CommandFactoryMethod
+	featurePack    *features.Pack
 }
 
 // NewAssistant returns a new assistant service.
-func NewAssistant(cfg *config.Credentials, appCfg *config.Config, handlerPrefix string,
-	cmdBuilder features.CommandFactoryMethod) *Assistant {
+func NewAssistant(cfg *config.Credentials, appCfg *config.Config, handlerPrefix string, pack *features.Pack) *Assistant {
 	prefix := fmt.Sprintf("/%s", strings.Trim(handlerPrefix, "/"))
 
 	assistant := &Assistant{
@@ -52,7 +51,7 @@ func NewAssistant(cfg *config.Credentials, appCfg *config.Config, handlerPrefix 
 		appCfg:         appCfg,
 		msgProcessors:  make(map[string]connection.MessageProcessor),
 		prefix:         prefix,
-		commandBuilder: cmdBuilder,
+		featurePack:    pack,
 	}
 
 	return assistant
@@ -117,7 +116,7 @@ func (a *Assistant) buildMessageProcessor(appCfg *config.Config, dbLabInstance *
 	}
 
 	return msgproc.NewProcessingService(messenger, MessageValidator{}, dbLabInstance.Client(), userManager, platformClient,
-		processingCfg, a.commandBuilder), nil
+		processingCfg, a.featurePack), nil
 }
 
 // addProcessingService adds a message processor for a specific channel.
