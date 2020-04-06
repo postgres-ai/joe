@@ -157,8 +157,11 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 
 	user.Session.LastActionTs = time.Now()
 	user.Session.ChannelID = incomingMessage.ChannelID
-	user.Session.PlatformSessionID = incomingMessage.SessionID
 	user.Session.Direct = incomingMessage.Direct
+
+	if user.Session.PlatformSessionID == "" {
+		user.Session.PlatformSessionID = incomingMessage.SessionID
+	}
 
 	// Filter and prepare message.
 	message := strings.TrimSpace(incomingMessage.Text)
