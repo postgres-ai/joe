@@ -49,6 +49,8 @@ var opts struct {
 // TODO (akartasov): Set the app version during build.
 const Version = "v0.7.0"
 
+var buildTime string
+
 // TODO(anatoly): Refactor configs and envs.
 
 func main() {
@@ -92,6 +94,7 @@ func main() {
 			Port:                     opts.ServerPort,
 			AuditEnabled:             enterpriseOptions.AuditEnabled,
 			MinNotifyDurationMinutes: opts.MinNotifyDuration,
+			MaxDBLabInstances:        enterpriseOptions.DBLabLimit,
 		},
 		Explain: explainConfig,
 		Quota: config.Quota{
@@ -141,7 +144,7 @@ func parseArgs(ent definition.FlagProvider) ([]string, error) {
 
 func formatBotVersion(commit string, branch string, modified bool) string {
 	if len(commit) < 7 {
-		return Version
+		return Version + "-" + buildTime
 	}
 
 	modifiedStr := ""

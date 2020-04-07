@@ -87,11 +87,10 @@ func (a *App) RunServer(ctx context.Context) error {
 }
 
 func (a *App) initDBLabInstances() error {
-	const maxDBLabInstance = 1
-
-	if len(a.spaceCfg.DBLabInstances) > maxDBLabInstance {
+	if len(a.spaceCfg.DBLabInstances) > int(a.Config.App.MaxDBLabInstances) {
 		return errors.Errorf("available limit exceeded, the maximum amount is %d. "+
-			"Please correct the `dblabs` section in the configuration file or upgrade your plan to Enterprise Edition", maxDBLabInstance)
+			"Please correct the `dblabs` section in the configuration file or upgrade your plan to Enterprise Edition",
+			a.Config.App.MaxDBLabInstances)
 	}
 
 	for name, dbLab := range a.spaceCfg.DBLabInstances {
