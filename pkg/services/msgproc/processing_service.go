@@ -353,11 +353,6 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 				log.Err(err)
 			}
 
-			platformCmd.Error = err.Error()
-			if _, err := s.platformManager.PostCommand(ctx, platformCmd); err != nil {
-				log.Err(fmt.Sprintf("failed to post platform command: %v", err))
-			}
-
 			return
 		}
 
