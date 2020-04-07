@@ -13,7 +13,7 @@ import (
 
 // Constants provide features description.
 const (
-	edition               = "Enterprise Edition"
+	edition               = "EE"
 	enterpriseHelpMessage = "• `activity` — show currently running sessions in Postgres (states: `active`, `idle in transaction`, `disabled`)\n" +
 		"• `terminate [pid]` — terminate Postgres backend that has the specified PID.\n"
 )
