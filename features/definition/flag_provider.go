@@ -15,4 +15,5 @@ type EnterpriseOptions struct {
 	QuotaLimit    uint
 	QuotaInterval uint
 	AuditEnabled  bool
+	DBLabLimit    uint
 }

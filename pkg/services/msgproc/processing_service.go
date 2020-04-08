@@ -157,8 +157,11 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 
 	user.Session.LastActionTs = time.Now()
 	user.Session.ChannelID = incomingMessage.ChannelID
-	user.Session.PlatformSessionID = incomingMessage.SessionID
 	user.Session.Direct = incomingMessage.Direct
+
+	if user.Session.PlatformSessionID == "" {
+		user.Session.PlatformSessionID = incomingMessage.SessionID
+	}
 
 	// Filter and prepare message.
 	message := strings.TrimSpace(incomingMessage.Text)
@@ -348,11 +351,6 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 		if _, ok := err.(*net.OpError); !ok {
 			if err := s.messenger.Fail(msg, err.Error()); err != nil {
 				log.Err(err)
-			}
-
-			platformCmd.Error = err.Error()
-			if _, err := s.platformManager.PostCommand(ctx, platformCmd); err != nil {
-				log.Err(fmt.Sprintf("failed to post platform command: %+v", err))
 			}
 
 			return
