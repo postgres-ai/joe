@@ -17,6 +17,7 @@ require (
 	github.com/sergi/go-diff v1.1.0
 	github.com/sethvargo/go-password v0.1.3
 	github.com/sirupsen/logrus v1.4.2
+	github.com/stretchr/testify v1.5.1
 	gitlab.com/postgres-ai/database-lab v0.3.0
 	gopkg.in/yaml.v2 v2.2.7
 )

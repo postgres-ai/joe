@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dustin/go-humanize"
 	"github.com/hako/durafmt"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/pkg/errors"
@@ -48,7 +49,7 @@ const MsgSessionForewordTpl = "• Say 'help' to see the full list of commands.\
 	"• The actual timing values may differ from production because actual caches in DB Lab are smaller. " +
 	"However, the number of bytes and pages/buffers in plans are identical to production.\n" +
 	"\nMade with :hearts: by Postgres.ai. Bug reports, ideas, and merge requests are welcome: https://gitlab.com/postgres-ai/joe \n" +
-	"\nJoe version: %s (%s).\nSnapshot data state at: %s."
+	"\nJoe version: %s (%s).\nDatabase: %s (%s).\nSnapshot data state at: %s."
 
 // SeparatorEllipsis provides a separator for cut messages.
 const SeparatorEllipsis = "\n[...SKIP...]\n"
@@ -111,8 +112,14 @@ func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.Us
 		return err
 	}
 
-	sMsg.AppendText(getForeword(time.Duration(clone.Metadata.MaxIdleMinutes)*time.Minute,
-		s.config.App.Version, s.featurePack.Entertainer().GetEdition(), clone.Snapshot.DataStateAt))
+	sMsg.AppendText(
+		getForeword(time.Duration(clone.Metadata.MaxIdleMinutes)*time.Minute,
+			s.config.App.Version,
+			s.featurePack.Entertainer().GetEdition(),
+			clone.Snapshot.DataStateAt,
+			s.config.DBLab.DBName,
+			clone.Metadata.CloneSize,
+		))
 
 	if err := s.messenger.UpdateText(sMsg); err != nil {
 		s.messenger.Fail(sMsg, err.Error())
@@ -238,7 +245,7 @@ func generateSessionID() string {
 	return joeSessionPrefix + xid.New().String()
 }
 
-func getForeword(idleDuration time.Duration, version, edition, dataStateAt string) string {
+func getForeword(idleDuration time.Duration, version, edition, dataStateAt, dbname string, size uint64) string {
 	duration := durafmt.Parse(idleDuration.Round(time.Minute))
-	return fmt.Sprintf(MsgSessionForewordTpl, duration, version, edition, dataStateAt)
+	return fmt.Sprintf(MsgSessionForewordTpl, duration, version, edition, dbname, humanize.Bytes(size), dataStateAt)
 }
