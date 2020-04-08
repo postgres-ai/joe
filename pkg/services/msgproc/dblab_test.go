@@ -14,7 +14,6 @@ func TestForeword(t *testing.T) {
 		edition      = "CE"
 		dataStateAt  = "2020-04-06 11:30:00 UTC"
 		dbName       = "testdb"
-		dbSize       = 4050406123
 
 		expectedForeword = `• Say 'help' to see the full list of commands.
 • Sessions are fully independent. Feel free to do anything.
@@ -25,11 +24,11 @@ func TestForeword(t *testing.T) {
 Made with :hearts: by Postgres.ai. Bug reports, ideas, and merge requests are welcome: https://gitlab.com/postgres-ai/joe 
 
 Joe version: v1.0.0 (CE).
-Database: testdb (4.1 GB).
+Database: testdb.
 Snapshot data state at: 2020-04-06 11:30:00 UTC.`
 	)
 
-	foreword := getForeword(idleDuration, version, edition, dataStateAt, dbName, dbSize)
+	foreword := getForeword(idleDuration, version, edition, dataStateAt, dbName)
 
 	assert.Equal(t, expectedForeword, foreword)
 }
