@@ -216,10 +216,9 @@ func (s *ProcessingService) createDBLabClone(ctx context.Context, user *usermana
 // createPlatformSession starts a new platform session.
 func (s *ProcessingService) createPlatformSession(ctx context.Context, user *usermanager.User, channelID string) error {
 	platformSession := platform.Session{
-		ProjectName: s.config.Platform.Project,
-		UserID:      user.UserInfo.ID,
-		Username:    user.UserInfo.Name,
-		ChannelID:   channelID,
+		UserID:    user.UserInfo.ID,
+		Username:  user.UserInfo.Name,
+		ChannelID: channelID,
 	}
 
 	sessionID, err := s.platformManager.CreatePlatformSession(ctx, platformSession)
