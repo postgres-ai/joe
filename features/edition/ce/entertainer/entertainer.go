@@ -12,9 +12,7 @@ import (
 // Constants provide features description.
 const (
 	edition               = "CE"
-	enterpriseHelpMessage = "\n*EE commands*:\n" +
-		"• `activity` — show currently running sessions in Postgres (states: `active`, `idle in transaction`, `disabled`). Not supported in CE version\n" + //nolint:lll
-		"• `terminate [pid]` — terminate Postgres backend that has the specified PID. Not supported in CE version\n"
+	enterpriseHelpMessage = ""
 )
 
 // Entertainer implements entertainer interface for the Community edition.

@@ -333,13 +333,11 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 		err = hypoCmd.Execute()
 
 	case receivedCommand == CommandActivity:
-		cmdBuilder := s.featurePack.CmdBuilder()
-		activityCmd := cmdBuilder(platformCmd, msg, user.Session.CloneConnection, s.messenger).BuildActivityCmd()
+		activityCmd := command.NewActivityCmd(platformCmd, msg, user.Session.CloneConnection, s.messenger)
 		err = activityCmd.Execute()
 
 	case receivedCommand == CommandTerminate:
-		cmdBuilder := s.featurePack.CmdBuilder()
-		terminateCmd := cmdBuilder(platformCmd, msg, user.Session.CloneConnection, s.messenger).BuildTerminateCmd()
+		terminateCmd := command.NewTerminateCmd(platformCmd, msg, user.Session.CloneConnection, s.messenger)
 		err = terminateCmd.Execute()
 
 	case util.Contains(allowedPsqlCommands, receivedCommand):
