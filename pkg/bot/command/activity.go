@@ -1,10 +1,8 @@
-// +build ee
-
 /*
 2019 © Postgres.ai
 */
 
-// Package command provides the Enterprise Edition commands.
+// Package command provides assistant commands.
 package command
 
 import (

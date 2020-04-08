@@ -7,8 +7,6 @@ package definition
 
 // CmdBuilder provides a builder for Enterprise commands.
 type CmdBuilder interface {
-	BuildActivityCmd() Executor
-	BuildTerminateCmd() Executor
 }
 
 // Executor describes a command interface.
