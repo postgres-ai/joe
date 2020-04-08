@@ -31,9 +31,9 @@ var opts struct {
 	MinNotifyDuration uint `long:"min-notify-duration" description:"a time interval (in minutes) to notify a user about the finish of a long query" env:"MIN_NOTIFY_DURATION" default:"1"`
 
 	// Platform.
-	PlatformURL     string `long:"api-url" description:"Postgres.ai platform API base URL" env:"API_URL" default:"https://postgres.ai/api/general"` // nolint:lll
-	PlatformToken   string `long:"api-token" description:"Postgres.ai platform API token" env:"API_TOKEN"`
-	PlatformProject string `long:"api-project" description:"Postgres.ai platform project to assign user sessions" env:"API_PROJECT"`
+	PlatformURL     string `long:"platform-url" description:"Postgres.ai platform API base URL" env:"PLATFORM_URL" default:"https://postgres.ai/api/general"` // nolint:lll
+	PlatformToken   string `long:"platform-token" description:"Postgres.ai platform API token" env:"PLATFORM_TOKEN"`
+	PlatformProject string `long:"platform-project" description:"Postgres.ai platform project to assign user sessions" env:"PLATFORM_PROJECT"`
 	HistoryEnabled  bool   `long:"history-enabled" description:"send command and queries history to Postgres.ai platform for collaboration and visualization" env:"HISTORY_ENABLED"` // nolint:lll
 
 	// Dev.
@@ -48,6 +48,8 @@ var opts struct {
 
 // TODO (akartasov): Set the app version during build.
 const Version = "v0.7.0"
+
+var buildTime string
 
 // TODO(anatoly): Refactor configs and envs.
 
@@ -92,6 +94,7 @@ func main() {
 			Port:                     opts.ServerPort,
 			AuditEnabled:             enterpriseOptions.AuditEnabled,
 			MinNotifyDurationMinutes: opts.MinNotifyDuration,
+			MaxDBLabInstances:        enterpriseOptions.DBLabLimit,
 		},
 		Explain: explainConfig,
 		Quota: config.Quota{
@@ -141,7 +144,7 @@ func parseArgs(ent definition.FlagProvider) ([]string, error) {
 
 func formatBotVersion(commit string, branch string, modified bool) string {
 	if len(commit) < 7 {
-		return Version
+		return Version + "-" + buildTime
 	}
 
 	modifiedStr := ""

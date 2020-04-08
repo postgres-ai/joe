@@ -20,7 +20,6 @@ type Config struct {
 	Port                     uint
 	Explain                  pgexplain.ExplainConfig
 	Quota                    Quota
-	AuditEnabled             bool
 	MinNotifyDurationMinutes uint
 	Platform                 Platform
 	Space                    *Space
@@ -32,6 +31,7 @@ type App struct {
 	Port                     uint
 	AuditEnabled             bool
 	MinNotifyDurationMinutes uint
+	MaxDBLabInstances        uint
 }
 
 // Quota contains quota configuration parameters.
