@@ -402,7 +402,7 @@ func (s *ProcessingService) saveHistory(ctx context.Context, msg *models.Message
 	}
 
 	if commandResponse.CommandLink != "" && platformCmd.Command == CommandExplain {
-		msg.AppendText(fmt.Sprintf("See detailed explanation in the Postgres.ai Console: %s.", commandResponse.CommandLink))
+		msg.AppendText(fmt.Sprintf("Permalink: %s.", commandResponse.CommandLink))
 
 		if err := s.messenger.UpdateText(msg); err != nil {
 			// It's not a critical error if we cannot add the link.
