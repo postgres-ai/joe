@@ -51,6 +51,7 @@ func (c *ActivityCmd) Execute() error {
   pid::text,
   (case when (query <> '' and length(query) > %[1]d) then left(query, %[1]d) || '...' else query end) as query,
   coalesce(state, '') as state,
+  coalesce(backend_type, '') as backend_type,
   coalesce(wait_event, '') as wait_event,
   coalesce(wait_event_type, '') as wait_event_type,
   coalesce((clock_timestamp() - query_start)::text, '') as query_duration,
