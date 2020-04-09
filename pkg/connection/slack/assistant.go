@@ -12,6 +12,8 @@ import (
 	"html"
 	"io/ioutil"
 	"net/http"
+	"regexp"
+	"strings"
 
 	"github.com/nlopes/slack"
 	"github.com/nlopes/slack/slackevents"
@@ -21,9 +23,14 @@ import (
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
 
 	"gitlab.com/postgres-ai/joe/pkg/config"
+	"gitlab.com/postgres-ai/joe/pkg/models"
 	"gitlab.com/postgres-ai/joe/pkg/services/msgproc"
 	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"
-	"gitlab.com/postgres-ai/joe/pkg/models"
+)
+
+var (
+	linkRegexp  = regexp.MustCompile(`<http:\/\/[\w.]+\|([.\w]+)>`)
+	emailRegexp = regexp.MustCompile(`<mailto:['@\w.]+\|(['@.\w]+)>`)
 )
 
 // Assistant provides a service for interaction with a communication channel.
@@ -167,9 +174,11 @@ func (a *Assistant) appMentionEventToIncomingMessage(event *slackevents.AppMenti
 
 // messageEventToIncomingMessage converts a Slack message event to the standard incoming message.
 func (a *Assistant) messageEventToIncomingMessage(event *slackevents.MessageEvent) models.IncomingMessage {
+	message := unfurlLinks(event.Text)
+
 	inputEvent := models.IncomingMessage{
 		SubType:     event.SubType,
-		Text:        event.Text,
+		Text:        message,
 		ChannelID:   event.Channel,
 		ChannelType: event.ChannelType,
 		UserID:      event.User,
@@ -188,6 +197,18 @@ func (a *Assistant) messageEventToIncomingMessage(event *slackevents.MessageEven
 	}
 
 	return inputEvent
+}
+
+func unfurlLinks(text string) string {
+	if strings.Contains(text, "<http:") {
+		text = linkRegexp.ReplaceAllString(text, `$1`)
+	}
+
+	if strings.Contains(text, "<mailto:") {
+		text = emailRegexp.ReplaceAllString(text, `$1`)
+	}
+
+	return text
 }
 
 // parseEvent parses slack events.
