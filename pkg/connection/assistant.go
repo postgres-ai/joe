@@ -28,6 +28,9 @@ type MessageProcessor interface {
 	// ProcessMessageEvent defines the method for processing of incoming messages.
 	ProcessMessageEvent(context.Context, models.IncomingMessage)
 
+	// ProcessDirectMessageEvent defines the method for processing of incoming direct messages.
+	ProcessDirectMessageEvent(context.Context, models.IncomingMessage)
+
 	// ProcessAppMentionEvent defines the method for replying to an application mention event.
 	ProcessAppMentionEvent(incomingMessage models.IncomingMessage)
 

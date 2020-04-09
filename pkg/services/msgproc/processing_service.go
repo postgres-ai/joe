@@ -443,6 +443,16 @@ func (s *ProcessingService) ProcessAppMentionEvent(incomingMessage models.Incomi
 	}
 }
 
+// ProcessDirectMessageEvent processes of incoming direct messages.
+func (s *ProcessingService) ProcessDirectMessageEvent(_ context.Context, incomingMessage models.IncomingMessage) {
+	msg := models.NewMessage(incomingMessage)
+	msg.SetText("Direct messages are not supported. Use Postgres.ai Platform instead: https://postgres.ai/console/")
+
+	if err := s.messenger.Publish(msg); err != nil {
+		log.Err("Failed to publish a direct message:", err)
+	}
+}
+
 // Show bot usage hints.
 func (s *ProcessingService) showBotHints(incomingMessage models.IncomingMessage, command string, query string) {
 	parts := strings.SplitN(query, " ", 2)

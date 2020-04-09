@@ -38,11 +38,14 @@ team Workspace. Joe Bot should be available with public URL calls from Slack.
 1. Grant permissions on the "OAuth & Permissions" page for the following "Bot Token Scopes" :
     * `channels:history`
     * `chat:write`
+    * `files:read`
     * `files:write`
     * `incoming-webhook`
     * `reactions:write`
     * `users.profile:read`
     * `users:read`
+    * `im:read`
+    * `im:write`
 1. Run Joe Bot with `Bot User OAuth Access Token ("xoxb-TOKEN")` from "OAuth & Permissions" Feature and `Signing Secret` from "Basic Information" page (See **Run** below).
 1. Enable Incoming Webhooks Feature.
     * Press "Add New Webhook to Workspace" and select a previously created channel to post token.

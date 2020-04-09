@@ -253,6 +253,10 @@ func (a *Assistant) handleEvent(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
+			if ev.ChannelType == slack.TYPE_IM {
+				a.processDirectMessage(ev)
+			}
+
 			msgProcessor, err := a.getProcessingService(ev.Channel)
 			if err != nil {
 				log.Err("failed to get processing service", err)
@@ -307,6 +311,17 @@ func (a *Assistant) messageEventToIncomingMessage(event *slackevents.MessageEven
 	}
 
 	return inputEvent
+}
+
+// processDirectMessage receives and processes direct messages.
+func (a *Assistant) processDirectMessage(ev *slackevents.MessageEvent) {
+	incomingMessage := a.messageEventToIncomingMessage(ev)
+
+	// Get a random element because we don't know channelID of a direct message.
+	for _, v := range a.msgProcessors {
+		v.ProcessDirectMessageEvent(context.TODO(), incomingMessage)
+		break
+	}
 }
 
 // parseEvent parses slack events.
