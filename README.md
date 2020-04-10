@@ -38,6 +38,7 @@ team Workspace. Joe Bot should be available with public URL calls from Slack.
 1. Grant permissions on the "OAuth & Permissions" page for the following "Bot Token Scopes" :
     * `channels:history`
     * `chat:write`
+    * `files:read`
     * `files:write`
     * `incoming-webhook`
     * `reactions:write`
