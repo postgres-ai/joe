@@ -309,7 +309,7 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 
 	case receivedCommand == CommandPlan:
 		planCmd := command.NewPlan(platformCmd, msg, user.Session.CloneConnection, s.messenger)
-		err = planCmd.Execute()
+		err = planCmd.Execute(ctx)
 
 	case receivedCommand == CommandExec:
 		execCmd := command.NewExec(platformCmd, msg, user.Session.CloneConnection, s.messenger)
