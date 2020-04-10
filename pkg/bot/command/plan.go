@@ -42,12 +42,12 @@ func NewPlan(cmd *platform.Command, msg *models.Message, db *pgxpool.Pool, messe
 }
 
 // Execute runs the plan command.
-func (cmd PlanCmd) Execute() error {
+func (cmd PlanCmd) Execute(ctx context.Context) error {
 	if cmd.command.Query == "" {
 		return errors.New(MsgPlanOptionReq)
 	}
 
-	if _, _, err := cmd.explainWithoutExecution(); err != nil {
+	if _, err := cmd.explainWithoutExecution(ctx); err != nil {
 		return errors.Wrap(err, "failed to run explain without execution")
 	}
 
@@ -57,11 +57,11 @@ func (cmd PlanCmd) Execute() error {
 }
 
 // explainWithoutExecution runs explain without execution.
-func (cmd *PlanCmd) explainWithoutExecution() (string, bool, error) {
+func (cmd *PlanCmd) explainWithoutExecution(ctx context.Context) (string, error) {
 	// Explain request and show.
 	explainResult, err := querier.DBQueryWithResponse(cmd.db, queryExplain+cmd.command.Query)
 	if err != nil {
-		return "", false, err
+		return "", err
 	}
 
 	cmd.command.PlanText = explainResult
@@ -72,7 +72,7 @@ func (cmd *PlanCmd) explainWithoutExecution() (string, bool, error) {
 	includeHypoPG := false
 	explainPlanTitle := ""
 
-	if hypoIndexes, err := listHypoIndexes(context.TODO(), cmd.db); err == nil && len(hypoIndexes) > 0 {
+	if hypoIndexes, err := listHypoIndexes(ctx, cmd.db); err == nil && len(hypoIndexes) > 0 {
 		if isHypoIndexInvolved(explainResult, hypoIndexes) {
 			explainPlanTitle = " (HypoPG involved :ghost:)"
 			includeHypoPG = true
@@ -83,32 +83,36 @@ func (cmd *PlanCmd) explainWithoutExecution() (string, bool, error) {
 
 	if err := cmd.messenger.UpdateText(cmd.message); err != nil {
 		log.Err("Show plan: ", err)
-		return "", false, err
+		return "", err
 	}
 
 	permalink, err := cmd.messenger.AddArtifact("plan-wo-execution-text", explainResult, cmd.message.ChannelID, cmd.message.MessageID)
 	if err != nil {
 		log.Err("File upload failed:", err)
-		return "", false, err
+		return "", err
 	}
 
 	if includeHypoPG {
 		msgInitText = cmd.message.Text
 
-		queryWithoutHypo := fmt.Sprintf(`set hypopg.enabled to false; %s %s; reset hypopg.enabled;`, queryExplain,
-			strings.Trim(cmd.command.Query, ";"))
-
-		explainResultWithoutHypo, err := querier.DBQueryWithResponse(cmd.db, queryWithoutHypo)
-		if err == nil {
+		if explainResultWithoutHypo, err := cmd.runQueryWithoutHypo(ctx); err == nil {
 			planPreview, isTruncated = text.CutText(explainResultWithoutHypo, PlanSize, SeparatorPlan)
 
 			cmd.message.AppendText(fmt.Sprintf("*Plan without HypoPG indexes:*\n```%s```", planPreview))
 			if err := cmd.messenger.UpdateText(cmd.message); err != nil {
 				log.Err("Show plan: ", err)
-				return "", false, err
+				return "", err
 			}
 
 			msgInitText = cmd.message.Text
+
+			if _, err := cmd.messenger.AddArtifact("plan-wo-execution-wo-hypo-text", explainResultWithoutHypo,
+				cmd.message.ChannelID, cmd.message.MessageID); err != nil {
+				log.Err("File upload failed:", err)
+				return "", err
+			}
+		} else {
+			log.Err("Failed to get a plan without a hypo index:", err)
 		}
 	}
 
@@ -121,8 +125,37 @@ func (cmd *PlanCmd) explainWithoutExecution() (string, bool, error) {
 	err = cmd.messenger.UpdateText(cmd.message)
 	if err != nil {
 		log.Err("File: ", err)
-		return "", false, err
+		return "", err
 	}
 
-	return msgInitText, isTruncated, nil
+	return msgInitText, nil
+}
+
+func (cmd *PlanCmd) runQueryWithoutHypo(ctx context.Context) (string, error) {
+	tx, err := cmd.db.Begin(ctx)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to start a transaction")
+	}
+
+	defer func() {
+		// Rollback is safe to call even if the tx is already closed.
+		err = tx.Rollback(ctx)
+	}()
+
+	if _, err := tx.Exec(ctx, "set hypopg.enabled to false;"); err != nil {
+		return "", errors.Wrap(err, "failed to disable a hypopg setting")
+	}
+
+	queryWithoutHypo := fmt.Sprintf(`%s %s`, queryExplain, strings.Trim(cmd.command.Query, ";"))
+
+	var explainResultWithoutHypo string
+	if err := tx.QueryRow(ctx, queryWithoutHypo).Scan(&explainResultWithoutHypo); err != nil {
+		return "", errors.Wrap(err, "failed to run query")
+	}
+
+	if _, err := tx.Exec(ctx, "reset hypopg.enabled"); err != nil {
+		return "", errors.Wrap(err, "failed to reset a hypopg setting ")
+	}
+
+	return explainResultWithoutHypo, tx.Commit(ctx)
 }

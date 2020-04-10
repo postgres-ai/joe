@@ -38,7 +38,7 @@ func Explain(msgSvc connection.Messenger, command *platform.Command, msg *models
 	}
 
 	cmd := NewPlan(command, msg, db, msgSvc)
-	msgInitText, isTruncated, err := cmd.explainWithoutExecution()
+	msgInitText, err := cmd.explainWithoutExecution(context.TODO())
 	if err != nil {
 		return errors.Wrap(err, "failed to run explain without execution")
 	}
