@@ -10,7 +10,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"gitlab.com/postgres-ai/joe/pkg/config"
+	"gitlab.com/postgres-ai/joe/features/definition"
 	"gitlab.com/postgres-ai/joe/pkg/models"
 )
 
@@ -22,14 +22,14 @@ type UserInformer interface {
 // UserManager defines a user manager service.
 type UserManager struct {
 	UserInformer UserInformer
-	QuotaConfig  config.Quota
+	QuotaConfig  definition.Quota
 
 	usersMutex sync.RWMutex
 	users      map[string]*User // UID -> UserInfo.
 }
 
 // NewUserManager creates a new user manager.
-func NewUserManager(informer UserInformer, quotaCfg config.Quota) *UserManager {
+func NewUserManager(informer UserInformer, quotaCfg definition.Quota) *UserManager {
 	return &UserManager{
 		UserInformer: informer,
 		QuotaConfig:  quotaCfg,

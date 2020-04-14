@@ -14,12 +14,12 @@ import (
 // Instance contains a Database Lab client and its configuration.
 type Instance struct {
 	client *dblabapi.Client
-	cfg    config.DBLabInstance
+	cfg    config.DBLabParams
 }
 
 // NewDBLabInstance creates a new Database Lab Instance.
-func NewDBLabInstance(client *dblabapi.Client, cfg config.DBLabInstance) *Instance {
-	return &Instance{client: client, cfg: cfg}
+func NewDBLabInstance(client *dblabapi.Client) *Instance {
+	return &Instance{client: client}
 }
 
 // Client returns a Database Lab client of the instance.
@@ -27,7 +27,12 @@ func (d Instance) Client() *dblabapi.Client {
 	return d.client
 }
 
-// Config returns a Database Lab config of the instance.
-func (d Instance) Config() config.DBLabInstance {
+// SetCfg sets database parameters of created clones.
+func (d *Instance) SetCfg(cfg config.DBLabParams) {
+	d.cfg = cfg
+}
+
+// Config returns database parameters of created clones.
+func (d Instance) Config() config.DBLabParams {
 	return d.cfg
 }

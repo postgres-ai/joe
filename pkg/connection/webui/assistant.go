@@ -29,8 +29,8 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"
 )
 
-// WorkspaceType defines a workspace type.
-const WorkspaceType = "webui"
+// CommunicationType defines a workspace type.
+const CommunicationType = "webui"
 
 // Assistant provides a service for interaction with a communication channel.
 type Assistant struct {
@@ -88,7 +88,7 @@ func (a *Assistant) Init() error {
 
 // AddDBLabInstanceForChannel sets a message processor for a specific channel.
 func (a *Assistant) AddDBLabInstanceForChannel(channelID string, dbLabInstance *dblab.Instance) error {
-	messageProcessor, err := a.buildMessageProcessor(a.appCfg, dbLabInstance)
+	messageProcessor, err := a.buildMessageProcessor(dbLabInstance)
 	if err != nil {
 		return errors.Wrap(err, "failed to build a message processor")
 	}
@@ -98,21 +98,22 @@ func (a *Assistant) AddDBLabInstanceForChannel(channelID string, dbLabInstance *
 	return nil
 }
 
-func (a *Assistant) buildMessageProcessor(appCfg *config.Config, dbLabInstance *dblab.Instance) (*msgproc.ProcessingService, error) {
-	platformClient, err := platform.NewClient(appCfg.Platform)
+func (a *Assistant) buildMessageProcessor(dbLabInstance *dblab.Instance) (*msgproc.ProcessingService, error) {
+	platformClient, err := platform.NewClient(a.appCfg.Platform)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create a Platform client")
 	}
 
 	messenger := NewMessenger(platformClient)
 	userInformer := NewUserInformer()
-	userManager := usermanager.NewUserManager(userInformer, appCfg.Quota)
+	userManager := usermanager.NewUserManager(userInformer, a.appCfg.Enterprise.Quota)
 
 	processingCfg := msgproc.ProcessingConfig{
-		App:      appCfg.App,
-		Platform: appCfg.Platform,
-		Explain:  appCfg.Explain,
+		App:      a.appCfg.App,
+		Platform: a.appCfg.Platform,
+		Explain:  a.appCfg.Explain,
 		DBLab:    dbLabInstance.Config(),
+		EntOpts:  a.appCfg.Enterprise,
 	}
 
 	return msgproc.NewProcessingService(messenger, MessageValidator{}, dbLabInstance.Client(), userManager, platformClient,
@@ -200,7 +201,7 @@ func (a *Assistant) channelsHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
-	work, ok := a.appCfg.Space.Connections[WorkspaceType]
+	work, ok := a.appCfg.ChannelMapping.CommunicationTypes[CommunicationType]
 
 	// For now, we will use only the first entry in the config.
 	if !ok || len(work) == 0 {

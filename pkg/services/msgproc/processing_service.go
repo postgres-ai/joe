@@ -20,6 +20,7 @@ import (
 	"gitlab.com/postgres-ai/database-lab/pkg/util"
 
 	"gitlab.com/postgres-ai/joe/features"
+	"gitlab.com/postgres-ai/joe/features/definition"
 	"gitlab.com/postgres-ai/joe/pkg/bot/command"
 	"gitlab.com/postgres-ai/joe/pkg/config"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
@@ -114,7 +115,8 @@ type ProcessingConfig struct {
 	App      config.App
 	Platform config.Platform
 	Explain  pgexplain.ExplainConfig
-	DBLab    config.DBLabInstance
+	DBLab    config.DBLabParams
+	EntOpts  definition.EnterpriseOptions
 }
 
 var spaceRegex = regexp.MustCompile(`\s+`)
@@ -230,7 +232,7 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 	queryPreview = strings.ReplaceAll(queryPreview, "\t", " ")
 	queryPreview, _ = text.CutText(queryPreview, QueryPreviewSize, SeparatorEllipsis)
 
-	if s.config.App.AuditEnabled {
+	if s.config.EntOpts.Audit.Enabled {
 		audit, err := json.Marshal(models.Audit{
 			ID:       user.UserInfo.ID,
 			Name:     user.UserInfo.Name,
@@ -285,8 +287,7 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 		return
 	}
 
-	remindDuration := time.Duration(s.config.App.MinNotifyDurationMinutes) * time.Minute
-	if err := msg.SetNotifyAt(remindDuration); err != nil {
+	if err := msg.SetNotifyAt(s.config.App.MinNotifyDuration); err != nil {
 		log.Err(err)
 	}
 
