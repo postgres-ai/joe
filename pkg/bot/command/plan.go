@@ -148,14 +148,31 @@ func (cmd *PlanCmd) runQueryWithoutHypo(ctx context.Context) (string, error) {
 
 	queryWithoutHypo := fmt.Sprintf(`%s %s`, queryExplain, strings.Trim(cmd.command.Query, ";"))
 
-	var explainResultWithoutHypo string
-	if err := tx.QueryRow(ctx, queryWithoutHypo).Scan(&explainResultWithoutHypo); err != nil {
+	rows, err := tx.Query(ctx, queryWithoutHypo)
+	if err != nil {
 		return "", errors.Wrap(err, "failed to run query")
+	}
+	defer rows.Close()
+
+	explainResultWithoutHypo := strings.Builder{}
+
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return "", errors.Wrap(err, "failed to scan result")
+		}
+
+		explainResultWithoutHypo.WriteString(s)
+		explainResultWithoutHypo.WriteString("\n")
+	}
+
+	if err := rows.Err(); err != nil {
+		return "", errors.Wrap(err, "failed to complete query")
 	}
 
 	if _, err := tx.Exec(ctx, "reset hypopg.enabled"); err != nil {
 		return "", errors.Wrap(err, "failed to reset a hypopg setting ")
 	}
 
-	return explainResultWithoutHypo, tx.Commit(ctx)
+	return explainResultWithoutHypo.String(), tx.Commit(ctx)
 }
