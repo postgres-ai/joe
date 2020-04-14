@@ -16,6 +16,6 @@ import (
 // nolint:gochecknoinits
 func init() {
 	commandBuilder = builder.NewBuilder
-	flagProvider = &options.Extra{}
+	optionProvider = &options.Extra{}
 	entertainerService = entertainer.New()
 }

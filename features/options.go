@@ -9,10 +9,10 @@ import (
 	"gitlab.com/postgres-ai/joe/features/definition"
 )
 
-// options contains extra flags for different editions of the application.
-var flagProvider definition.FlagProvider
+// optionProvider provides extra options for different editions of the application.
+var optionProvider definition.OptionProvider
 
-// GetFlagProvider gets a flag provider of Enterprise options.
-func GetFlagProvider() definition.FlagProvider {
-	return flagProvider
+// GetOptionProvider gets a flag provider of Enterprise options.
+func GetOptionProvider() definition.OptionProvider {
+	return optionProvider
 }

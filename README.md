@@ -25,9 +25,31 @@ To discuss Joe, [join our community Slack](https://database-lab-team-slack-invit
 ## Install Software
 
 ### 1. Database Lab
-Install and setup [Database Lab](https://gitlab.com/postgres-ai/database-lab) 
+Install and setup [Database Lab](https://gitlab.com/postgres-ai/database-lab)
+ 
+Prepare one or more Database Lab instances before configuring Joe bot.
 
-### 2. Slack App
+Then, configure ways of communication with Joe.
+
+### 2. Configure communication channels
+
+There are two available types of communication:
+- Web UI powered by [Postgres.ai Console](https://postgres.ai/console/)
+- Slack
+
+You can use both of them in parallel. Feel free to implement more types of communication: see [communication channels issues](https://gitlab.com/postgres-ai/joe/-/issues?label_name%5B%5D=Communication+channel).
+
+### 2a. Set up Joe in Postgres.ai Console ("Web UI")
+If you don't need Web UI and prefer working with Joe only in messengers (such as Slack), proceed to the next step.
+
+To configure Web UI:
+
+1. First, get your `PLATFORM_TOKEN`. In [Postgres.ai Console](https://postgres.ai/console/), switch to proper organization and open the `Access Tokens` page.
+1. Then, go to the `Joe instances` page from the `SQL Optimization` sidebar section, choose a project from the dropdown menu and `Add instance`.
+1. Generate `Signing secret`. Use the secret as `WEBUI_SIGNING_SECRET` at the configuration file. We will add and verify the URL on the last step.
+
+
+### 2b. Slack App
 Configure a new Slack App in order to use Joe in Slack and add the app to your
 team Workspace. Joe Bot should be available with public URL calls from Slack.
 1. Create "#db-lab" channel in your Slack Workspace (You can use another channel name).
@@ -49,13 +71,11 @@ team Workspace. Joe Bot should be available with public URL calls from Slack.
     * Press "Add New Webhook to Workspace" and select a previously created channel to post token.
 1. Enable Event Subscriptions Feature.
     * Specify Request URL (URL will be verified by Slack API) (e.g. http://35.200.200.200:3001, https://joe.dev.domain.com). You would need to run Joe with proper settings before you could verify Request URL.
-    * Add `message.channels` to "Subscribe to Bot Events".
-1. Invite "Joe Bot" to "#db-lab" channel.
 
 ### 3. Run
 Deploy Joe instance in your infrastructure. You would need to:
 
-1. Configure communication channels. You can copy the sample `config/config.sample.yml` to `~/.dblab/joe_configs/config.yml`, inspect all configuration options, and adjust if needed.
+1. Configure communication channels. You can copy the sample `config/config.sample.yml` to `~/.dblab/configs/joe_config.yml`, inspect all configuration options, and adjust if needed.
    
 1. Run the Joe Docker image to connect with the Database Lab server according to the previous configurations. 
     Example:
@@ -65,14 +85,32 @@ Deploy Joe instance in your infrastructure. You would need to:
       --name joe_bot \
       --publish 3001:3001 \
       --env SERVER_PORT=3001 \
-      --volume ~/.dblab/joe_configs/config.yml:/home/configs/config.yml \
+      --volume ~/.dblab/configs/joe_config.yml:/home/config/config.yml \
       --restart=on-failure \
       --detach \
       postgresai/joe:latest
     ``` 
     The Joe instance will be running by port 3001 of the current machine.
     
-1. Make a publicly accessible HTTP(S) server port specified in the configuration for Slack Events Request URL.
+1. Make a publicly accessible HTTP(S) server port specified in the configuration for Web UI/Slack Events Request URL.
+
+### 4. Verify the configuration
+
+### 4a. Finish the WebUI configuration
+
+1. Return to the page of Joe configuration in the Console, enter the URL with the specific path `/webui/`. For example, `https://joe.dev.domain.com/webui/`.
+1. Press the `Verify` button to check connection and `Add` the instance after the verification is passed.
+1. Choose the created instance and send a command.
+
+
+### 4b. Finish the Slack App configuration
+1. Enable Event Subscriptions Feature.
+    * Go to the "Event Subscriptions" page.
+    * Specify Request URL adding the specific for connection path: `/slack/` (URL will be verified by Slack API). You would need to run Joe with proper settings before you could verify Request URL. For example, `https://joe.dev.domain.com/slack/`
+    * In the "Subscribe to Bot Events" dropdown-tab add `message.channels`.
+    * Press "Save Changes".
+
+1. Invite "Joe Bot" to "#db-lab" channel.
 1. Send a command to the #db-lab channel. For example, `help`.
 
 

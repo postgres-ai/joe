@@ -22,20 +22,22 @@ const (
 
 // Extra provides a mock of Enterprise flags.
 type Extra struct {
-	QuotaLimit    uint `long:"quota-limit" description:"Enterprise option. Not supported in CE version" default:"10" choice:"10"`
-	QuotaInterval uint `long:"quota-interval" description:"Enterprise option. Not supported in CE version" default:"60" choice:"60"`
-	AuditEnabled  bool `long:"audit-enabled" description:"Enterprise option. Not supported in CE version"`
-	DBLabLimit    uint `long:"dblab-limit" description:"Enterprise option. Not supported in CE version" default:"1"`
 }
 
-var _ definition.FlagProvider = (*Extra)(nil)
+var _ definition.OptionProvider = (*Extra)(nil)
 
-// ToOpts returns the EnterpriseOptions struct.
-func (e *Extra) ToOpts() definition.EnterpriseOptions {
+// GetEnterpriseOptions returns the EnterpriseOptions struct with default options.
+func (e *Extra) GetEnterpriseOptions(_ string) (definition.EnterpriseOptions, error) {
 	return definition.EnterpriseOptions{
-		QuotaLimit:    defaultQuotaLimit,
-		QuotaInterval: defaultQuotaInterval,
-		AuditEnabled:  defaultAudit,
-		DBLabLimit:    defaultDBLabLimit,
-	}
+		Quota: definition.Quota{
+			Limit:    defaultQuotaLimit,
+			Interval: defaultQuotaInterval,
+		},
+		Audit: definition.Audit{
+			Enabled: defaultAudit,
+		},
+		DBLab: definition.DBLab{
+			InstanceLimit: defaultDBLabLimit,
+		},
+	}, nil
 }

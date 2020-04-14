@@ -6,67 +6,54 @@
 package config
 
 import (
-	"io/ioutil"
+	"time"
 
-	"gopkg.in/yaml.v2"
-
+	"gitlab.com/postgres-ai/joe/features/definition"
 	"gitlab.com/postgres-ai/joe/pkg/pgexplain"
 )
 
 // Config defines an App configuration.
 type Config struct {
-	App                      App
-	Version                  string
-	Port                     uint
-	Explain                  pgexplain.ExplainConfig
-	Quota                    Quota
-	MinNotifyDurationMinutes uint
-	Platform                 Platform
-	Space                    *Space
+	App            App                          `yaml:"app"`
+	Platform       Platform                     `yaml:"platform"`
+	ChannelMapping *ChannelMapping              `yaml:"channelMapping"`
+	Explain        pgexplain.ExplainConfig      `yaml:"-"`
+	Enterprise     definition.EnterpriseOptions `yaml:"-"`
 }
 
 // App defines a general application configuration.
 type App struct {
-	Version                  string
-	Port                     uint
-	AuditEnabled             bool
-	MinNotifyDurationMinutes uint
-	MaxDBLabInstances        uint
-}
-
-// Quota contains quota configuration parameters.
-type Quota struct {
-	Limit    uint
-	Interval uint // Seconds.
+	Version           string
+	Port              uint          `env:"SERVER_PORT" env-default:"3001"`
+	MinNotifyDuration time.Duration `env:"MIN_NOTIFY_DURATION" env-default:"60s"`
+	Debug             bool          `env:"JOE_DEBUG"`
 }
 
 // Platform describes configuration parameters of a Postgres.ai platform.
 type Platform struct {
-	URL            string
-	Token          string
-	Project        string
-	HistoryEnabled bool
+	URL            string `env:"PLATFORM_URL" env-default:"https://postgres.ai/api/general"`
+	Token          string `env:"PLATFORM_TOKEN"`
+	Project        string `env:"PLATFORM_PROJECT"`
+	HistoryEnabled bool   `env:"HISTORY_ENABLED"`
 }
 
-// Space contains configuration parameters of connections and Database Labs.
-type Space struct {
-	Connections    map[string][]Workspace   `yaml:"connections,flow"`
-	DBLabInstances map[string]DBLabInstance `yaml:"dblabs"`
+// ChannelMapping contains configuration parameters of communication types and Database Labs.
+type ChannelMapping struct {
+	CommunicationTypes map[string][]Workspace   `yaml:"communicationTypes,flow"`
+	DBLabInstances     map[string]DBLabInstance `yaml:"dblabServers"`
 }
 
 // DBLabInstance contains Database Lab config.
 type DBLabInstance struct {
-	URL     string `yaml:"url"`
-	Token   string `yaml:"token"`
-	DBName  string `yaml:"dbname"`
-	SSLMode string `yaml:"sslmode"`
+	URL   string
+	Token string
 }
 
 // Workspace defines a connection space.
 type Workspace struct {
-	Name        string      `yaml:"name"`
-	Credentials Credentials `yaml:"credentials"`
-	Channels    []Channel   `yaml:"channels"`
+	Name        string
+	Credentials Credentials
+	Channels    []Channel
 }
 
 // Credentials defines connection space credentials.
@@ -77,22 +64,13 @@ type Credentials struct {
 
 // Channel defines a connection channel configuration.
 type Channel struct {
-	ChannelID string `yaml:"channelID" json:"channel_id"`
-	DBLabID   string `yaml:"dblab" json:"-"`
+	ChannelID   string      `yaml:"channelID" json:"channel_id"`
+	DBLabID     string      `yaml:"dblabServer" json:"-"`
+	DBLabParams DBLabParams `yaml:"dblabParams" json:"-"`
 }
 
-// Load loads configuration from file.
-func Load(filename string) (*Space, error) {
-	//nolint:gosec
-	bytes, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-
-	var config Space
-	if err = yaml.Unmarshal(bytes, &config); err != nil {
-		return nil, err
-	}
-
-	return &config, nil
+// DBLabParams defines database params for clone creation.
+type DBLabParams struct {
+	DBName  string `yaml:"dbname" json:"-"`
+	SSLMode string `yaml:"sslmode" json:"-"`
 }
