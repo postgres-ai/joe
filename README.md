@@ -75,7 +75,7 @@ team Workspace. Joe Bot should be available with public URL calls from Slack.
 ### 3. Run
 Deploy Joe instance in your infrastructure. You would need to:
 
-1. Configure communication channels. You can copy the sample `config/config.sample.yml` to `~/.dblab/configs/joe_config.yml`, inspect all configuration options, and adjust if needed.
+1. Configure communication channels. You can copy the example `config/config.example.yml` to `~/.dblab/configs/joe_config.yml`, inspect all configuration options, and adjust if needed.
    
 1. Run the Joe Docker image to connect with the Database Lab server according to the previous configurations. 
     Example:
