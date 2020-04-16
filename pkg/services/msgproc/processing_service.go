@@ -9,9 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/pkg/errors"
 
@@ -119,8 +119,6 @@ type ProcessingConfig struct {
 	EntOpts  definition.EnterpriseOptions
 }
 
-var spaceRegex = regexp.MustCompile(`\s+`)
-
 // NewProcessingService creates a new processing service.
 func NewProcessingService(messengerSvc connection.Messenger, msgValidator connection.MessageValidator, dblab *dblabapi.Client,
 	userSvc *usermanager.UserManager, platform *platform.Client, cfg ProcessingConfig,
@@ -167,8 +165,7 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 
 	// Filter and prepare message.
 	message := strings.TrimSpace(incomingMessage.Text)
-	message = strings.TrimLeft(message, "`")
-	message = strings.TrimRight(message, "`")
+	message = strings.Trim(message, "`")
 	message = formatMessage(message)
 
 	// Get command from snippet if exists. Snippets allow longer queries support.
@@ -195,19 +192,7 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 		return
 	}
 
-	// Replace any number of spaces, tab, new lines with single space.
-	message = spaceRegex.ReplaceAllString(message, " ")
-
-	const messageParts = 2
-
-	// Message: "command query(optional)".
-	parts := strings.SplitN(message, " ", messageParts)
-	receivedCommand := strings.ToLower(parts[0])
-
-	query := ""
-	if len(parts) >= messageParts {
-		query = parts[1]
-	}
+	receivedCommand, query := parseIncomingMessage(message)
 
 	s.showBotHints(incomingMessage, receivedCommand, query)
 
@@ -503,6 +488,30 @@ func formatMessage(msg string) string {
 	msg = strings.ReplaceAll(msg, "’", "'")
 
 	return msg
+}
+
+// parseIncomingMessage extracts received command and query from incoming messages.
+func parseIncomingMessage(message string) (string, string) {
+	var receivedCommand, query string
+
+	for i, messageRune := range message {
+		if unicode.IsSpace(messageRune) {
+			// Message: "command query(optional)".
+			receivedCommand = message[:i]
+
+			// Extract query and keep the original formatting.
+			query = strings.TrimSpace(message[len(receivedCommand):])
+
+			break
+		}
+	}
+
+	// No spaces found.
+	if receivedCommand == "" {
+		receivedCommand = message
+	}
+
+	return receivedCommand, query
 }
 
 func appendSessionID(text string, u *usermanager.User) string {
