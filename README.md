@@ -27,7 +27,9 @@ To discuss Joe, [join our community Slack](https://database-lab-team-slack-invit
 ### 1. Database Lab
 Install and setup [Database Lab](https://gitlab.com/postgres-ai/database-lab)
  
-Prepare one or more Database Lab instances before configuring Joe bot.
+Prepare one or more Database Lab instances before configuring Joe bot. 
+
+> ⚠ Make sure that `accessHost` is specified in the Database Lab configuration file.
 
 Then, configure ways of communication with Joe.
 
