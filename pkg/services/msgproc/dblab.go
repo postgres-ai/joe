@@ -78,7 +78,7 @@ var hintExplainDmlWords = []string{"insert", "select", "update", "delete", "with
 var hintExecDdlWords = []string{"alter", "create", "drop", "set"}
 
 // runSession starts a user session if not exists.
-func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.User, incomingMessage models.IncomingMessage) error {
+func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.User, incomingMessage models.IncomingMessage) (err error) {
 	sMsg := models.NewMessage(incomingMessage)
 
 	if user.Session.Clone != nil {
@@ -104,11 +104,17 @@ func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.Us
 
 	user.Session.PlatformSessionID = sessionID
 
+	defer func() {
+		if err != nil {
+			if failErr := s.messenger.Fail(sMsg, err.Error()); failErr != nil {
+				log.Err(failErr)
+			}
+		}
+	}()
+
 	clone, err := s.createDBLabClone(ctx, user, sessionID)
 	if err != nil {
-		s.messenger.Fail(sMsg, err.Error())
-
-		return err
+		return errors.Wrap(err, "failed to create a Database Lab clone")
 	}
 
 	sMsg.AppendText(
@@ -120,7 +126,6 @@ func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.Us
 		))
 
 	if err := s.messenger.UpdateText(sMsg); err != nil {
-		s.messenger.Fail(sMsg, err.Error())
 		return errors.Wrap(err, "failed to append message with a foreword")
 	}
 
@@ -142,15 +147,13 @@ func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.Us
 
 	if s.config.Platform.HistoryEnabled && incomingMessage.SessionID == "" {
 		if err := s.createPlatformSession(ctx, user, sMsg.ChannelID); err != nil {
-			s.messenger.Fail(sMsg, err.Error())
-			return err
+			return errors.Wrap(err, "failed to create a platform session")
 		}
 	}
 
 	sMsg.AppendText(fmt.Sprintf("Session started: `%s`", sessionID))
 
 	if err := s.messenger.UpdateText(sMsg); err != nil {
-		s.messenger.Fail(sMsg, err.Error())
 		return errors.Wrap(err, "failed to append message about session start")
 	}
 
@@ -209,6 +212,11 @@ func (s *ProcessingService) createDBLabClone(ctx context.Context, user *usermana
 	}
 
 	clone.DB.Password = pwd
+
+	// To get an accessible address in case running the assistant inside a container.
+	if clone.DB.Host == "localhost" || clone.DB.Host == "127.0.0.1" {
+		clone.DB.Host = s.DBLab.URL("").Hostname()
+	}
 
 	return clone, nil
 }
