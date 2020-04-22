@@ -34,7 +34,7 @@ type Platform struct {
 	URL            string `env:"PLATFORM_URL" env-default:"https://postgres.ai/api/general"`
 	Token          string `env:"PLATFORM_TOKEN"`
 	Project        string `env:"PLATFORM_PROJECT"`
-	HistoryEnabled bool   `env:"HISTORY_ENABLED"`
+	HistoryEnabled bool   `env:"HISTORY_ENABLED" env-default:"true"`
 }
 
 // ChannelMapping contains configuration parameters of communication types and Database Labs.

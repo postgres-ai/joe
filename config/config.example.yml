@@ -22,8 +22,8 @@ platform:
   project: "demo"
 
   # Enable sending command and queries history to the Postgres.ai Platform
-  # for collaboration and visualization. By default: false.
-  historyEnabled: false
+  # for collaboration and visualization. By default: true.
+  historyEnabled: true
 
 # Channel Mapping section.
 # Feel free to choose any name for Database Lab instances from the `dblabServers` section,
@@ -53,7 +53,7 @@ channelMapping:
             # each time a new clone is created.
             dblabParams:
               dbname: postgres
-              sslmode: disable
+              sslmode: prefer
 
     # Slack communication type configuration.
     slack:
@@ -81,7 +81,7 @@ channelMapping:
             # each time a new clone is created.
             dblabParams:
               dbname: postgres
-              sslmode: disable
+              sslmode: prefer
 
   # Running Database Lab instances.
   dblabServers:
