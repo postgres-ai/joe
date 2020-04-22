@@ -70,7 +70,7 @@ team Workspace. Joe Bot should be available with public URL calls from Slack.
 1. Enable Incoming Webhooks Feature.
     * Press "Add New Webhook to Workspace" and select a previously created channel to post token.
 1. Enable Event Subscriptions Feature.
-    * Specify Request URL (URL will be verified by Slack API) (e.g. http://35.200.200.200:3001, https://joe.dev.domain.com). You would need to run Joe with proper settings before you could verify Request URL.
+    * Specify Request URL (URL will be verified by Slack API) (e.g. http://35.200.200.200:2400, https://joe.dev.domain.com). You would need to run Joe with proper settings before you could verify Request URL.
 
 ### 3. Run
 Deploy Joe instance in your infrastructure. You would need to:
@@ -83,14 +83,13 @@ Deploy Joe instance in your infrastructure. You would need to:
     ```bash
     docker run \
       --name joe_bot \
-      --publish 3001:3001 \
-      --env SERVER_PORT=3001 \
+      --publish 2400:2400 \
       --volume ~/.dblab/configs/joe_config.yml:/home/config/config.yml \
       --restart=on-failure \
       --detach \
       postgresai/joe:latest
     ``` 
-    The Joe instance will be running by port 3001 of the current machine.
+    The Joe instance will be running by port 2400 of the current machine.
     
 1. Make a publicly accessible HTTP(S) server port specified in the configuration for Web UI/Slack Events Request URL.
 

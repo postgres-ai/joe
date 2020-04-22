@@ -3,7 +3,7 @@ export CHAT_TOKEN="xoxb-TOKEN"
 export CHAT_VERIFICATION_TOKEN="TOKEN"
 
 # HTTP server for Slack Events.
-export SERVER_PORT=3000
+export SERVER_PORT=2345
 
 # DB connection info.
 export DB_HOST="localhost"

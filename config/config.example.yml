@@ -2,8 +2,8 @@
 # Joe Bot configuration.
 
 app:
-  # HTTP server port. By default: 3001.
-  port: 3001
+  # HTTP server port. By default: 2400.
+  port: 2400
 
   # Time interval to notify a user about the finish of a long query. By default: 60s.
   minNotifyDuration: 60s

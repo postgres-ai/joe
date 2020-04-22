@@ -24,7 +24,7 @@ type Config struct {
 // App defines a general application configuration.
 type App struct {
 	Version           string
-	Port              uint          `env:"SERVER_PORT" env-default:"3001"`
+	Port              uint          `env:"SERVER_PORT" env-default:"2400"`
 	MinNotifyDuration time.Duration `env:"MIN_NOTIFY_DURATION" env-default:"60s"`
 	Debug             bool          `env:"JOE_DEBUG"`
 }
