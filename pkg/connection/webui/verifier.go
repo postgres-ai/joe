@@ -9,6 +9,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"html"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -41,6 +42,8 @@ func NewVerifier(secret []byte) *Verifier {
 // Handler provides a middleware to verify incoming requests.
 func (a *Verifier) Handler(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		log.Msg("Request received:", html.EscapeString(r.URL.Path))
+
 		if err := a.verifyRequest(r); err != nil {
 			log.Dbg("Message filtered due to the signature verification failed:", err.Error())
 			w.WriteHeader(http.StatusForbidden)
