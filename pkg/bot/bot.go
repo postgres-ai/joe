@@ -6,7 +6,9 @@ package bot
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
 	"sync"
 	"time"
@@ -37,6 +39,13 @@ type App struct {
 
 	dblabMu        *sync.RWMutex
 	dblabInstances map[string]*dblab.Instance
+}
+
+// HealthResponse represents a response for heath-check requests.
+type HealthResponse struct {
+	Version            string   `json:"version"`
+	Edition            string   `json:"edition"`
+	CommunicationTypes []string `json:"communication_types"`
 }
 
 // Creates a new application.
@@ -73,6 +82,8 @@ func (a *App) RunServer(ctx context.Context) error {
 			svc.CheckIdleSessions(ctx)
 		})
 	}
+
+	http.HandleFunc("/", a.healthCheck)
 
 	port := a.Config.App.Port
 	log.Msg(fmt.Sprintf("Server start listening on localhost:%d", port))
@@ -176,4 +187,30 @@ func (a *App) setupDBLabInstances(assistant connection.Assistant, workspace conf
 	}
 
 	return nil
+}
+
+// healthCheck handles health-check requests.
+func (a *App) healthCheck(w http.ResponseWriter, r *http.Request) {
+	log.Msg("Health check received:", html.EscapeString(r.URL.Path))
+
+	communicationTypes := make([]string, 0, len(a.Config.ChannelMapping.CommunicationTypes))
+
+	for typeName := range a.Config.ChannelMapping.CommunicationTypes {
+		communicationTypes = append(communicationTypes, typeName)
+	}
+
+	healthResponse := HealthResponse{
+		Version:            a.Config.App.Version,
+		Edition:            a.featurePack.Entertainer().GetEdition(),
+		CommunicationTypes: communicationTypes,
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+
+	if err := json.NewEncoder(w).Encode(healthResponse); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Err(err)
+
+		return
+	}
 }

@@ -1,0 +1,251 @@
+swagger: "2.0"
+info:
+  description: "Joe Bot server API."
+  version: "0.7.0"
+  title: "Joe Bot"
+  contact:
+    email: "team@postgres.ai"
+  license:
+    name: "Joe Bot License"
+    url: "https://gitlab.com/postgres-ai/joe/-/blob/master/LICENSE"
+basePath: "/"
+tags:
+  - name: "Joe Bot"
+    description: "API Reference"
+    externalDocs:
+      description: "Joe Bot Docs"
+      url: "https://postgres.ai/docs/joe-bot/what_is_joe"
+schemes:
+  - "https"
+  - "http"
+
+paths:
+  /:
+    get:
+      tags:
+        - "Server API"
+      summary: "Get the status of the instance we are working with"
+      description: ""
+      operationId: "healthCheck"
+      produces:
+        - "application/json"
+      responses:
+        200:
+          description: "Successful operation"
+          schema:
+            $ref: "#/definitions/Instance"
+        500:
+          description: "Internal server error"
+
+  /webui/verify:
+    post:
+      tags:
+        - "Web UI"
+      summary: "Get the list of snapshots"
+      description: ""
+      operationId: "getSnapshots"
+      consumes:
+        - "application/json"
+      produces:
+        - "application/json"
+      parameters:
+        - in: body
+          name: body
+          description: "Challenge request"
+          required: true
+          schema:
+            $ref: '#/definitions/Challenge'
+      responses:
+        200:
+          description: "Successful operation"
+          schema:
+            $ref: "#/definitions/Challenge"
+        400:
+          description: "Bad request"
+        403:
+          description: "Forbidden"
+        500:
+          description: "Internal server error"
+      security:
+        - WebUISignature: []
+
+  /webui/channels:
+    get:
+      tags:
+        - "Web UI"
+      summary: "Get the list of available channels"
+      description: ""
+      operationId: "getChannels"
+      consumes:
+        - "application/json"
+      produces:
+        - "application/json"
+      responses:
+        200:
+          description: "Successful operation"
+          schema:
+            type: "array"
+            items:
+              $ref: "#/definitions/Channel"
+        400:
+          description: "Bad request"
+        403:
+          description: "Forbidden"
+        404:
+          description: "Not Found"
+        500:
+          description: "Internal server error"
+      security:
+        - WebUISignature: []
+
+  /webui/command:
+    post:
+      tags:
+        - "Web UI"
+      summary: "Post a command to Joe Bot"
+      description: ""
+      operationId: "postCommand"
+      consumes:
+        - "application/json"
+      produces:
+        - "application/json"
+      parameters:
+        - in: body
+          name: body
+          description: "Bot command"
+          required: true
+          schema:
+            $ref: '#/definitions/Message'
+      responses:
+        200:
+          description: "Successful operation"
+        400:
+          description: "Bad request"
+        403:
+          description: "Forbidden"
+        500:
+          description: "Internal server error"
+      security:
+        - WebUISignature: []
+
+
+  /slack/:
+    post:
+      tags:
+        - "Slack"
+      summary: "The endpoint to handle events from a Slack App"
+      description: ""
+      operationId: "handleSlackEvent"
+      consumes:
+        - "application/json"
+      produces:
+        - "application/json"
+      parameters:
+        - in: body
+          required: true
+          name: body
+          schema:
+            $ref: "#/definitions/SlackEvent"
+          description: "Slack API event"
+      responses:
+        200:
+          description: "Successful operation"
+        404:
+          description: "Not found"
+        500:
+          description: "Internal server error"
+      externalDocs:
+        description: Learn more about Slack API Events.
+        url: https://api.slack.com/events
+      security:
+        - SlackSignature: []
+          SlackRequestTimestamp: []
+          SlackRetry: []
+
+securityDefinitions:
+  WebUISignature:
+    type: apiKey
+    in: header
+    name: Verification-Signature
+  SlackSignature:
+    type: apiKey
+    in: header
+    name: X-Slack-Signature
+  SlackRequestTimestamp:
+    type: apiKey
+    in: header
+    name: X-Slack-Request-Timestamp
+  SlackRetry:
+    type: apiKey
+    in: header
+    name: X-Slack-Retry-Num
+
+definitions:
+  Instance:
+    type: "object"
+    properties:
+      version:
+        type: "string"
+      edition:
+        type: "string"
+      communication_types:
+        type: "array"
+        items:
+          type: "string"
+
+  Challenge:
+    type: "object"
+    properties:
+      challenge:
+        type: "string"
+        description: "Challenge"
+
+  Channel:
+    type: "object"
+    properties:
+      channel_id:
+        type: "string"
+
+  Message:
+    type: "object"
+    properties:
+      session_id:
+        type: "string"
+      command_id:
+        type: "string"
+      text:
+        type: "string"
+      channel_id:
+        type: "string"
+      user_id:
+        type: "string"
+      timestamp:
+        type: "string"
+
+  SlackEvent:
+    type: "object"
+    properties:
+      token:
+        type: string
+      team_id:
+        type: string
+      api_app_id:
+        type: string
+      event:
+        type: object
+        properties:
+          type:
+            type: string
+          event_ts:
+            type: string
+      type:
+        type: string
+      event_id:
+        type: string
+      event_time:
+        type: integer
+      authed_user:
+        type: array
+        items:
+          type: string
+    description: "https://api.slack.com/types/event"

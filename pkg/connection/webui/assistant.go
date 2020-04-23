@@ -10,7 +10,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"html"
 	"net/http"
 	"strings"
 	"sync"
@@ -82,8 +81,6 @@ func (a *Assistant) Init() error {
 	for path, handleFunc := range a.handlers() {
 		http.Handle(fmt.Sprintf("%s/%s", a.prefix, path), verifier.Handler(handleFunc))
 	}
-
-	http.HandleFunc(fmt.Sprintf("%s/health", a.prefix), a.healthCheck)
 
 	return nil
 }
@@ -168,12 +165,6 @@ func (a *Assistant) handlers() map[string]http.HandlerFunc {
 	}
 }
 
-func (a *Assistant) healthCheck(w http.ResponseWriter, r *http.Request) {
-	log.Msg("Request received:", html.EscapeString(r.URL.Path))
-
-	w.WriteHeader(http.StatusOK)
-}
-
 type challengeResponse struct {
 	Challenge string `json:"challenge"`
 }
@@ -251,8 +242,6 @@ func (m *Message) ToIncomingMessage() models.IncomingMessage {
 }
 
 func (a *Assistant) commandHandler(w http.ResponseWriter, r *http.Request) {
-	log.Msg("Request received:", html.EscapeString(r.URL.Path))
-
 	buf := new(bytes.Buffer)
 	if _, err := buf.ReadFrom(r.Body); err != nil {
 		log.Err("Failed to read the request body:", err)
