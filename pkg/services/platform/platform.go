@@ -107,6 +107,7 @@ func (p *Client) doPost(ctx context.Context, path string, data interface{}, resp
 
 	postURL := p.buildURL(path).String()
 
+	log.Dbg(fmt.Sprintf("URL: %v", postURL))
 	log.Dbg(fmt.Sprintf("Request: %v", string(reqData)))
 
 	r, err := http.NewRequest(http.MethodPost, postURL, bytes.NewBuffer(reqData))
@@ -242,7 +243,6 @@ func newJSONParser(v interface{}) responseParser {
 // Session represent a Platform session.
 type Session struct {
 	ProjectName string `json:"project_name"`
-	AccessToken string `json:"access_token"`
 	UserID      string `json:"user_id"`
 	Username    string `json:"user_name"`
 	ChannelID   string `json:"channel_id"`
