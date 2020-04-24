@@ -129,10 +129,6 @@ func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.Us
 		return errors.Wrap(err, "failed to append message with a foreword")
 	}
 
-	if clone.DB == nil {
-		return errors.New("failed to get connection params")
-	}
-
 	dblabClone := s.buildDBLabCloneConn(clone.DB)
 
 	db, err := initConn(dblabClone)
@@ -164,7 +160,7 @@ func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.Us
 	return nil
 }
 
-func (s *ProcessingService) buildDBLabCloneConn(dbParams *dblabmodels.Database) models.Clone {
+func (s *ProcessingService) buildDBLabCloneConn(dbParams dblabmodels.Database) models.Clone {
 	return models.Clone{
 		Name:     s.config.DBLab.DBName,
 		Host:     dbParams.Host,
