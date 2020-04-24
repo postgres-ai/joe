@@ -511,7 +511,7 @@ func parseIncomingMessage(message string) (string, string) {
 		receivedCommand = message
 	}
 
-	return receivedCommand, query
+	return strings.ToLower(receivedCommand), query
 }
 
 func appendSessionID(text string, u *usermanager.User) string {
