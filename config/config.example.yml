@@ -2,6 +2,10 @@
 # Joe Bot configuration.
 
 app:
+  # The host which the Joe server accepts HTTP connections from. 
+  # By default: "127.0.0.1", accepts only local connections. Use an empty string to accept all connections.
+  host: "127.0.0.1"
+
   # HTTP server port. By default: 2400.
   port: 2400
 
