@@ -85,10 +85,9 @@ func (a *App) RunServer(ctx context.Context) error {
 
 	http.HandleFunc("/", a.healthCheck)
 
-	port := a.Config.App.Port
-	log.Msg(fmt.Sprintf("Server start listening on localhost:%d", port))
+	log.Msg(fmt.Sprintf("Server start listening on %s:%d", a.Config.App.Host, a.Config.App.Port))
 
-	if err := http.ListenAndServe(fmt.Sprintf(":%d", port), nil); err != nil {
+	if err := http.ListenAndServe(fmt.Sprintf("%s:%d", a.Config.App.Host, a.Config.App.Port), nil); err != nil {
 		return errors.Wrap(err, "failed to start a server")
 	}
 
