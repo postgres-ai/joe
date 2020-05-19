@@ -39,11 +39,23 @@ type Assistant struct {
 	prefix         string
 	appCfg         *config.Config
 	featurePack    *features.Pack
+	messenger      *Messenger
+	userManager    *usermanager.UserManager
+	platformClient *platform.Client
 }
 
 // NewAssistant returns a new assistant service.
-func NewAssistant(cfg *config.Credentials, appCfg *config.Config, handlerPrefix string, pack *features.Pack) *Assistant {
+func NewAssistant(cfg *config.Credentials, appCfg *config.Config, handlerPrefix string, pack *features.Pack) (*Assistant, error) {
 	prefix := fmt.Sprintf("/%s", strings.Trim(handlerPrefix, "/"))
+
+	platformClient, err := platform.NewClient(appCfg.Platform)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create a Platform client")
+	}
+
+	messenger := NewMessenger(platformClient)
+	userInformer := NewUserInformer()
+	userManager := usermanager.NewUserManager(userInformer, appCfg.Enterprise.Quota)
 
 	assistant := &Assistant{
 		credentialsCfg: cfg,
@@ -51,9 +63,12 @@ func NewAssistant(cfg *config.Credentials, appCfg *config.Config, handlerPrefix 
 		msgProcessors:  make(map[string]connection.MessageProcessor),
 		prefix:         prefix,
 		featurePack:    pack,
+		messenger:      messenger,
+		userManager:    userManager,
+		platformClient: platformClient,
 	}
 
-	return assistant
+	return assistant, nil
 }
 
 func (a *Assistant) validateCredentials() error {
@@ -65,7 +80,7 @@ func (a *Assistant) validateCredentials() error {
 }
 
 // Init registers assistant handlers.
-func (a *Assistant) Init() error {
+func (a *Assistant) Init(_ context.Context) error {
 	log.Dbg("URL-path prefix: ", a.prefix)
 
 	if err := a.validateCredentials(); err != nil {
@@ -85,38 +100,25 @@ func (a *Assistant) Init() error {
 	return nil
 }
 
-// AddDBLabInstanceForChannel sets a message processor for a specific channel.
-func (a *Assistant) AddDBLabInstanceForChannel(channelID string, dbLabInstance *dblab.Instance) error {
-	messageProcessor, err := a.buildMessageProcessor(dbLabInstance)
-	if err != nil {
-		return errors.Wrap(err, "failed to build a message processor")
-	}
+// AddChannel sets a message processor for a specific channel.
+func (a *Assistant) AddChannel(channelID, project string, dbLabInstance *dblab.Instance) {
+	messageProcessor := a.buildMessageProcessor(project, dbLabInstance)
 
 	a.addProcessingService(channelID, messageProcessor)
-
-	return nil
 }
 
-func (a *Assistant) buildMessageProcessor(dbLabInstance *dblab.Instance) (*msgproc.ProcessingService, error) {
-	platformClient, err := platform.NewClient(a.appCfg.Platform)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create a Platform client")
-	}
-
-	messenger := NewMessenger(platformClient)
-	userInformer := NewUserInformer()
-	userManager := usermanager.NewUserManager(userInformer, a.appCfg.Enterprise.Quota)
-
+func (a *Assistant) buildMessageProcessor(project string, dbLabInstance *dblab.Instance) *msgproc.ProcessingService {
 	processingCfg := msgproc.ProcessingConfig{
 		App:      a.appCfg.App,
 		Platform: a.appCfg.Platform,
 		Explain:  a.appCfg.Explain,
 		DBLab:    dbLabInstance.Config(),
 		EntOpts:  a.appCfg.Enterprise,
+		Project:  project,
 	}
 
-	return msgproc.NewProcessingService(messenger, MessageValidator{}, dbLabInstance.Client(), userManager, platformClient,
-		processingCfg, a.featurePack), nil
+	return msgproc.NewProcessingService(a.messenger, MessageValidator{}, dbLabInstance.Client(), a.userManager, a.platformClient,
+		processingCfg, a.featurePack)
 }
 
 // addProcessingService adds a message processor for a specific channel.

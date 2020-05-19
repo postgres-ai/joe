@@ -1,8 +1,4 @@
-/*
-2019 © Postgres.ai
-*/
-
-package slack
+package slackrtm
 
 import (
 	"testing"

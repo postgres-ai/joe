@@ -53,12 +53,12 @@ type Command struct {
 type Client struct {
 	url         *url.URL
 	accessToken string
-	project     string
 	client      *http.Client
 }
 
 // NewClient creates a new Platform API client.
 func NewClient(platformCfg config.Platform) (*Client, error) {
+	// TODO (akartasov): validate configuration on the app start.
 	u, err := url.Parse(platformCfg.URL)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse a platform host")
@@ -68,7 +68,6 @@ func NewClient(platformCfg config.Platform) (*Client, error) {
 
 	p := Client{
 		url:         u,
-		project:     platformCfg.Project,
 		accessToken: platformCfg.Token,
 		client: &http.Client{
 			Transport: &http.Transport{},
@@ -146,8 +145,6 @@ func (p *Client) PostCommand(ctx context.Context, command *Command) (PostCommand
 // CreatePlatformSession makes an HTTP request to create a new Platform session.
 func (p *Client) CreatePlatformSession(ctx context.Context, session Session) (string, error) {
 	log.Dbg("Platform API: create session")
-
-	session.ProjectName = p.project
 
 	respData := CreateSessionResponse{}
 
