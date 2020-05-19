@@ -24,7 +24,7 @@ type Config struct {
 // App defines a general application configuration.
 type App struct {
 	Version           string
-	Host              string        `env:"SERVER_HOST" env-default:"127.0.0.1"`
+	Host              string        `env:"SERVER_HOST"`
 	Port              uint          `env:"SERVER_PORT" env-default:"2400"`
 	MinNotifyDuration time.Duration `env:"MIN_NOTIFY_DURATION" env-default:"60s"`
 	Debug             bool          `env:"JOE_DEBUG"`
@@ -34,7 +34,6 @@ type App struct {
 type Platform struct {
 	URL            string `env:"PLATFORM_URL" env-default:"https://postgres.ai/api/general"`
 	Token          string `env:"PLATFORM_TOKEN"`
-	Project        string `env:"PLATFORM_PROJECT"`
 	HistoryEnabled bool   `env:"HISTORY_ENABLED" env-default:"true"`
 }
 
@@ -67,6 +66,7 @@ type Credentials struct {
 type Channel struct {
 	ChannelID   string      `yaml:"channelID" json:"channel_id"`
 	DBLabID     string      `yaml:"dblabServer" json:"-"`
+	Project     string      `yaml:"project" json:"-"`
 	DBLabParams DBLabParams `yaml:"dblabParams" json:"-"`
 }
 

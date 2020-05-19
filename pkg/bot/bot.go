@@ -24,6 +24,7 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/config"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/connection/slack"
+	"gitlab.com/postgres-ai/joe/pkg/connection/slackrtm"
 	"gitlab.com/postgres-ai/joe/pkg/connection/webui"
 	"gitlab.com/postgres-ai/joe/pkg/services/dblab"
 	"gitlab.com/postgres-ai/joe/pkg/util"
@@ -72,7 +73,7 @@ func (a *App) RunServer(ctx context.Context) error {
 	}
 
 	for _, assistantSvc := range assistants {
-		if err := assistantSvc.Init(); err != nil {
+		if err := assistantSvc.Init(ctx); err != nil {
 			return errors.Wrap(err, "failed to init an assistant")
 		}
 
@@ -141,7 +142,7 @@ func (a *App) getAllAssistants() ([]connection.Assistant, error) {
 				return nil, errors.Wrap(err, "failed to register workspace assistants")
 			}
 
-			if err := a.setupDBLabInstances(assist, workspace); err != nil {
+			if err := a.setupChannels(assist, workspace); err != nil {
 				return nil, errors.Wrap(err, "failed to register workspace assistants")
 			}
 
@@ -157,17 +158,20 @@ func (a *App) getAssistant(communicationTypeType string, workspaceCfg config.Wor
 
 	switch communicationTypeType {
 	case slack.CommunicationType:
-		return slack.NewAssistant(&workspaceCfg.Credentials, a.Config, handlerPrefix, a.featurePack), nil
+		return slack.NewAssistant(&workspaceCfg.Credentials, a.Config, handlerPrefix, a.featurePack)
+
+	case slackrtm.CommunicationType:
+		return slackrtm.NewAssistant(&workspaceCfg.Credentials, a.Config, a.featurePack)
 
 	case webui.CommunicationType:
-		return webui.NewAssistant(&workspaceCfg.Credentials, a.Config, handlerPrefix, a.featurePack), nil
+		return webui.NewAssistant(&workspaceCfg.Credentials, a.Config, handlerPrefix, a.featurePack)
 
 	default:
 		return nil, errors.New("unknown workspace type given")
 	}
 }
 
-func (a *App) setupDBLabInstances(assistant connection.Assistant, workspace config.Workspace) error {
+func (a *App) setupChannels(assistant connection.Assistant, workspace config.Workspace) error {
 	for _, channel := range workspace.Channels {
 		a.dblabMu.RLock()
 
@@ -179,10 +183,7 @@ func (a *App) setupDBLabInstances(assistant connection.Assistant, workspace conf
 
 		a.dblabMu.RUnlock()
 		dbLabInstance.SetCfg(channel.DBLabParams)
-
-		if err := assistant.AddDBLabInstanceForChannel(channel.ChannelID, dbLabInstance); err != nil {
-			return errors.Wrap(err, "failed to add a DBLab instance")
-		}
+		assistant.AddChannel(channel.ChannelID, channel.Project, dbLabInstance)
 	}
 
 	return nil

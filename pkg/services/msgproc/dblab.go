@@ -190,7 +190,7 @@ func (s *ProcessingService) createDBLabClone(ctx context.Context, user *usermana
 
 	clientRequest := types.CloneCreateRequest{
 		ID:        sessionID,
-		Project:   s.config.Platform.Project,
+		Project:   s.config.Project,
 		Protected: false,
 		DB: &types.DatabaseRequest{
 			Username: joeUserNamePrefix + user.UserInfo.Name,
@@ -220,9 +220,10 @@ func (s *ProcessingService) createDBLabClone(ctx context.Context, user *usermana
 // createPlatformSession starts a new platform session.
 func (s *ProcessingService) createPlatformSession(ctx context.Context, user *usermanager.User, channelID string) error {
 	platformSession := platform.Session{
-		UserID:    user.UserInfo.ID,
-		Username:  user.UserInfo.Name,
-		ChannelID: channelID,
+		UserID:      user.UserInfo.ID,
+		Username:    user.UserInfo.Name,
+		ChannelID:   channelID,
+		ProjectName: s.config.Project,
 	}
 
 	sessionID, err := s.platformManager.CreatePlatformSession(ctx, platformSession)

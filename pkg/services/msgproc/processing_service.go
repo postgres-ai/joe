@@ -117,6 +117,7 @@ type ProcessingConfig struct {
 	Explain  pgexplain.ExplainConfig
 	DBLab    config.DBLabParams
 	EntOpts  definition.EnterpriseOptions
+	Project  string
 }
 
 // NewProcessingService creates a new processing service.
