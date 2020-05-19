@@ -1,75 +1,98 @@
-# Copy the following to: ./config/config.yml
 # Joe Bot configuration.
+# Copy this file to: ./config/config.yml
 
 app:
-  # The host which the Joe server accepts HTTP connections from. 
-  # By default: "127.0.0.1", accepts only local connections. Use an empty string to accept all connections.
+  # HTTP server IP address or host. 
+  # Default: "127.0.0.1" (only local connections).
+  # Use empty string to listen all network intefraces.
   host: "127.0.0.1"
 
-  # HTTP server port. By default: 2400.
+  # HTTP server port. Default: 2400.
   port: 2400
 
-  # Time interval to notify a user about the finish of a long query. By default: 60s.
+  # Minimal duration of long query processing used for notifications.
+  # When query processing is finished, a notification will be issued if duration
+  # has exceeded this value. Default: 60s.
   minNotifyDuration: 60s
 
-  # Enable debug mode. By default: false.
+  # Debug mode. Default: false.
   debug: false
 
+# Integration with Postgres.ai Platform instance. It may be either
+# SaaS (https://postgres.ai) of self-managed instance (usually located inside
+# private infrastructure).
 platform:
-  # Postgres.ai Platform API base URL. By default: https://postgres.ai/api/general.
+  # Postgres.ai Platform API base URL. Default: https://postgres.ai/api/general.
   url: "https://postgres.ai/api/general"
 
-  # The Postgres.ai Platform API token.
+  # Postgres.ai Platform API secret token.
   token: "platfrom_secret_token"
 
-  # Postgres.ai Platform project to assign user sessions.
+  # Postgres.ai Platform project to which user sessions are to be assigned.
   project: "demo"
 
-  # Enable sending command and queries history to the Postgres.ai Platform
-  # for collaboration and visualization. By default: true.
+  # Enable command history in Postgres.ai Platform for collaboration and
+  # visualization. Default: true.
   historyEnabled: true
 
-# Channel Mapping section.
-# Feel free to choose any name for Database Lab instances from the `dblabServers` section,
-# those names are just aliases.
+# Channel Mapping is used to allow working with more than one database in
+# one Database Lab instance. This is useful when your PostgreSQL master node
+# has more than one application databases and you want to organize optimization
+# processes for all of them. Thanks to Channel Mapping you can use a single Joe
+# Bot instance.
 channelMapping:
-  # Available communication types (Web UI, Slack, etc.)
+  # Active Database Lab instances that are used by this Joe Bot instance.
+  dblabServers:
+    # Alias for this Database Lab instance (internal, used only in this config)
+    prod1:
+      # URL of Database Lab API server
+      url: "https://dblab.domain.com"
+      # Secret token used to communicate with Database Lab API
+      token: "secret_token"
+
+  # Available communication types ("webui", "slack", etc.)
   communicationTypes:
-    # Web UI communication type configuration.
+    # Communication type: Web UI (part of Postgres.ai Platform).
     webui:
-      # Web UI name. Feel free to choose any name.
+      # Web UI name. Feel free to choose any name, it is just an alias.
       - name: WebUI
         credentials:
-          # Web UI signing secret. The secret verifies that each request comes
-          # from the configured Web UI instance.
+          # Web UI signing secret. This secret verifies each request to ensure
+          # that it came from one of configured Web UI instances.
           signingSecret: secret_signing
 
         channels:
-          # Web UI channel ID. Feel free to choose any name. This is what
-          # users will see in the GUI.
+          # Web UI channel ID. Feel free to choose any name, it is just an alias.
+          # This is what users see in browser.
           - channelID: ProductionDB
 
-            # Database Lab alias from the dblabServers section.
+            # Database Lab alias from the "dblabServers" section.
             dblabServer: prod1
 
-            # Postgres connection parameters used to connect to a clone.
-            # The password is not needed, it will be randomly generated
-            # each time a new clone is created.
+            # PostgreSQL connection parameters used to connect to a clone.
+            # The username/password are not needed; they will be randomly
+            # generated each time a new clone is created.
             dblabParams:
+              # It is recommended to leave "postgres" here, because this DB
+              # usually exists in any PostgreSQL setup.
               dbname: postgres
+              # It is NOT recommended to work without SSL. This value will be
+              # used in a clone's pg_hba.conf. See https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-SSLMODE-STATEMENTS
               sslmode: prefer
 
-    # Slack communication type configuration.
+    # Communication type: Slack.
     slack:
-      # Workspace name. Feel free to choose any name.
+      # Workspace name. Feel free to choose any name, it is just an alias.
       - name: Workspace
 
         credentials:
-          # Bot User OAuth Access Token ("xoxb-TOKEN").
-          accessToken: access_token
+          # Bot User OAuth Access.
+          # See https://api.slack.com/authentication/token-types
+          accessToken: xoxb-XXXX
 
           # Slack App Signing Secret.
-          signingSecret: secret_signing
+          # See https://api.slack.com/authentication/verifying-requests-from-slack
+          signingSecret: signing_secret
 
         channels:
           # Slack channel ID. In Slack app, right-click on the channel name,
@@ -77,37 +100,36 @@ channelMapping:
           # need the last part consisting of 9 letters starting with "C".
           - channelID: CXXXXXXXX
 
-            # Database Lab alias from the dblabServers section.
+            # Database Lab alias from the "dblabServers" section.
             dblabServer: prod1
 
-            # Postgres connection parameters used to connect to a clone.
-            # The password is not needed, it will be randomly generated
-            # each time a new clone is created.
+            # PostgreSQL connection parameters used to connect to a clone.
+            # The username/password are not needed; they will be randomly
+            # generated each time a new clone is created.
             dblabParams:
+              # It is recommended to leave "postgres" here, because this DB
+              # usually exists in any PostgreSQL setup.
               dbname: postgres
+              # It is NOT recommended to work without SSL. This value will be
+              # used in a clone's pg_hba.conf. See https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-SSLMODE-STATEMENTS
               sslmode: prefer
 
-  # Running Database Lab instances.
-  dblabServers:
-    # Database Lab instance alias and parameters to connect to the API.
-    prod1:
-      url: "https://dblab.domain.com"
-      token: "secret_token"
-
-# Enterprise options (changing these options you confirm that you have active
-# subscription to Postgres.ai Platform Enterprise Edition https://postgres.ai).
+# Enterprise Edition options – only to use with active Postgres.ai Platform EE
+# subscription. Changing these options you confirm that you have active
+# subscription to Postgres.ai Platform Enterprise Edition.
+# See more: https://postgres.ai/docs/platform/postgres-ai-platform-overview
 enterprise:
   quota:
-    # Limit request rates. By default: 10.
+    # Limit request rates. Works in pair with "interval" value. Default: 10.
     limit: 10
 
-    # Time interval (in seconds) to apply a quota limit. By default: 60.
+    # Time interval (in seconds) to apply quota limit. Default: 60.
     interval: 60
 
   audit:
-    # Enable logging of received commands. By default: false.
+    # Enable command logging. Default: false.
     enabled: false
 
   dblab:
-    # Limit available Database Lab instances. By default: 1.
+    # Limit the number of available Database Lab instances. Default: 1.
     instanceLimit: 1
