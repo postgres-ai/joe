@@ -4,6 +4,7 @@ go 1.13
 
 require (
 	github.com/dustin/go-humanize v1.0.0
+	github.com/gorilla/websocket v1.4.2
 	github.com/hako/durafmt v0.0.0-20191009132224-3f39dc1ed9f4
 	github.com/ilyakaznacheev/cleanenv v1.2.2
 	github.com/jackc/pgconn v1.5.0
