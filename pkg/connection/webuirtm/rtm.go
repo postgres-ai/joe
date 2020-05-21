@@ -26,6 +26,7 @@ type RTM struct {
 	conn             *websocket.Conn
 	IncomingMessages chan json.RawMessage
 	TechnicalEvent   chan RTMEvent
+	outgoingMessages chan RTMEvent
 }
 
 // NewRTM creates a new RTM client.
@@ -54,8 +55,32 @@ type RTMEvent struct {
 	Data json.RawMessage
 }
 
-// Connect initialize connection.
-func (rtm *RTM) Connect(ctx context.Context) error {
+// ManageConnection manages a web-socket connection.
+func (rtm *RTM) ManageConnection(ctx context.Context) {
+	const maxSleepInterval = 60
+	const multiplier = 2
+
+	for attempts := 1; ; attempts++ {
+		if err := rtm.connect(ctx); err != nil {
+			// TODO: check auth errors.
+
+			sleepInterval := attempts * multiplier
+			if sleepInterval > maxSleepInterval {
+				sleepInterval = maxSleepInterval
+			}
+
+			time.Sleep(time.Duration(sleepInterval) * time.Second)
+			continue
+		}
+
+		go rtm.handleEvents(ctx)
+
+		return
+	}
+}
+
+// connect initializes connection.
+func (rtm *RTM) connect(ctx context.Context) error {
 	log.Dbg("connecting to ", rtm.config.url)
 
 	c, _, err := websocket.DefaultDialer.DialContext(ctx, rtm.config.url, nil)
@@ -68,6 +93,39 @@ func (rtm *RTM) Connect(ctx context.Context) error {
 	rtm.mu.Unlock()
 
 	return nil
+}
+
+func (rtm *RTM) handleEvents(ctx context.Context) {
+	ticker := time.NewTicker(rtm.pingInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+
+		case <-ticker.C:
+			if err := rtm.ping(); err != nil {
+				_ = rtm.reconnect()
+				return
+			}
+
+		// listen for messages that need to be sent
+		case msg := <-rtm.outgoingMessages:
+			rtm.sendOutgoingMessage(msg)
+		}
+	}
+}
+
+func (rtm *RTM) ping() error {
+
+	return nil
+}
+
+func (rtm *RTM) reconnect() error {
+	return nil
+}
+
+func (rtm *RTM) sendOutgoingMessage(_ RTMEvent) {
 }
 
 // Disconnect performs disconnection.
@@ -88,11 +146,6 @@ func (rtm *RTM) Disconnect() error {
 	rtm.mu.Unlock()
 
 	return err
-}
-
-// ManageConnection manages a web-socket connection.
-func (rtm *RTM) ManageConnection(ctx context.Context) {
-	rtm.Connect(ctx)
 }
 
 func (rtm *RTM) handleIncomingMessages() {
