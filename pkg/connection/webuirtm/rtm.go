@@ -3,6 +3,8 @@ package webuirtm
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"sync"
 	"time"
@@ -24,6 +26,9 @@ type RTM struct {
 	pingInterval     time.Duration
 	mu               *sync.Mutex
 	conn             *websocket.Conn
+	forcePing        chan struct{}
+	closeConnection  chan struct{}
+	stop             chan struct{}
 	IncomingMessages chan json.RawMessage
 	TechnicalEvent   chan RTMEvent
 	outgoingMessages chan RTMEvent
@@ -32,6 +37,10 @@ type RTM struct {
 // NewRTM creates a new RTM client.
 func NewRTM() *RTM {
 	return &RTM{
+		mu:               &sync.Mutex{},
+		forcePing:        make(chan struct{}),
+		closeConnection:  make(chan struct{}),
+		stop:             make(chan struct{}),
 		IncomingMessages: make(chan json.RawMessage, defaultIncomingMessageChannelSize),
 		TechnicalEvent:   make(chan RTMEvent, defaultInternalEventChannelSize),
 		pingInterval:     defaultPingInterval,
@@ -52,17 +61,49 @@ type RTMessage struct {
 // RTMEvent represents internal events.
 type RTMEvent struct {
 	Type string
-	Data json.RawMessage
+	Data fmt.Stringer
+}
+
+// String prints RTMEvent.
+func (e RTMEvent) String() string {
+	return fmt.Sprintf("Type: %s, Data: %s", e.Type, e.Data)
+}
+
+// InfoEvent represents an internal info event.
+type InfoEvent struct {
+	Message string
+}
+
+// String prints the message of InfoEvent.
+func (i InfoEvent) String() string {
+	return i.Message
 }
 
 // ManageConnection manages a web-socket connection.
 func (rtm *RTM) ManageConnection(ctx context.Context) {
 	const maxSleepInterval = 60
 	const multiplier = 2
+	const maxAttempts = 100
 
-	for attempts := 1; ; attempts++ {
+	var attempts = 0
+
+	defer rtm.stopRTM()
+
+	for {
 		if err := rtm.connect(ctx); err != nil {
-			// TODO: check auth errors.
+			log.Dbg(fmt.Sprintf("%#v\n", err))
+
+			switch {
+			case err == websocket.ErrBadHandshake:
+				rtm.disconnect(err)
+				return
+
+			case attempts > maxAttempts:
+				rtm.disconnect(errors.New("the limit of connection attempts is exceed"))
+				return
+			}
+
+			attempts++
 
 			sleepInterval := attempts * multiplier
 			if sleepInterval > maxSleepInterval {
@@ -73,9 +114,21 @@ func (rtm *RTM) ManageConnection(ctx context.Context) {
 			continue
 		}
 
-		go rtm.handleEvents(ctx)
+		rtm.TechnicalEvent <- RTMEvent{Type: "connected", Data: InfoEvent{Message: rtm.config.url}}
 
-		return
+		// Reset attempts after successful connection.
+		attempts = 0
+
+		go rtm.listenIncomingMessages()
+
+		rtm.handleEvents(ctx)
+
+		select {
+		case <-rtm.stop:
+			rtm.disconnect(errors.New("stop signal on manage connection"))
+			return
+		default:
+		}
 	}
 }
 
@@ -98,16 +151,31 @@ func (rtm *RTM) connect(ctx context.Context) error {
 func (rtm *RTM) handleEvents(ctx context.Context) {
 	ticker := time.NewTicker(rtm.pingInterval)
 	defer ticker.Stop()
+
 	for {
 		select {
+		case <-rtm.closeConnection:
+			rtm.disconnect(errors.New("close connection signal"))
+			return
+
 		case <-ctx.Done():
 			return
 
-		case <-ticker.C:
+		case <-rtm.forcePing:
 			if err := rtm.ping(); err != nil {
-				_ = rtm.reconnect()
+				rtm.disconnect(err)
 				return
 			}
+
+		case <-ticker.C:
+			if err := rtm.ping(); err != nil {
+				rtm.disconnect(err)
+				return
+			}
+
+		case msg := <-rtm.TechnicalEvent:
+			log.Msg(msg.String())
+
 
 		// listen for messages that need to be sent
 		case msg := <-rtm.outgoingMessages:
@@ -117,41 +185,45 @@ func (rtm *RTM) handleEvents(ctx context.Context) {
 }
 
 func (rtm *RTM) ping() error {
+	if rtm.conn == nil {
+		return errors.New("connection is not initialized")
+	}
 
-	return nil
+	rtm.TechnicalEvent <- RTMEvent{Type: "ping", Data: InfoEvent{Message: "ping event"}}
+
+	return rtm.conn.PingHandler()(`ping`)
 }
 
-func (rtm *RTM) reconnect() error {
-	return nil
+func (rtm *RTM) stopRTM() {
+	close(rtm.stop)
 }
 
 func (rtm *RTM) sendOutgoingMessage(_ RTMEvent) {
 }
 
-// Disconnect performs disconnection.
-func (rtm *RTM) Disconnect() error {
-	log.Dbg("disconnecting ", rtm.config.url)
-
-	// TODO: fix
-	err := rtm.conn.WriteControl(
-		websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
-	time.Sleep(time.Second)
+// disconnect performs disconnection.
+func (rtm *RTM) disconnect(cause error) {
+	log.Dbg("disconnecting ", rtm.config.url, cause)
 
 	if rtm.conn != nil {
-		err = rtm.conn.Close()
+		if err := rtm.conn.Close(); err != nil {
+			log.Err("Failed to disconnect: ", err)
+		}
 	}
 
 	rtm.mu.Lock()
 	rtm.conn = nil
 	rtm.mu.Unlock()
-
-	return err
 }
 
-func (rtm *RTM) handleIncomingMessages() {
+func (rtm *RTM) listenIncomingMessages() {
 	for {
 		if err := rtm.receiveIncomingMessage(); err != nil {
-			// TODO: reconnect.
+			select {
+			case rtm.closeConnection <- struct{}{}:
+			case <-rtm.stop:
+			}
+
 			return
 		}
 	}
@@ -169,10 +241,12 @@ func (rtm *RTM) receiveIncomingMessage() error {
 
 		case err == io.ErrUnexpectedEOF:
 			// Trigger a 'PING' to detect potential websocket disconnect.
-			//select {
-			//case rtm.forcePing <- true:
-			//case <-rtm.disconnected:
-			//}
+			select {
+			case rtm.forcePing <- struct{}{}:
+			case <-rtm.stop:
+			}
+
+			return nil
 
 		default:
 			// Send event to TechnicalEvent.
@@ -186,16 +260,12 @@ func (rtm *RTM) receiveIncomingMessage() error {
 	}
 
 	log.Dbg("Incoming Event:", string(rawMessage))
+
 	select {
 	case rtm.IncomingMessages <- rawMessage:
-		//case <-rtm.disconnected:
-		//	rtm.Debugln("disonnected while attempting to send raw rawMessage")
+	case <-rtm.stop:
+		log.Dbg("disconnected while attempting to send rawMessage")
 	}
 
 	return nil
-}
-
-// Close closes a connection.
-func (rtm *RTM) Close() {
-
 }

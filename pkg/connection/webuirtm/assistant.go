@@ -82,7 +82,7 @@ func (a *Assistant) handleRTMEvents(ctx context.Context, incomingEvents chan jso
 
 		rtMessage := RTMessage{}
 		if err := json.Unmarshal(msg, &rtMessage); err != nil {
-			log.Err("Event type: ", err)
+			log.Err("Failed to unmarshal message: ", err)
 		}
 
 		switch rtMessage.Type {

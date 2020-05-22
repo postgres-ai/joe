@@ -26,6 +26,7 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/connection/slack"
 	"gitlab.com/postgres-ai/joe/pkg/connection/slackrtm"
 	"gitlab.com/postgres-ai/joe/pkg/connection/webui"
+	"gitlab.com/postgres-ai/joe/pkg/connection/webuirtm"
 	"gitlab.com/postgres-ai/joe/pkg/services/dblab"
 	"gitlab.com/postgres-ai/joe/pkg/util"
 )
@@ -164,7 +165,7 @@ func (a *App) getAssistant(communicationTypeType string, workspaceCfg config.Wor
 		return slackrtm.NewAssistant(&workspaceCfg.Credentials, a.Config, a.featurePack)
 
 	case webui.CommunicationType:
-		return webui.NewAssistant(&workspaceCfg.Credentials, a.Config, handlerPrefix, a.featurePack)
+		return webuirtm.NewAssistant(&workspaceCfg.Credentials, a.Config, handlerPrefix, a.featurePack)
 
 	default:
 		return nil, errors.New("unknown workspace type given")
