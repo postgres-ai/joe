@@ -29,7 +29,7 @@ build-binary:
     paths:
       - bin
   script:
-    - make build
+    - make build-ee
 
 .job_template: &build_image_definition
   image: docker:19
