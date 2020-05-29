@@ -80,15 +80,24 @@ func (a *Assistant) handleRTMEvents(ctx context.Context, incomingEvents chan jso
 		default:
 		}
 
-		rtMessage := RTMessage{}
-		if err := json.Unmarshal(msg, &rtMessage); err != nil {
+		wsEvent := WSEvent{}
+		if err := json.Unmarshal(msg, &wsEvent); err != nil {
 			log.Err("Failed to unmarshal message: ", err)
 		}
 
-		switch rtMessage.Type {
+		switch wsEvent.Type {
 		// TODO: message handling.
+		case pongType:
+			processPong(wsEvent.Data)
+
+		case channelRequestType:
+			a.channels()
+
+		case messageType:
+			a.processMessage(wsEvent.Data)
+
 		default:
-			log.Dbg("Event type: ", rtMessage.Type)
+			log.Dbg("Unknown event. Event type: ", wsEvent.Type)
 		}
 	}
 }

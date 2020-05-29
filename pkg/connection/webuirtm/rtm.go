@@ -31,7 +31,7 @@ type RTM struct {
 	stop             chan struct{}
 	IncomingMessages chan json.RawMessage
 	TechnicalEvent   chan RTMEvent
-	outgoingMessages chan RTMEvent
+	outgoingMessages chan WSEvent
 }
 
 // NewRTM creates a new RTM client.
@@ -44,6 +44,7 @@ func NewRTM() *RTM {
 		IncomingMessages: make(chan json.RawMessage, defaultIncomingMessageChannelSize),
 		TechnicalEvent:   make(chan RTMEvent, defaultInternalEventChannelSize),
 		pingInterval:     defaultPingInterval,
+		outgoingMessages: make(chan WSEvent, defaultIncomingMessageChannelSize),
 	}
 }
 
@@ -52,8 +53,8 @@ type wsConfig struct {
 	token string
 }
 
-// RTMessage represents incoming messages.
-type RTMessage struct {
+// WSEvent represents incoming messages.
+type WSEvent struct {
 	Type string          `json:"type,omitempty"`
 	Data json.RawMessage `json:"data,omitempty"`
 }
@@ -198,7 +199,7 @@ func (rtm *RTM) stopRTM() {
 	close(rtm.stop)
 }
 
-func (rtm *RTM) sendOutgoingMessage(_ RTMEvent) {
+func (rtm *RTM) sendOutgoingMessage(_ WSEvent) {
 }
 
 // disconnect performs disconnection.
