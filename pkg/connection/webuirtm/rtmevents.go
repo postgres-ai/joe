@@ -13,6 +13,7 @@ const (
 	// Outgoing message types.
 	pingType            = "ping"
 	channelResponseType = "channels_response"
+	errorType           = "error"
 
 	// Incoming message types.
 	pongType           = "pong"
@@ -20,8 +21,31 @@ const (
 	messageType        = "message"
 )
 
+// wsEvent represents incoming messages.
+type wsEvent struct {
+	Type string          `json:"type,omitempty"`
+	Data json.RawMessage `json:"data,omitempty"`
+}
+
+type pingData struct {
+	ID        int   `json:"id"`
+	Timestamp int64 `json:"timestamp"`
+}
+
 type pongData struct {
-	replyID int
+	ReplyID int `json:"reply_id"`
+}
+
+type channelRequest struct {
+	RequestID string `json:"request_id"`
+}
+
+type techResponseData struct {
+	Message string `json:"message"`
+}
+
+type channelResponseData struct {
+	Channels []config.Channel `json:"channels"`
 }
 
 func processPong(event []byte) {
@@ -31,35 +55,57 @@ func processPong(event []byte) {
 		return
 	}
 
-	log.Msg("pong received: %d", pongType.replyID)
+	log.Msg("pong received: %d", pongType.ReplyID)
 }
 
-func (a *Assistant) channels() {
-	channels := []config.Channel{}
+func (a *Assistant) sendAvailableChannels(event []byte) {
+	channelRequest := channelRequest{}
+
+	if err := json.Unmarshal(event, &channelRequest); err != nil {
+		log.Dbg("failed to unmarshal request: %v", err.Error())
+		a.rtm.outgoingMessages <- outgoingEvent{
+			Type: errorType,
+			Data: techResponseData{
+				Message: err.Error(),
+			},
+		}
+
+		return
+	}
+
+	if channelRequest.RequestID == "" {
+		log.Dbg("requestID must not be empty")
+		a.rtm.outgoingMessages <- outgoingEvent{
+			Type: errorType,
+			Data: techResponseData{Message: "requestID must not be empty"},
+		}
+
+		return
+	}
+
+	a.rtm.outgoingMessages <- a.getAvailableChannels(channelRequest.RequestID)
+}
+
+func (a *Assistant) getAvailableChannels(requestID string) outgoingEvent {
+	channelResponse := channelResponseData{
+		Channels: []config.Channel{},
+	}
+
+	outgoingEvent := outgoingEvent{
+		Type:      channelResponseType,
+		RequestID: requestID,
+		Data:      channelResponse,
+	}
 
 	work, ok := a.appCfg.ChannelMapping.CommunicationTypes[CommunicationType]
-
-	wsEvent := WSEvent{
-		Type: channelResponseType,
-	}
-
-	// For now, we will use only the first entry in the config.
 	if !ok || len(work) == 0 {
-		a.rtm.outgoingMessages <- wsEvent
-		return
+		return outgoingEvent
 	}
 
-	channels = append(channels, work[0].Channels...)
+	channelResponse.Channels = append(channelResponse.Channels, work[0].Channels...)
+	outgoingEvent.Data = channelResponse
 
-	data, err := json.Marshal(channels)
-	if err != nil {
-		log.Dbg("failed to unmarshal: %v", err.Error())
-		a.rtm.outgoingMessages <- wsEvent
-		return
-	}
-
-	wsEvent.Data = data
-	a.rtm.outgoingMessages <- wsEvent
+	return outgoingEvent
 }
 
 func (a *Assistant) processMessage(event []byte) {
@@ -70,6 +116,7 @@ func (a *Assistant) processMessage(event []byte) {
 	}
 
 	log.Msg("Message: %d", webMessage.ChannelID)
+
 	svc, err := a.getProcessingService(webMessage.ChannelID)
 	if err != nil {
 		log.Err("Failed to get a processing service", err)

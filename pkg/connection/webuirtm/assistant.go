@@ -2,19 +2,18 @@
 2019 © Postgres.ai
 */
 
-// Package webui provides the Web-UI implementation of the communication interface.
+// Package webuirtm provides the Web-UI implementation of the communication interface.
 package webuirtm
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 	"sync"
 
 	"github.com/pkg/errors"
+
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
 
 	"gitlab.com/postgres-ai/joe/features"
@@ -80,18 +79,17 @@ func (a *Assistant) handleRTMEvents(ctx context.Context, incomingEvents chan jso
 		default:
 		}
 
-		wsEvent := WSEvent{}
+		wsEvent := wsEvent{}
 		if err := json.Unmarshal(msg, &wsEvent); err != nil {
 			log.Err("Failed to unmarshal message: ", err)
 		}
 
 		switch wsEvent.Type {
-		// TODO: message handling.
 		case pongType:
 			processPong(wsEvent.Data)
 
 		case channelRequestType:
-			a.channels()
+			a.sendAvailableChannels(wsEvent.Data)
 
 		case messageType:
 			a.processMessage(wsEvent.Data)
@@ -124,12 +122,6 @@ func (a *Assistant) Init(ctx context.Context) error {
 
 	go a.rtm.ManageConnection(ctx)
 	go a.handleRTMEvents(ctx, a.rtm.IncomingMessages)
-
-	//verifier := NewVerifier([]byte(a.credentialsCfg.SigningSecret))
-	//
-	//for path, handleFunc := range a.handlers() {
-	//	http.Handle(fmt.Sprintf("%s/%s", a.prefix, path), verifier.Handler(handleFunc))
-	//}
 
 	return nil
 }
@@ -193,65 +185,6 @@ func (a *Assistant) lenMessageProcessor() int {
 	return len(a.msgProcessors)
 }
 
-func (a *Assistant) handlers() map[string]http.HandlerFunc {
-	return map[string]http.HandlerFunc{
-		"verify":   a.verificationHandler,
-		"channels": a.channelsHandler,
-		"command":  a.commandHandler,
-	}
-}
-
-type challengeResponse struct {
-	Challenge string `json:"challenge"`
-}
-
-func (a *Assistant) verificationHandler(w http.ResponseWriter, r *http.Request) {
-	buf := new(bytes.Buffer)
-	if _, err := buf.ReadFrom(r.Body); err != nil {
-		log.Err("Failed to read the request body:", err)
-		w.WriteHeader(http.StatusBadRequest)
-
-		return
-	}
-
-	var resp challengeResponse
-
-	if err := json.Unmarshal(buf.Bytes(), &resp); err != nil {
-		log.Err("Challenge parse error:", err)
-		w.WriteHeader(http.StatusInternalServerError)
-
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-}
-
-func (a *Assistant) channelsHandler(w http.ResponseWriter, r *http.Request) {
-	channels := []config.Channel{}
-
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-
-	work, ok := a.appCfg.ChannelMapping.CommunicationTypes[CommunicationType]
-
-	// For now, we will use only the first entry in the config.
-	if !ok || len(work) == 0 {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-
-	channels = append(channels, work[0].Channels...)
-
-	if err := json.NewEncoder(w).Encode(channels); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-}
-
 // Message represents commands coming from Platform.
 type Message struct {
 	SessionID string `json:"session_id"`
@@ -275,34 +208,4 @@ func (m *Message) ToIncomingMessage() models.IncomingMessage {
 	}
 
 	return incomingMessage
-}
-
-func (a *Assistant) commandHandler(w http.ResponseWriter, r *http.Request) {
-	buf := new(bytes.Buffer)
-	if _, err := buf.ReadFrom(r.Body); err != nil {
-		log.Err("Failed to read the request body:", err)
-		w.WriteHeader(http.StatusBadRequest)
-
-		return
-	}
-
-	body := buf.Bytes()
-
-	webMessage := Message{}
-	if err := json.Unmarshal(body, &webMessage); err != nil {
-		log.Err("Failed to unmarshal the request body:", err)
-		w.WriteHeader(http.StatusBadRequest)
-
-		return
-	}
-
-	svc, err := a.getProcessingService(webMessage.ChannelID)
-	if err != nil {
-		log.Err("Failed to get a processing service", err)
-		w.WriteHeader(http.StatusBadRequest)
-
-		return
-	}
-
-	go svc.ProcessMessageEvent(context.TODO(), webMessage.ToIncomingMessage())
 }
