@@ -1,9 +1,7 @@
 # Joe - Postgres Query Optimization
 Boost your backend development process
 
-<div align="center">
-    ![Joe Demo](./assets/demo.gif)
-</div>
+![Joe Bot demonstration](./assets/demo.gif)
 
 Provide developers access to experiment on automatically provisioned
 production-size DB testing replica. Joe will provide recommendations
