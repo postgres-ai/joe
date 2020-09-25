@@ -143,10 +143,12 @@ func (s *ProcessingService) stopSession(user *usermanager.User) {
 
 // destroySession destroys a DatabaseLab session.
 func (s *ProcessingService) destroySession(u *usermanager.User) error {
-	log.Dbg("Stopping session...")
+	log.Dbg("Destroying session...")
 
-	if err := s.DBLab.DestroyClone(context.TODO(), u.Session.Clone.ID); err != nil {
-		return errors.Wrap(err, "failed to destroy clone")
+	if u.Session.Clone != nil {
+		if err := s.DBLab.DestroyClone(context.TODO(), u.Session.Clone.ID); err != nil {
+			return errors.Wrap(err, "failed to destroy clone")
+		}
 	}
 
 	s.stopSession(u)

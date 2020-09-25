@@ -140,6 +140,7 @@ func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.Us
 	user.Session.Clone = clone
 	user.Session.CloneConnection = db
 	user.Session.LastActionTs = time.Now()
+	user.Session.ChannelID = incomingMessage.ChannelID
 
 	if s.config.Platform.HistoryEnabled && incomingMessage.SessionID == "" {
 		if err := s.createPlatformSession(ctx, user, sMsg.ChannelID); err != nil {
