@@ -156,12 +156,9 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 		return
 	}
 
-	user.Session.LastActionTs = time.Now()
-	user.Session.ChannelID = incomingMessage.ChannelID
-	user.Session.Direct = incomingMessage.Direct
-
-	if user.Session.PlatformSessionID == "" {
-		user.Session.PlatformSessionID = incomingMessage.SessionID
+	if err := s.prepareUserSession(user, incomingMessage); err != nil {
+		log.Err(err)
+		return
 	}
 
 	// Filter and prepare message.
@@ -397,6 +394,25 @@ func (s *ProcessingService) saveHistory(ctx context.Context, msg *models.Message
 			// It's not a critical error if we cannot add the link.
 			log.Err(err)
 		}
+	}
+
+	return nil
+}
+
+// prepareUserSession sets base properties for the user session according to the incoming message.
+func (s *ProcessingService) prepareUserSession(user *usermanager.User, incomingMessage models.IncomingMessage) error {
+	if user.Session.ChannelID != "" && user.Session.ChannelID != incomingMessage.ChannelID {
+		if err := s.destroySession(user); err != nil {
+			return errors.Wrap(err, "failed to destroy old user session")
+		}
+	}
+
+	user.Session.LastActionTs = time.Now()
+	user.Session.ChannelID = incomingMessage.ChannelID
+	user.Session.Direct = incomingMessage.Direct
+
+	if user.Session.PlatformSessionID == "" {
+		user.Session.PlatformSessionID = incomingMessage.SessionID
 	}
 
 	return nil
