@@ -1,5 +1,8 @@
 image: golang:1.13
 
+include:
+  - template: Security/SAST.gitlab-ci.yml
+
 variables:
   DOCKER_FILE: "Dockerfile"
 
