@@ -22,6 +22,8 @@ type EstimateDirection string
 const (
 	Over  EstimateDirection = "Over"
 	Under                   = "Under"
+
+	NA = "N/A"
 )
 
 type NodeType string
@@ -445,8 +447,20 @@ func (ex *Explain) writeStatsText(writer io.Writer) {
 	fmt.Fprintf(writer, "\nTime: %s\n", util.MillisecondsToString(ex.TotalTime))
 	fmt.Fprintf(writer, "  - planning: %s\n", util.MillisecondsToString(ex.PlanningTime))
 	fmt.Fprintf(writer, "  - execution: %s\n", util.MillisecondsToString(ex.ExecutionTime))
-	fmt.Fprintf(writer, "    - I/O read: %s\n", util.MillisecondsToString(ex.IOReadTime))
-	fmt.Fprintf(writer, "    - I/O write: %s\n", util.MillisecondsToString(ex.IOWriteTime))
+
+	ioRead := NA
+	if ex.IOReadTime > 0 {
+		ioRead = util.MillisecondsToString(ex.IOReadTime)
+	}
+
+	fmt.Fprintf(writer, "    - I/O read: %s\n", ioRead)
+
+	ioWrite := NA
+	if ex.IOWriteTime > 0 {
+		ioWrite = util.MillisecondsToString(ex.IOWriteTime)
+	}
+
+	fmt.Fprintf(writer, "    - I/O write: %s\n", ioWrite)
 
 	fmt.Fprintf(writer, "\nShared buffers:\n")
 	ex.writeBlocks(writer, "hits", ex.SharedHitBlocks, "from the buffer pool")
