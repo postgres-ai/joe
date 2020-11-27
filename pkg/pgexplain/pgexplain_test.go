@@ -11,6 +11,7 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/util"
 
 	"github.com/sergi/go-diff/diffmatchpatch"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestVisualize(t *testing.T) {
@@ -1845,3 +1846,62 @@ const ExpectedText7AntiJoin = ` Hash Anti Join
                                  Sort Key: t3.c1
                                  ->  Seq Scan on tt4x t3
 `
+
+func TestStatsText(t *testing.T) {
+	testCases := []struct {
+		explain        Explain
+		expectedResult string
+	}{
+		{
+			explain: Explain{
+				TotalTime:     25,
+				PlanningTime:  3,
+				ExecutionTime: 22,
+				IOReadTime:    0,
+				IOWriteTime:   0,
+			},
+			expectedResult: `
+Time: 25.000 ms
+  - planning: 3.000 ms
+  - execution: 22.000 ms
+    - I/O read: N/A
+    - I/O write: N/A
+
+Shared buffers:
+  - hits: 0 from the buffer pool
+  - reads: 0 from the OS file cache, including disk I/O
+  - dirtied: 0
+  - writes: 0
+`,
+		},
+		{
+			explain: Explain{
+				TotalTime:     25,
+				PlanningTime:  3,
+				ExecutionTime: 22,
+				IOReadTime:    3,
+				IOWriteTime:   5,
+			},
+			expectedResult: `
+Time: 25.000 ms
+  - planning: 3.000 ms
+  - execution: 22.000 ms
+    - I/O read: 3.000 ms
+    - I/O write: 5.000 ms
+
+Shared buffers:
+  - hits: 0 from the buffer pool
+  - reads: 0 from the OS file cache, including disk I/O
+  - dirtied: 0
+  - writes: 0
+`,
+		},
+	}
+
+	for _, tc := range testCases {
+		buf := bytes.NewBuffer([]byte{})
+
+		tc.explain.writeStatsText(buf)
+		assert.Equal(t, buf.String(), tc.expectedResult)
+	}
+}
