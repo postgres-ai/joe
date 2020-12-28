@@ -22,7 +22,7 @@ import (
 )
 
 // TODO (akartasov): Set the app version during build.
-const Version = "v0.7.0"
+const Version = "v0.7.2"
 
 var buildTime string
 

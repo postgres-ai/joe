@@ -32,9 +32,9 @@ type App struct {
 
 // Platform describes configuration parameters of a Postgres.ai platform.
 type Platform struct {
-	URL            string `env:"PLATFORM_URL" env-default:"https://postgres.ai/api/general"`
-	Token          string `env:"PLATFORM_TOKEN"`
-	HistoryEnabled bool   `env:"HISTORY_ENABLED"`
+	URL            string `yaml:"url" env:"PLATFORM_URL" env-default:"https://postgres.ai/api/general"`
+	Token          string `yaml:"token" env:"PLATFORM_TOKEN"`
+	HistoryEnabled bool   `yaml:"historyEnabled" env:"HISTORY_ENABLED"`
 }
 
 // ChannelMapping contains configuration parameters of communication types and Database Labs.
