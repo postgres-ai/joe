@@ -7,11 +7,9 @@ package msgproc
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
-	"github.com/hako/durafmt"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/pkg/errors"
 	"github.com/rs/xid"
@@ -21,13 +19,15 @@ import (
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
 	dblabmodels "gitlab.com/postgres-ai/database-lab/pkg/models"
 
+	"gitlab.com/postgres-ai/joe/pkg/foreword"
 	"gitlab.com/postgres-ai/joe/pkg/models"
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"
+	"gitlab.com/postgres-ai/joe/pkg/util"
 )
 
 // HelpMessage defines available commands provided with the help message.
-const HelpMessage = "• `explain` — analyze your query (SELECT, INSERT, DELETE, UPDATE or WITH) and generate recommendations\n" +
+const HelpMessage = "\n• `explain` — analyze your query (SELECT, INSERT, DELETE, UPDATE or WITH) and generate recommendations\n" +
 	"• `plan` — analyze your query (SELECT, INSERT, DELETE, UPDATE or WITH) without execution\n" +
 	"• `exec` — execute any query (for example, CREATE INDEX)\n" +
 	"• `activity` — show currently running sessions in Postgres (states: `active`, `idle in transaction`, `disabled`)\n" +
@@ -35,20 +35,15 @@ const HelpMessage = "• `explain` — analyze your query (SELECT, INSERT, DELET
 	"• `reset` — revert the database to the initial state (usually takes less than a minute, :warning: all changes will be lost)\n" +
 	"• `\\d`, `\\d+`, `\\dt`, `\\dt+`, `\\di`, `\\di+`, `\\l`, `\\l+`, `\\dv`, `\\dv+`, `\\dm`, `\\dm+` — psql meta information commands\n" +
 	"• `hypo` — create hypothetical indexes using the HypoPG extension\n" +
-	"• `help` — this message\n"
-
-// MsgSessionStarting provides a message for a session start.
-const MsgSessionStarting = "Starting new session...\n"
-
-// MsgSessionForewordTpl provides a template of session foreword message.
-const MsgSessionForewordTpl = "• Say 'help' to see the full list of commands.\n" +
+	"• `help` — this message\n\n" +
 	"• Sessions are fully independent. Feel free to do anything.\n" +
-	"• The session will be destroyed after %s of inactivity.\n" +
+	"• The session will be destroyed after the certain amount of time ('idle timeout') of inactivity.\n" +
 	"• EXPLAIN plans here are expected to be identical to production plans.\n" +
 	"• The actual timing values may differ from production because actual caches in DB Lab are smaller. " +
-	"However, the number of bytes and pages/buffers in plans are identical to production.\n" +
-	"\nMade with :hearts: by Postgres.ai. Bug reports, ideas, and merge requests are welcome: https://gitlab.com/postgres-ai/joe \n" +
-	"\nJoe version: %s (%s).\nDatabase: %s. Snapshot data state at: %s."
+	"However, the number of bytes and pages/buffers in plans match the production database.\n"
+
+// MsgSessionStarting provides a message for a session start.
+const MsgSessionStarting = "Starting a new session..."
 
 // SeparatorEllipsis provides a separator for cut messages.
 const SeparatorEllipsis = "\n[...SKIP...]\n"
@@ -74,8 +69,10 @@ const (
 	PasswordMinSymbols = 0
 )
 
-var hintExplainDmlWords = []string{"insert", "select", "update", "delete", "with"}
-var hintExecDdlWords = []string{"alter", "create", "drop", "set"}
+var (
+	hintExplainDmlWords = []string{"insert", "select", "update", "delete", "with"}
+	hintExecDdlWords    = []string{"alter", "create", "drop", "set"}
+)
 
 // runSession starts a user session if not exists.
 func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.User, incomingMessage models.IncomingMessage) (err error) {
@@ -117,16 +114,15 @@ func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.Us
 		return errors.Wrap(err, "failed to create a Database Lab clone")
 	}
 
-	sMsg.AppendText(
-		getForeword(time.Duration(clone.Metadata.MaxIdleMinutes)*time.Minute,
-			s.config.App.Version,
-			s.featurePack.Entertainer().GetEdition(),
-			clone.Snapshot.DataStateAt,
-			s.config.DBLab.DBName,
-		))
-
-	if err := s.messenger.UpdateText(sMsg); err != nil {
-		return errors.Wrap(err, "failed to append message with a foreword")
+	fwData := &foreword.Content{
+		SessionID:  sessionID,
+		Duration:   time.Duration(clone.Metadata.MaxIdleMinutes) * time.Minute,
+		AppVersion: s.config.App.Version,
+		Edition:    s.featurePack.Entertainer().GetEdition(),
+		DBName:     s.config.DBLab.DBName,
+		DSA:        clone.Snapshot.DataStateAt,
+		DBSize:     util.NA,
+		DSADiff:    "-",
 	}
 
 	dblabClone := s.buildDBLabCloneConn(clone.DB)
@@ -134,6 +130,10 @@ func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.Us
 	db, err := initConn(dblabClone)
 	if err != nil {
 		return errors.Wrap(err, "failed to init database connection")
+	}
+
+	if err := fwData.EnrichForewordInfo(ctx, db); err != nil {
+		return err
 	}
 
 	user.Session.ConnParams = dblabClone
@@ -148,10 +148,10 @@ func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.Us
 		}
 	}
 
-	sMsg.AppendText(fmt.Sprintf("Session started: `%s`", sessionID))
+	sMsg.AppendText(fwData.GetForeword())
 
 	if err := s.messenger.UpdateText(sMsg); err != nil {
-		return errors.Wrap(err, "failed to append message about session start")
+		return errors.Wrap(err, "failed to append message with foreword")
 	}
 
 	if err := s.messenger.OK(sMsg); err != nil {
@@ -246,9 +246,4 @@ func (s *ProcessingService) createPlatformSession(ctx context.Context, user *use
 // generateSessionID generates a session ID for Joe.
 func generateSessionID() string {
 	return joeSessionPrefix + xid.New().String()
-}
-
-func getForeword(idleDuration time.Duration, version, edition, dataStateAt, dbname string) string {
-	duration := durafmt.Parse(idleDuration.Round(time.Minute))
-	return fmt.Sprintf(MsgSessionForewordTpl, duration, version, edition, dbname, dataStateAt)
 }
