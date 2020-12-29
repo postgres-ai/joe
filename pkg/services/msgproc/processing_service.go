@@ -300,7 +300,9 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 		err = execCmd.Execute()
 
 	case receivedCommand == CommandReset:
-		err = command.ResetSession(ctx, platformCmd, msg, s.DBLab, user.Session.Clone.ID, s.messenger, user.Session.CloneConnection)
+		err = command.ResetSession(ctx, platformCmd, msg, s.DBLab, s.messenger, &user.Session, s.config.App.Version,
+			s.featurePack.Entertainer().GetEdition())
+
 		// TODO(akartasov): Find permanent solution,
 		//  it's a temporary fix for https://gitlab.com/postgres-ai/joe/-/issues/132.
 		if err != nil {

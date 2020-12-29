@@ -10,6 +10,11 @@ import (
 	"time"
 )
 
+const (
+	// NA defines the "not available" placeholder.
+	NA = "N/A"
+)
+
 func EqualStringSlicesUnordered(x, y []string) bool {
 	xMap := make(map[string]int)
 	yMap := make(map[string]int)
