@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgconn"
+	"github.com/jackc/pgtype/pgxtype"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/olekukonko/tablewriter"
 	"github.com/pkg/errors"
@@ -30,11 +31,11 @@ func DBQuery(ctx context.Context, db *pgxpool.Pool, query string, args ...interf
 }
 
 // DBQueryWithResponse runs query with returning results.
-func DBQueryWithResponse(db *pgxpool.Pool, query string) (string, error) {
-	return runQuery(context.TODO(), db, query)
+func DBQueryWithResponse(ctx context.Context, db pgxtype.Querier, query string) (string, error) {
+	return runQuery(ctx, db, query)
 }
 
-func runQuery(ctx context.Context, db *pgxpool.Pool, query string) (string, error) {
+func runQuery(ctx context.Context, db pgxtype.Querier, query string) (string, error) {
 	log.Dbg("DB query:", query)
 
 	// TODO(anatoly): Retry mechanic.
@@ -66,7 +67,7 @@ func runQuery(ctx context.Context, db *pgxpool.Pool, query string) (string, erro
 }
 
 // runTableQuery runs query and returns results in the table view.
-func runTableQuery(ctx context.Context, db *pgxpool.Pool, query string, args ...interface{}) ([][]string, error) {
+func runTableQuery(ctx context.Context, db pgxtype.Querier, query string, args ...interface{}) ([][]string, error) {
 	log.Dbg("DB table query:", query)
 
 	rows, err := db.Query(ctx, query, args...)

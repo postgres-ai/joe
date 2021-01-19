@@ -8,16 +8,22 @@
 package options
 
 import (
+	"time"
+
 	"gitlab.com/postgres-ai/joe/features/definition"
 )
 
 // Default values (changing these options you confirm that you have active
 // subscription to Postgres.ai Platform Enterprise Edition https://postgres.ai).
 const (
-	defaultQuotaLimit    = 10
-	defaultQuotaInterval = 60
-	defaultAudit         = false
-	defaultDBLabLimit    = 1
+	defaultQuotaLimit        = 10
+	defaultQuotaInterval     = 60
+	defaultAudit             = false
+	defaultDBLabLimit        = 1
+	defaultReadFactor        = 1
+	defaultWriteFactor       = 1
+	defaultProfilingInterval = 20 * time.Millisecond
+	defaultSampleThreshold   = 100
 )
 
 // Extra provides a mock of Enterprise flags.
@@ -38,6 +44,12 @@ func (e *Extra) GetEnterpriseOptions(_ string) (definition.EnterpriseOptions, er
 		},
 		DBLab: definition.DBLab{
 			InstanceLimit: defaultDBLabLimit,
+		},
+		Estimator: definition.Estimator{
+			ReadFactor:        defaultReadFactor,
+			WriteFactor:       defaultWriteFactor,
+			ProfilingInterval: defaultProfilingInterval,
+			SampleThreshold:   defaultSampleThreshold,
 		},
 	}, nil
 }

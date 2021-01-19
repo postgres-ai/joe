@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgtype/pgxtype"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/pkg/errors"
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
@@ -47,7 +48,7 @@ func (cmd PlanCmd) Execute(ctx context.Context) error {
 		return errors.New(MsgPlanOptionReq)
 	}
 
-	if _, err := cmd.explainWithoutExecution(ctx); err != nil {
+	if _, err := cmd.explainWithoutExecution(ctx, cmd.db); err != nil {
 		return errors.Wrap(err, "failed to run explain without execution")
 	}
 
@@ -57,9 +58,9 @@ func (cmd PlanCmd) Execute(ctx context.Context) error {
 }
 
 // explainWithoutExecution runs explain without execution.
-func (cmd *PlanCmd) explainWithoutExecution(ctx context.Context) (string, error) {
+func (cmd *PlanCmd) explainWithoutExecution(ctx context.Context, db pgxtype.Querier) (string, error) {
 	// Explain request and show.
-	explainResult, err := querier.DBQueryWithResponse(cmd.db, queryExplain+cmd.command.Query)
+	explainResult, err := querier.DBQueryWithResponse(ctx, db, queryExplain+cmd.command.Query)
 	if err != nil {
 		return "", err
 	}
@@ -72,7 +73,7 @@ func (cmd *PlanCmd) explainWithoutExecution(ctx context.Context) (string, error)
 	includeHypoPG := false
 	explainPlanTitle := ""
 
-	if hypoIndexes, err := listHypoIndexes(ctx, cmd.db); err == nil && len(hypoIndexes) > 0 {
+	if hypoIndexes, err := listHypoIndexes(ctx, db); err == nil && len(hypoIndexes) > 0 {
 		if isHypoIndexInvolved(explainResult, hypoIndexes) {
 			explainPlanTitle = " (HypoPG involved :ghost:)"
 			includeHypoPG = true

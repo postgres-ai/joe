@@ -9,14 +9,17 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgtype/pgxtype"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/pkg/errors"
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
 
+	"gitlab.com/postgres-ai/joe/features/definition"
 	"gitlab.com/postgres-ai/joe/pkg/bot/querier"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/models"
 	"gitlab.com/postgres-ai/joe/pkg/pgexplain"
+	"gitlab.com/postgres-ai/joe/pkg/services/estimator"
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 	"gitlab.com/postgres-ai/joe/pkg/util/text"
 )
@@ -31,21 +34,43 @@ const (
 )
 
 // Explain runs an explain query.
-func Explain(msgSvc connection.Messenger, command *platform.Command, msg *models.Message,
-	explainConfig pgexplain.ExplainConfig, db *pgxpool.Pool) error {
+func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform.Command, msg *models.Message,
+	explainConfig pgexplain.ExplainConfig, estCfg definition.Estimator, db *pgxpool.Pool) error {
 	if command.Query == "" {
 		return errors.New(MsgExplainOptionReq)
 	}
 
+	conn, pid, err := getConn(ctx, db)
+	if err != nil {
+		log.Err("failed to get connection: ", err)
+		return err
+	}
+
+	defer conn.Release()
+
+	p := estimator.NewProfiler(db, estimator.TraceOptions{
+		Pid:      pid,
+		Interval: profilingInterval,
+		StrSize:  strSize,
+	})
+
 	cmd := NewPlan(command, msg, db, msgSvc)
-	msgInitText, err := cmd.explainWithoutExecution(context.TODO())
+	msgInitText, err := cmd.explainWithoutExecution(ctx, conn)
 	if err != nil {
 		return errors.Wrap(err, "failed to run explain without execution")
 	}
 
+	// Start profiling.
+	go p.Start(ctx)
+
 	// Explain analyze request and processing.
-	explainAnalyze, err := querier.DBQueryWithResponse(db, queryExplainAnalyze+command.Query)
+	explainAnalyze, err := querier.DBQueryWithResponse(ctx, conn, queryExplainAnalyze+command.Query)
 	if err != nil {
+		return err
+	}
+
+	if err := conn.Conn().Close(ctx); err != nil {
+		log.Err("Failed to close connection: ", err)
 		return err
 	}
 
@@ -123,6 +148,16 @@ func Explain(msgSvc connection.Messenger, command *platform.Command, msg *models
 		return err
 	}
 
+	// Wait for profiling results.
+	<-p.Finish()
+
+	// Show stats if the total number of samples more than the default threshold.
+	if p.CountSamples() >= sampleThreshold {
+		msg.AppendText(fmt.Sprintf("*Profiling of wait events:*\n```%s```\n", p.RenderStat()))
+
+		explain.EstimationTime = estimator.CalcTiming(p.WaitEventsRatio(), estCfg.ReadFactor, estCfg.WriteFactor, p.TotalTime())
+	}
+
 	// Summary.
 	stats := explain.RenderStats()
 	command.Stats = stats
@@ -136,7 +171,7 @@ func Explain(msgSvc connection.Messenger, command *platform.Command, msg *models
 	return nil
 }
 
-func listHypoIndexes(ctx context.Context, db *pgxpool.Pool) ([]string, error) {
+func listHypoIndexes(ctx context.Context, db pgxtype.Querier) ([]string, error) {
 	rows, err := db.Query(ctx, "SELECT indexname FROM hypopg_list_indexes()")
 	if err != nil {
 		return nil, err

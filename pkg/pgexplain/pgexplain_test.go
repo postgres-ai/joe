@@ -1854,16 +1854,17 @@ func TestStatsText(t *testing.T) {
 	}{
 		{
 			explain: Explain{
-				TotalTime:     25,
-				PlanningTime:  3,
-				ExecutionTime: 22,
-				IOReadTime:    0,
-				IOWriteTime:   0,
+				TotalTime:      25,
+				PlanningTime:   3,
+				ExecutionTime:  22,
+				IOReadTime:     0,
+				IOWriteTime:    0,
+				EstimationTime: 0.0020,
 			},
 			expectedResult: `
 Time: 25.000 ms
   - planning: 3.000 ms
-  - execution: 22.000 ms
+  - execution: 22.000 ms (estimated for prod: 0.002 s)
     - I/O read: N/A
     - I/O write: N/A
 

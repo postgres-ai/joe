@@ -289,15 +289,15 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 
 	switch {
 	case receivedCommand == CommandExplain:
-		err = command.Explain(s.messenger, platformCmd, msg, s.config.Explain, user.Session.CloneConnection)
+		err = command.Explain(ctx, s.messenger, platformCmd, msg, s.config.Explain, s.config.EntOpts.Estimator, user.Session.CloneConnection)
 
 	case receivedCommand == CommandPlan:
 		planCmd := command.NewPlan(platformCmd, msg, user.Session.CloneConnection, s.messenger)
 		err = planCmd.Execute(ctx)
 
 	case receivedCommand == CommandExec:
-		execCmd := command.NewExec(platformCmd, msg, user.Session.CloneConnection, s.messenger)
-		err = execCmd.Execute()
+		execCmd := command.NewExec(s.config.EntOpts.Estimator, platformCmd, msg, user.Session.CloneConnection, s.messenger)
+		err = execCmd.Execute(ctx)
 
 	case receivedCommand == CommandReset:
 		err = command.ResetSession(ctx, platformCmd, msg, s.DBLab, s.messenger, &user.Session, s.config.App.Version,
