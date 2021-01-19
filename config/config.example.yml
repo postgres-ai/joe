@@ -171,3 +171,9 @@ enterprise:
   dblab:
     # Limit the number of available Database Lab instances. Default: 1.
     instanceLimit: 1
+
+  estimator:
+    readFactor: 1
+    writeFactor: 1
+    profilingInterval: 20ms
+    sampleThreshold: 100
