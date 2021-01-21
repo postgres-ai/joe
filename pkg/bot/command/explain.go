@@ -24,13 +24,16 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/util/text"
 )
 
-// MsgExplainOptionReq describes an explain error.
-const MsgExplainOptionReq = "Use `explain` to see the query's plan, e.g. `explain select 1`"
-
-// Query Explain prefixes.
 const (
+	// MsgExplainOptionReq describes an explain error.
+	MsgExplainOptionReq = "Use `explain` to see the query's plan, e.g. `explain select 1`"
+
+	// Query Explain prefixes.
 	queryExplain        = "EXPLAIN (FORMAT TEXT) "
 	queryExplainAnalyze = "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) "
+
+	// timingEstimatorDocLink defines the link with estimator description.
+	timingEstimatorDocLink = "https://postgres.ai/docs/database-lab/timing-estimator"
 )
 
 // Explain runs an explain query.
@@ -162,7 +165,12 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 	stats := explain.RenderStats()
 	command.Stats = stats
 
-	msg.AppendText(fmt.Sprintf("*Summary:*\n```%s```", stats))
+	description := ""
+	if explain.EstimationTime != 0 {
+		description = fmt.Sprintf("\n* <%s|How estimation works>", timingEstimatorDocLink)
+	}
+
+	msg.AppendText(fmt.Sprintf("*Summary:*\n```%s```%s", stats, description))
 	if err = msgSvc.UpdateText(msg); err != nil {
 		log.Err("Show summary: ", err)
 		return err
