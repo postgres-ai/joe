@@ -4,9 +4,9 @@ BINARY = joe
 GOARCH = amd64
 GOOS = linux
 
-VERSION?=0.1
+COMMIT?=$(shell git rev-parse HEAD)
+VERSION=$(shell git describe --tags 2>/dev/null || echo "${COMMIT}")
 BUILD_TIME?=$(shell date -u '+%Y%m%d-%H%M')
-COMMIT?=no #$(shell git rev-parse HEAD)
 BRANCH?=no #$(shell git rev-parse --abbrev-ref HEAD)
 
 # Symlink into GOPATH

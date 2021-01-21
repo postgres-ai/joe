@@ -21,10 +21,8 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/config"
 )
 
-// TODO (akartasov): Set the app version during build.
-const Version = "v0.7.2"
-
-var buildTime string
+// ldflag variables.
+var buildTime, version string
 
 func main() {
 	version := formatBotVersion()
@@ -73,5 +71,5 @@ func loadConfig(configPath string) (*config.Config, error) {
 }
 
 func formatBotVersion() string {
-	return Version + "-" + buildTime
+	return version + "-" + buildTime
 }
