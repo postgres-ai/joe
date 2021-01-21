@@ -93,11 +93,16 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 	if p.CountSamples() >= cmd.estCfg.SampleThreshold {
 		result += fmt.Sprintf("```%s```\n", p.RenderStat())
 
-		estimationTime = fmt.Sprintf(" (estimated for prod: %.3f s)",
+		estimationTime = fmt.Sprintf(" (estimated* for prod: %.3f s)",
 			estimator.CalcTiming(p.WaitEventsRatio(), cmd.estCfg.ReadFactor, cmd.estCfg.WriteFactor, p.TotalTime()))
 	}
 
 	result += fmt.Sprintf("The query has been executed. Duration: %.3f s%s", p.TotalTime(), estimationTime)
+
+	if estimationTime != "" {
+		result += fmt.Sprintf("\n* <%s|How estimation works>", timingEstimatorDocLink)
+	}
+
 	cmd.command.Response = result
 
 	cmd.message.AppendText(result)
