@@ -87,25 +87,22 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 	// Wait for profiling results.
 	<-p.Finish()
 
-	result, estimationTime := "", ""
+	estimationTime, description := "", ""
 
 	// Show stats if the total number of samples more than the default threshold.
 	if p.CountSamples() >= cmd.estCfg.SampleThreshold {
-		result += fmt.Sprintf("```%s```\n", p.RenderStat())
+		cmd.message.AppendText(fmt.Sprintf("```%s```", p.RenderStat()))
 
 		estimationTime = fmt.Sprintf(" (estimated* for prod: %.3f s)",
 			estimator.CalcTiming(p.WaitEventsRatio(), cmd.estCfg.ReadRatio, cmd.estCfg.WriteRatio, p.TotalTime()))
+		description = fmt.Sprintf("\n⠀* <%s|How estimation works>", timingEstimatorDocLink)
 	}
 
-	result += fmt.Sprintf("The query has been executed. Duration: %.3f s%s", p.TotalTime(), estimationTime)
-
-	if estimationTime != "" {
-		result += fmt.Sprintf("\n⠀* <%s|How estimation works>", timingEstimatorDocLink)
-	}
+	result := fmt.Sprintf("The query has been executed. Duration: %.3f s%s", p.TotalTime(), estimationTime)
 
 	cmd.command.Response = result
+	cmd.message.AppendText(result + description)
 
-	cmd.message.AppendText(result)
 	if err = cmd.messenger.UpdateText(cmd.message); err != nil {
 		log.Err("failed to update text while running the exec command:", err)
 		return err
