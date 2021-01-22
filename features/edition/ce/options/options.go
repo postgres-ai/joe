@@ -20,8 +20,8 @@ const (
 	defaultQuotaInterval     = 60
 	defaultAudit             = false
 	defaultDBLabLimit        = 1
-	defaultReadFactor        = 1
-	defaultWriteFactor       = 1
+	defaultReadRatio         = 1
+	defaultWriteRatio        = 1
 	defaultProfilingInterval = 20 * time.Millisecond
 	defaultSampleThreshold   = 100
 )
@@ -46,8 +46,8 @@ func (e *Extra) GetEnterpriseOptions(_ string) (definition.EnterpriseOptions, er
 			InstanceLimit: defaultDBLabLimit,
 		},
 		Estimator: definition.Estimator{
-			ReadFactor:        defaultReadFactor,
-			WriteFactor:       defaultWriteFactor,
+			ReadRatio:         defaultReadRatio,
+			WriteRatio:        defaultWriteRatio,
 			ProfilingInterval: defaultProfilingInterval,
 			SampleThreshold:   defaultSampleThreshold,
 		},

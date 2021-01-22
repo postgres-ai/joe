@@ -40,8 +40,8 @@ type DBLab struct {
 
 // Estimator describes Enterprise options to estimate query timing.
 type Estimator struct {
-	ReadFactor        float64
-	WriteFactor       float64
+	ReadRatio         float64
+	WriteRatio        float64
 	ProfilingInterval time.Duration
 	SampleThreshold   int
 }

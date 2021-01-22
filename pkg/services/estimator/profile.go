@@ -108,7 +108,7 @@ func (p *Profiler) Start(ctx context.Context) {
 		// Start collecting stats immediately if query is executing, otherwise waiting when query starts
 		if startup {
 			if curr.state.String == "active" {
-				p.printHeader(curr)
+				p.printHeader()
 				p.countWaitings(curr, prev)
 
 				startup = false
@@ -129,7 +129,7 @@ func (p *Profiler) Start(ctx context.Context) {
 			// transition to active state -- query started -- reset stats and print header with query text
 			if curr.state.String == "active" {
 				p.resetCounters()
-				p.printHeader(curr)
+				p.printHeader()
 			}
 			// transition from active state -- query finished -- print collected stats and reset it
 			if prev.state.String == "active" {
@@ -212,13 +212,8 @@ func (p *Profiler) RenderStat() string {
 }
 
 // printHeader prints stats header.
-func (p *Profiler) printHeader(curr TraceStat) {
-	q := curr.queryText.String
-	if len(curr.queryText.String) > p.opts.StrSize {
-		q = curr.queryText.String[:p.opts.StrSize]
-	}
-
-	p.out.WriteString(fmt.Sprintf("%% time      seconds wait_event                     query: %s\n", q))
+func (p *Profiler) printHeader() {
+	p.out.WriteString(fmt.Sprintf("%% time      seconds wait_event\n"))
 	p.out.WriteString("------ ------------ -----------------------------\n")
 }
 
