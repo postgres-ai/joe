@@ -167,7 +167,7 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 
 	description := ""
 	if explain.EstimationTime != 0 {
-		description = fmt.Sprintf("\n✱ <%s|How estimation works>", timingEstimatorDocLink)
+		description = fmt.Sprintf("\n⠀* <%s|How estimation works>", timingEstimatorDocLink)
 	}
 
 	msg.AppendText(fmt.Sprintf("*Summary:*\n```%s```%s", stats, description))

@@ -1864,7 +1864,7 @@ func TestStatsText(t *testing.T) {
 			expectedResult: `
 Time: 25.000 ms
   - planning: 3.000 ms
-  - execution: 22.000 ms (estimated✱ for prod: 0.002 s)
+  - execution: 22.000 ms (estimated* for prod: 0.002 s)
     - I/O read: N/A
     - I/O write: N/A
 
