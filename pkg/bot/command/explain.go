@@ -158,7 +158,7 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 	if p.CountSamples() >= sampleThreshold {
 		msg.AppendText(fmt.Sprintf("*Profiling of wait events:*\n```%s```\n", p.RenderStat()))
 
-		explain.EstimationTime = estimator.CalcTiming(p.WaitEventsRatio(), estCfg.ReadFactor, estCfg.WriteFactor, p.TotalTime())
+		explain.EstimationTime = estimator.CalcTiming(p.WaitEventsRatio(), estCfg.ReadRatio, estCfg.WriteRatio, p.TotalTime())
 	}
 
 	// Summary.
@@ -167,7 +167,7 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 
 	description := ""
 	if explain.EstimationTime != 0 {
-		description = fmt.Sprintf("\n* <%s|How estimation works>", timingEstimatorDocLink)
+		description = fmt.Sprintf("\n✱ <%s|How estimation works>", timingEstimatorDocLink)
 	}
 
 	msg.AppendText(fmt.Sprintf("*Summary:*\n```%s```%s", stats, description))

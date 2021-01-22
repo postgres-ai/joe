@@ -92,21 +92,21 @@ func isWriteEvent(event string) bool {
 }
 
 // CalcTiming calculates the query time for the production environment, given the prepared factors.
-func CalcTiming(waitEvents map[string]float64, readFactor, writeFactor, elapsed float64) float64 {
-	var readRatio, writeRatio, normal float64
+func CalcTiming(waitEvents map[string]float64, readRatio, writeRatio, elapsed float64) float64 {
+	var readPercentage, writePercentage, normal float64
 
 	for event, percent := range waitEvents {
 		switch {
 		case isReadEvent(event):
-			readRatio += percent
+			readPercentage += percent
 
 		case isWriteEvent(event):
-			writeRatio += percent
+			writePercentage += percent
 
 		default:
 			normal += percent
 		}
 	}
 
-	return (normal + readRatio/readFactor + writeRatio/writeFactor) / 100 * elapsed
+	return (normal + readPercentage/readRatio + writePercentage/writeRatio) / 100 * elapsed
 }
