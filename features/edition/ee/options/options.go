@@ -49,8 +49,8 @@ type DBLab struct {
 
 // Estimator describes Enterprise options to estimate query timing.
 type Estimator struct {
-	ReadFactor        float64       `yaml:"readFactor" description:"set up the read factor of the estimator" env:"EE_ESTIMATOR_RF"`
-	WriteFactor       float64       `yaml:"writeFactor" description:"set up the write factor of the estimator" env:"EE_ESTIMATOR_WF"`
+	ReadRatio         float64       `yaml:"readRatio" description:"set up the read ratio of the estimator" env:"EE_ESTIMATOR_READ_RATIO"`
+	WriteRatio        float64       `yaml:"writeRatio" description:"set up the write ratio of the estimator" env:"EE_ESTIMATOR_WRITE_RATIO"`
 	ProfilingInterval time.Duration `yaml:"profilingInterval" description:"set up the profiling interval of the estimator" env:"EE_ESTIMATOR_PROFILING_INTERVAL"`
 	SampleThreshold   int           `yaml:"sampleThreshold" description:"set up the samples threshold of the estimator" env:"EE_ESTIMATOR_SAMPLE_THRESHOLD"`
 }
@@ -85,8 +85,8 @@ func (e *Enterprise) toEnterpriseOptions() definition.EnterpriseOptions {
 			InstanceLimit: e.DBLab.InstanceLimit,
 		},
 		Estimator: definition.Estimator{
-			ReadFactor:        e.Estimator.ReadFactor,
-			WriteFactor:       e.Estimator.WriteFactor,
+			ReadRatio:         e.Estimator.ReadRatio,
+			WriteRatio:        e.Estimator.WriteRatio,
 			ProfilingInterval: e.Estimator.ProfilingInterval,
 			SampleThreshold:   e.Estimator.SampleThreshold,
 		},
