@@ -27,7 +27,7 @@ func TestEstimateTiming(t *testing.T) {
 		readFactor   = 1.2
 		writeFactor  = 1.2
 		cloneTiming  = 9.53
-		expectedTime = 8.98
+		expectedTime = 7.09
 	)
 
 	est := NewTiming(waitEvents, readFactor, writeFactor)
