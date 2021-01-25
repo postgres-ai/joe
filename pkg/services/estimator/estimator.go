@@ -5,6 +5,10 @@
 // Package estimator provides tools to estimate query timing for a production environment.
 package estimator
 
+import (
+	"gitlab.com/postgres-ai/joe/pkg/util/operator"
+)
+
 var readEvents = map[string]struct{}{
 	"IO.BufFileRead":                  {},
 	"IO.ControlFileRead":              {},
@@ -91,22 +95,59 @@ func isWriteEvent(event string) bool {
 	return ok
 }
 
-// CalcTiming calculates the query time for the production environment, given the prepared factors.
-func CalcTiming(waitEvents map[string]float64, readRatio, writeRatio, elapsed float64) float64 {
-	var readPercentage, writePercentage, normal float64
+// Timing defines a timing estimator.
+type Timing struct {
+	readPercentage  float64
+	writePercentage float64
+	normal          float64
+	readRatio       float64
+	writeRatio      float64
+}
+
+// NewTiming creates a new timing estimator.
+func NewTiming(waitEvents map[string]float64, readRatio, writeRatio float64) *Timing {
+	timing := &Timing{
+		readRatio:  readRatio,
+		writeRatio: writeRatio,
+	}
 
 	for event, percent := range waitEvents {
 		switch {
 		case isReadEvent(event):
-			readPercentage += percent
+			timing.readPercentage += percent
 
 		case isWriteEvent(event):
-			writePercentage += percent
+			timing.writePercentage += percent
 
 		default:
-			normal += percent
+			timing.normal += percent
 		}
 	}
 
-	return (normal + readPercentage/readRatio + writePercentage/writeRatio) / 100 * elapsed
+	return timing
+}
+
+// CalcMin calculates the minimum query time for the production environment, given the prepared ratios.
+func (est *Timing) CalcMin(elapsed float64) float64 {
+	return (est.normal + est.readPercentage + est.writePercentage/est.writeRatio) / 100 * elapsed
+}
+
+// CalcMax calculates the maximum query time for the production environment, given the prepared ratios.
+func (est *Timing) CalcMax(op string, stat StatDatabase, readBuf uint64, elapsed float64) float64 {
+	rt := est.readPercentage
+
+	if operator.IsDML(op) {
+		readSpeed := float64(stat.BlocksRead) / stat.BlockReadTime
+		rt = float64(readBuf) / readSpeed
+	}
+
+	return (est.normal + rt/est.readRatio + est.writePercentage/est.writeRatio) / 100 * elapsed
+}
+
+// StatDatabase ... .
+type StatDatabase struct {
+	BlockWriteTime float64 `json:"blk_write_time"`
+	BlocksRead     int64   `json:"blks_read"`
+	BlocksHit      int64   `json:"blks_hit"`
+	BlockReadTime  float64 `json:"blk_read_time"`
 }

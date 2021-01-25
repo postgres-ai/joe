@@ -54,7 +54,6 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 	p := estimator.NewProfiler(db, estimator.TraceOptions{
 		Pid:      pid,
 		Interval: profilingInterval,
-		StrSize:  strSize,
 	})
 
 	cmd := NewPlan(command, msg, db, msgSvc)
@@ -69,6 +68,17 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 	// Explain analyze request and processing.
 	explainAnalyze, err := querier.DBQueryWithResponse(ctx, conn, queryExplainAnalyze+command.Query)
 	if err != nil {
+		return err
+	}
+
+	dbStat := estimator.StatDatabase{}
+
+	if err := conn.QueryRow(ctx, dbStatQuery).Scan(
+		&dbStat.BlockWriteTime,
+		&dbStat.BlocksRead,
+		&dbStat.BlocksHit,
+		&dbStat.BlockReadTime); err != nil {
+		log.Err("Failed to collect database stat: ", err)
 		return err
 	}
 
@@ -158,7 +168,11 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 	if p.CountSamples() >= sampleThreshold {
 		msg.AppendText(fmt.Sprintf("*Profiling of wait events:*\n```%s```\n", p.RenderStat()))
 
-		explain.EstimationTime = estimator.CalcTiming(p.WaitEventsRatio(), estCfg.ReadRatio, estCfg.WriteRatio, p.TotalTime())
+		splitQuery := strings.SplitN(cmd.command.Query, " ", 2)
+		readBlocks := explain.SharedHitBlocks + explain.SharedReadBlocks
+		est := estimator.NewTiming(p.WaitEventsRatio(), estCfg.ReadRatio, estCfg.WriteRatio)
+
+		explain.EstimationTime = est.CalcMax(splitQuery[0], dbStat, readBlocks, p.TotalTime())
 	}
 
 	// Summary.

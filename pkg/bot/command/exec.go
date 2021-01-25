@@ -6,7 +6,9 @@ package command
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v4/pgxpool"
@@ -14,8 +16,10 @@ import (
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
 
 	"gitlab.com/postgres-ai/joe/features/definition"
+	"gitlab.com/postgres-ai/joe/pkg/bot/querier"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/models"
+	"gitlab.com/postgres-ai/joe/pkg/pgexplain"
 	"gitlab.com/postgres-ai/joe/pkg/services/estimator"
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 )
@@ -25,9 +29,8 @@ const (
 	msgExecOptionReq = "Use `exec` to run query, e.g. `exec drop index some_index_name`"
 
 	// profiling default values.
-	profilingInterval = 20 * time.Millisecond
-	strSize           = 128
-	sampleThreshold   = 100
+	profilingInterval = 10 * time.Millisecond
+	sampleThreshold   = 20
 )
 
 // ExecCmd defines the exec command.
@@ -51,6 +54,16 @@ func NewExec(estCfg definition.Estimator, command *platform.Command, msg *models
 	}
 }
 
+const dbStatQuery = `
+select
+  blk_write_time,
+  blks_read,
+  blks_hit,
+  blk_read_time
+from pg_stat_bgwriter, pg_stat_database
+where datname = current_database();
+`
+
 // Execute runs the exec command.
 func (cmd ExecCmd) Execute(ctx context.Context) error {
 	if cmd.command.Query == "" {
@@ -68,14 +81,25 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 	p := estimator.NewProfiler(cmd.db, estimator.TraceOptions{
 		Pid:      pid,
 		Interval: cmd.estCfg.ProfilingInterval,
-		StrSize:  strSize,
 	})
 
 	// Start profiling.
 	go p.Start(ctx)
 
-	if _, err := conn.Exec(ctx, cmd.command.Query); err != nil {
+	explain, err := getExplain(ctx, conn, cmd.command.Query)
+	if err != nil {
 		log.Err("Failed to exec command: ", err)
+		return err
+	}
+
+	dbStat := estimator.StatDatabase{}
+
+	if err := conn.QueryRow(ctx, dbStatQuery).Scan(
+		&dbStat.BlockWriteTime,
+		&dbStat.BlocksRead,
+		&dbStat.BlocksHit,
+		&dbStat.BlockReadTime); err != nil {
+		log.Err("Failed to collect database stat: ", err)
 		return err
 	}
 
@@ -93,8 +117,14 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 	if p.CountSamples() >= cmd.estCfg.SampleThreshold {
 		cmd.message.AppendText(fmt.Sprintf("```%s```", p.RenderStat()))
 
-		estimationTime = fmt.Sprintf(" (estimated* for prod: %.3f s)",
-			estimator.CalcTiming(p.WaitEventsRatio(), cmd.estCfg.ReadRatio, cmd.estCfg.WriteRatio, p.TotalTime()))
+		readBlocks := explain.SharedHitBlocks + explain.SharedReadBlocks
+		est := estimator.NewTiming(p.WaitEventsRatio(), cmd.estCfg.ReadRatio, cmd.estCfg.WriteRatio)
+
+		splitQuery := strings.SplitN(cmd.command.Query, " ", 2)
+		minTiming := est.CalcMin(p.TotalTime())
+		maxTiming := est.CalcMax(splitQuery[0], dbStat, readBlocks, p.TotalTime())
+
+		estimationTime = fmt.Sprintf(" (estimated* for prod: min - %.3f s, max - %.3f s)", minTiming, maxTiming)
 		description = fmt.Sprintf("\n⠀* <%s|How estimation works>", timingEstimatorDocLink)
 	}
 
@@ -127,4 +157,27 @@ func getConn(ctx context.Context, db *pgxpool.Pool) (*pgxpool.Conn, int, error) 
 	}
 
 	return conn, pid, nil
+}
+
+// getExplain analyzes query.
+func getExplain(ctx context.Context, conn *pgxpool.Conn, query string) (*pgexplain.Explain, error) {
+	explainAnalyze, err := querier.DBQueryWithResponse(ctx, conn, queryExplainAnalyze+query)
+	if err != nil {
+		log.Err("Failed to exec command: ", err)
+		return nil, err
+	}
+
+	var explains []pgexplain.Explain
+
+	if err := json.NewDecoder(strings.NewReader(explainAnalyze)).Decode(&explains); err != nil {
+		return nil, err
+	}
+
+	if len(explains) == 0 {
+		return nil, errors.New("Empty explain")
+	}
+
+	explain := explains[0]
+
+	return &explain, nil
 }
