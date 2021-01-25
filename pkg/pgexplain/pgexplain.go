@@ -447,7 +447,7 @@ func (ex *Explain) writeExplainTextWithoutCosts(writer io.Writer) {
 func (ex *Explain) writeStatsText(writer io.Writer) {
 	estimationTime := ""
 	if ex.EstimationMinTime != 0 || ex.EstimationMaxTime != 0 {
-		estimationTime = fmt.Sprintf(" (estimated* for prod: min - %.3f s, max - %.3f s)", ex.EstimationMinTime, ex.EstimationMinTime)
+		estimationTime = fmt.Sprintf(" (estimated* for prod: min - %.3f s, max - %.3f s)", ex.EstimationMinTime, ex.EstimationMaxTime)
 	}
 
 	fmt.Fprintf(writer, "\nTime: %s\n", util.MillisecondsToString(ex.TotalTime))
