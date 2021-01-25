@@ -22,6 +22,7 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/pgexplain"
 	"gitlab.com/postgres-ai/joe/pkg/services/estimator"
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
+	"gitlab.com/postgres-ai/joe/pkg/util/operator"
 )
 
 const (
@@ -86,21 +87,23 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 	// Start profiling.
 	go p.Start(ctx)
 
-	explain, err := getExplain(ctx, conn, cmd.command.Query)
-	if err != nil {
-		log.Err("Failed to exec command: ", err)
-		return err
-	}
+	var explain *pgexplain.Explain = nil
 
-	dbStat := estimator.StatDatabase{}
+	op := strings.SplitN(cmd.command.Query, " ", 2)[0]
 
-	if err := conn.QueryRow(ctx, dbStatQuery).Scan(
-		&dbStat.BlockWriteTime,
-		&dbStat.BlocksRead,
-		&dbStat.BlocksHit,
-		&dbStat.BlockReadTime); err != nil {
-		log.Err("Failed to collect database stat: ", err)
-		return err
+	switch {
+	case operator.IsDML(op):
+		explain, err = getExplain(ctx, conn, cmd.command.Query)
+		if err != nil {
+			log.Err("Failed to exec command: ", err)
+			return err
+		}
+
+	default:
+		if _, err := conn.Exec(ctx, cmd.command.Query); err != nil {
+			log.Err("Failed to exec command: ", err)
+			return err
+		}
 	}
 
 	if err := conn.Conn().Close(ctx); err != nil {
@@ -117,12 +120,28 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 	if p.CountSamples() >= cmd.estCfg.SampleThreshold {
 		cmd.message.AppendText(fmt.Sprintf("```%s```", p.RenderStat()))
 
-		readBlocks := explain.SharedHitBlocks + explain.SharedReadBlocks
 		est := estimator.NewTiming(p.WaitEventsRatio(), cmd.estCfg.ReadRatio, cmd.estCfg.WriteRatio)
 
-		splitQuery := strings.SplitN(cmd.command.Query, " ", 2)
+		if explain != nil {
+			dbStat := estimator.StatDatabase{}
+
+			if err := cmd.db.QueryRow(ctx, dbStatQuery).Scan(
+				&dbStat.BlockWriteTime,
+				&dbStat.BlocksRead,
+				&dbStat.BlocksHit,
+				&dbStat.BlockReadTime); err != nil {
+				log.Err("Failed to collect database stat: ", err)
+				return err
+			}
+
+			readBlocks := explain.SharedHitBlocks + explain.SharedReadBlocks
+
+			est.SetDBStat(dbStat)
+			est.SetReadBlocks(readBlocks)
+		}
+
 		minTiming := est.CalcMin(p.TotalTime())
-		maxTiming := est.CalcMax(splitQuery[0], dbStat, readBlocks, p.TotalTime())
+		maxTiming := est.CalcMax(p.TotalTime())
 
 		estimationTime = fmt.Sprintf(" (estimated* for prod: min - %.3f s, max - %.3f s)", minTiming, maxTiming)
 		description = fmt.Sprintf("\n⠀* <%s|How estimation works>", timingEstimatorDocLink)

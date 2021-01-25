@@ -5,10 +5,6 @@
 // Package estimator provides tools to estimate query timing for a production environment.
 package estimator
 
-import (
-	"gitlab.com/postgres-ai/joe/pkg/util/operator"
-)
-
 var readEvents = map[string]struct{}{
 	"IO.BufFileRead":                  {},
 	"IO.ControlFileRead":              {},
@@ -97,11 +93,13 @@ func isWriteEvent(event string) bool {
 
 // Timing defines a timing estimator.
 type Timing struct {
+	dbStat          *StatDatabase
 	readPercentage  float64
 	writePercentage float64
 	normal          float64
 	readRatio       float64
 	writeRatio      float64
+	readBlocks      uint64
 }
 
 // NewTiming creates a new timing estimator.
@@ -127,18 +125,28 @@ func NewTiming(waitEvents map[string]float64, readRatio, writeRatio float64) *Ti
 	return timing
 }
 
+// SetDBStat sets database stats.
+func (est *Timing) SetDBStat(dbStat StatDatabase) {
+	est.dbStat = &dbStat
+}
+
+// SetReadBlocks sets read blocks.
+func (est *Timing) SetReadBlocks(readBlocks uint64) {
+	est.readBlocks = readBlocks
+}
+
 // CalcMin calculates the minimum query time for the production environment, given the prepared ratios.
 func (est *Timing) CalcMin(elapsed float64) float64 {
 	return (est.normal + est.readPercentage + est.writePercentage/est.writeRatio) / 100 * elapsed
 }
 
 // CalcMax calculates the maximum query time for the production environment, given the prepared ratios.
-func (est *Timing) CalcMax(op string, stat StatDatabase, readBuf uint64, elapsed float64) float64 {
+func (est *Timing) CalcMax(elapsed float64) float64 {
 	rt := est.readPercentage
 
-	if operator.IsDML(op) {
-		readSpeed := float64(stat.BlocksRead) / stat.BlockReadTime
-		rt = float64(readBuf) / readSpeed
+	if est.dbStat != nil && est.readBlocks != 0 {
+		readSpeed := float64(est.dbStat.BlocksRead) / est.dbStat.BlockReadTime
+		rt = float64(est.readBlocks) / readSpeed
 	}
 
 	return (est.normal + rt/est.readRatio + est.writePercentage/est.writeRatio) / 100 * elapsed

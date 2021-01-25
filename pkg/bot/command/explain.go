@@ -21,6 +21,7 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/pgexplain"
 	"gitlab.com/postgres-ai/joe/pkg/services/estimator"
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
+	"gitlab.com/postgres-ai/joe/pkg/util/operator"
 	"gitlab.com/postgres-ai/joe/pkg/util/text"
 )
 
@@ -57,7 +58,7 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 	})
 
 	cmd := NewPlan(command, msg, db, msgSvc)
-	msgInitText, err := cmd.explainWithoutExecution(ctx, conn)
+	msgInitText, err := cmd.explainWithoutExecution(ctx)
 	if err != nil {
 		return errors.Wrap(err, "failed to run explain without execution")
 	}
@@ -68,17 +69,6 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 	// Explain analyze request and processing.
 	explainAnalyze, err := querier.DBQueryWithResponse(ctx, conn, queryExplainAnalyze+command.Query)
 	if err != nil {
-		return err
-	}
-
-	dbStat := estimator.StatDatabase{}
-
-	if err := conn.QueryRow(ctx, dbStatQuery).Scan(
-		&dbStat.BlockWriteTime,
-		&dbStat.BlocksRead,
-		&dbStat.BlocksHit,
-		&dbStat.BlockReadTime); err != nil {
-		log.Err("Failed to collect database stat: ", err)
 		return err
 	}
 
@@ -168,11 +158,27 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 	if p.CountSamples() >= sampleThreshold {
 		msg.AppendText(fmt.Sprintf("*Profiling of wait events:*\n```%s```\n", p.RenderStat()))
 
-		splitQuery := strings.SplitN(cmd.command.Query, " ", 2)
-		readBlocks := explain.SharedHitBlocks + explain.SharedReadBlocks
 		est := estimator.NewTiming(p.WaitEventsRatio(), estCfg.ReadRatio, estCfg.WriteRatio)
 
-		explain.EstimationTime = est.CalcMax(splitQuery[0], dbStat, readBlocks, p.TotalTime())
+		if operator.IsDML(strings.SplitN(cmd.command.Query, " ", 2)[0]) {
+			dbStat := estimator.StatDatabase{}
+
+			if err := db.QueryRow(ctx, dbStatQuery).Scan(
+				&dbStat.BlockWriteTime,
+				&dbStat.BlocksRead,
+				&dbStat.BlocksHit,
+				&dbStat.BlockReadTime); err != nil {
+				log.Err("Failed to collect database stat: ", err)
+				return err
+			}
+
+			readBlocks := explain.SharedHitBlocks + explain.SharedReadBlocks
+
+			est.SetDBStat(dbStat)
+			est.SetReadBlocks(readBlocks)
+		}
+
+		explain.EstimationTime = est.CalcMax(p.TotalTime())
 	}
 
 	// Summary.
