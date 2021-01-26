@@ -95,6 +95,9 @@ func isWriteEvent(event string) bool {
 	return ok
 }
 
+// delta defines insignificant difference between minimum and maximum values.
+const delta = 0.05
+
 // Timing defines a timing estimator.
 type Timing struct {
 	dbStat          *StatDatabase
@@ -104,6 +107,14 @@ type Timing struct {
 	readRatio       float64
 	writeRatio      float64
 	readBlocks      uint64
+}
+
+// StatDatabase defines database blocks stats.
+type StatDatabase struct {
+	BlocksRead     int64   `json:"blks_read"`
+	BlocksHit      int64   `json:"blks_hit"`
+	BlockReadTime  float64 `json:"blk_read_time"`
+	BlockWriteTime float64 `json:"blk_write_time"`
 }
 
 // NewTiming creates a new timing estimator.
@@ -155,16 +166,6 @@ func (est *Timing) CalcMax(elapsed float64) float64 {
 
 	return (est.normal + rt/est.readRatio + est.writePercentage/est.writeRatio) / 100 * elapsed
 }
-
-// StatDatabase ... .
-type StatDatabase struct {
-	BlockWriteTime float64 `json:"blk_write_time"`
-	BlocksRead     int64   `json:"blks_read"`
-	BlocksHit      int64   `json:"blks_hit"`
-	BlockReadTime  float64 `json:"blk_read_time"`
-}
-
-const delta = 0.1
 
 // EstTime prints estimation timings.
 func (est *Timing) EstTime(elapsed float64) string {
