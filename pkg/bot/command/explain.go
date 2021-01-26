@@ -178,8 +178,7 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 			est.SetReadBlocks(readBlocks)
 		}
 
-		explain.EstimationMinTime = est.CalcMin(p.TotalTime())
-		explain.EstimationMaxTime = est.CalcMax(p.TotalTime())
+		explain.EstimationTime = est.EstTime(p.TotalTime())
 	}
 
 	// Summary.
@@ -187,7 +186,7 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 	command.Stats = stats
 
 	description := ""
-	if explain.EstimationMinTime != 0 || explain.EstimationMaxTime != 0 {
+	if explain.EstimationTime != "" {
 		description = fmt.Sprintf("\n⠀* <%s|How estimation works>", timingEstimatorDocLink)
 	}
 

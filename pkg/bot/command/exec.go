@@ -140,10 +140,11 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 			est.SetReadBlocks(readBlocks)
 		}
 
-		minTiming := est.CalcMin(p.TotalTime())
-		maxTiming := est.CalcMax(p.TotalTime())
-
-		estimationTime = fmt.Sprintf(" (estimated* for prod: min - %.3f s, max - %.3f s)", minTiming, maxTiming)
+		//minTiming := est.CalcMin(p.TotalTime())
+		//maxTiming := est.CalcMax(p.TotalTime())
+		//
+		//estimationTime = fmt.Sprintf(" (estimated* for prod: min - %.3f s, max - %.3f s)", minTiming, maxTiming)
+		estimationTime = est.EstTime(p.TotalTime())
 		description = fmt.Sprintf("\n⠀* <%s|How estimation works>", timingEstimatorDocLink)
 	}
 
