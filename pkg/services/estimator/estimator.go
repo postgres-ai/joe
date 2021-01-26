@@ -157,14 +157,14 @@ func (est *Timing) CalcMin(elapsed float64) float64 {
 
 // CalcMax calculates the maximum query time estimation for the production environment, given the prepared ratios.
 func (est *Timing) CalcMax(elapsed float64) float64 {
-	rt := est.readPercentage
+	readPercentage := est.readPercentage
 
 	if est.dbStat != nil && est.readBlocks != 0 {
-		readSpeed := float64(est.dbStat.BlocksRead) / est.dbStat.BlockReadTime
-		rt = float64(est.readBlocks) / readSpeed
+		readSpeed := float64(est.dbStat.BlocksRead) / (est.dbStat.BlockReadTime / 1000)
+		readPercentage = float64(est.readBlocks) / readSpeed
 	}
 
-	return (est.normal + rt/est.readRatio + est.writePercentage/est.writeRatio) / 100 * elapsed
+	return (est.normal + readPercentage/est.readRatio + est.writePercentage/est.writeRatio) / 100 * elapsed
 }
 
 // EstTime prints estimation timings.
