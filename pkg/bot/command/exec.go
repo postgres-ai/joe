@@ -139,7 +139,7 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 			est.SetDBStat(dbStat)
 			est.SetReadBlocks(readBlocks)
 
-			log.Dbg(fmt.Sprintf("DatabaseStat: %v, SharedHitBlocks: %d, SharedReadBlocks: %d",
+			log.Dbg(fmt.Sprintf("%#v, SharedHitBlocks: %d, SharedReadBlocks: %d",
 				dbStat, explain.SharedHitBlocks, explain.SharedReadBlocks))
 		}
 
