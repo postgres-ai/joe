@@ -29,6 +29,7 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"
 	"gitlab.com/postgres-ai/joe/pkg/transmission/pgtransmission"
+	"gitlab.com/postgres-ai/joe/pkg/util/operator"
 	"gitlab.com/postgres-ai/joe/pkg/util/text"
 )
 
@@ -457,8 +458,7 @@ func (s *ProcessingService) showBotHints(incomingMessage models.IncomingMessage,
 
 	checkQuery := len(firstQueryWord) > 0 && command == CommandExec
 
-	if (checkQuery && util.Contains(hintExplainDmlWords, firstQueryWord)) ||
-		util.Contains(hintExplainDmlWords, command) {
+	if (checkQuery && operator.IsDML(firstQueryWord)) || operator.IsDML(command) {
 		msg := models.NewMessage(incomingMessage)
 		msg.SetMessageType(models.MessageTypeEphemeral)
 		msg.SetUserID(incomingMessage.UserID)
@@ -469,7 +469,7 @@ func (s *ProcessingService) showBotHints(incomingMessage models.IncomingMessage,
 		}
 	}
 
-	if util.Contains(hintExecDdlWords, command) {
+	if operator.IsDDL(command) {
 		msg := models.NewMessage(incomingMessage)
 		msg.SetMessageType(models.MessageTypeEphemeral)
 		msg.SetUserID(incomingMessage.UserID)

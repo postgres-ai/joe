@@ -27,9 +27,11 @@ func TestEstimateTiming(t *testing.T) {
 		readFactor   = 1.2
 		writeFactor  = 1.2
 		cloneTiming  = 9.53
-		expectedTime = 8.67
+		expectedTime = 7.09
 	)
 
-	estimatedTime := CalcTiming(waitEvents, readFactor, writeFactor, cloneTiming)
+	est := NewTiming(waitEvents, readFactor, writeFactor)
+
+	estimatedTime := est.CalcMin(cloneTiming)
 	assert.Equal(t, expectedTime, math.Round(estimatedTime*100)/100)
 }

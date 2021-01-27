@@ -69,11 +69,6 @@ const (
 	PasswordMinSymbols = 0
 )
 
-var (
-	hintExplainDmlWords = []string{"insert", "select", "update", "delete", "with"}
-	hintExecDdlWords    = []string{"alter", "create", "drop", "set"}
-)
-
 // runSession starts a user session if not exists.
 func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.User, incomingMessage models.IncomingMessage) (err error) {
 	sMsg := models.NewMessage(incomingMessage)

@@ -4,9 +4,9 @@
 app:
   # HTTP server IP address or host.
   # Used only for Web UI and Slack Events API communication types.
-  # Default: "127.0.0.1" (only local connections).
-  # Use empty string to listen all network interfaces.
-  host: "127.0.0.1"
+  # By default uses an empty string to accept connections to all network interfaces.
+  # Keep it default when running inside a Docker container.
+  host: ""
 
   # HTTP server port. Used only for Web UI and Slack Events API communication types.
   # Default: 2400.

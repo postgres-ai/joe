@@ -50,7 +50,6 @@ type TraceStat struct {
 type TraceOptions struct {
 	Pid      int           // PID of profiled backend.
 	Interval time.Duration // Profiling interval.
-	StrSize  int           // Limit length for query string.
 }
 
 // Profiler defines a profiling structure.

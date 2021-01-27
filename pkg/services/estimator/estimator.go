@@ -5,6 +5,10 @@
 // Package estimator provides tools to estimate query timing for a production environment.
 package estimator
 
+import (
+	"fmt"
+)
+
 var readEvents = map[string]struct{}{
 	"IO.BufFileRead":                  {},
 	"IO.ControlFileRead":              {},
@@ -91,22 +95,88 @@ func isWriteEvent(event string) bool {
 	return ok
 }
 
-// CalcTiming calculates the query time for the production environment, given the prepared factors.
-func CalcTiming(waitEvents map[string]float64, readRatio, writeRatio, elapsed float64) float64 {
-	var readPercentage, writePercentage, normal float64
+// delta defines insignificant difference between minimum and maximum values.
+const delta = 0.05
+
+// Timing defines a timing estimator.
+type Timing struct {
+	dbStat          *StatDatabase
+	readPercentage  float64
+	writePercentage float64
+	normal          float64
+	readRatio       float64
+	writeRatio      float64
+	readBlocks      uint64
+}
+
+// StatDatabase defines database blocks stats.
+type StatDatabase struct {
+	BlocksRead     int64   `json:"blks_read"`
+	BlocksHit      int64   `json:"blks_hit"`
+	BlockReadTime  float64 `json:"blk_read_time"`
+	BlockWriteTime float64 `json:"blk_write_time"`
+}
+
+// NewTiming creates a new timing estimator.
+func NewTiming(waitEvents map[string]float64, readRatio, writeRatio float64) *Timing {
+	timing := &Timing{
+		readRatio:  readRatio,
+		writeRatio: writeRatio,
+	}
 
 	for event, percent := range waitEvents {
 		switch {
 		case isReadEvent(event):
-			readPercentage += percent
+			timing.readPercentage += percent
 
 		case isWriteEvent(event):
-			writePercentage += percent
+			timing.writePercentage += percent
 
 		default:
-			normal += percent
+			timing.normal += percent
 		}
 	}
 
-	return (normal + readPercentage/readRatio + writePercentage/writeRatio) / 100 * elapsed
+	return timing
+}
+
+// SetDBStat sets database stats.
+func (est *Timing) SetDBStat(dbStat StatDatabase) {
+	est.dbStat = &dbStat
+}
+
+// SetReadBlocks sets read blocks.
+func (est *Timing) SetReadBlocks(readBlocks uint64) {
+	est.readBlocks = readBlocks
+}
+
+// CalcMin calculates the minimum query time estimation for the production environment, given the prepared ratios.
+func (est *Timing) CalcMin(elapsed float64) float64 {
+	return (est.normal + est.writePercentage/est.writeRatio) / 100 * elapsed
+}
+
+// CalcMax calculates the maximum query time estimation for the production environment, given the prepared ratios.
+func (est *Timing) CalcMax(elapsed float64) float64 {
+	readPercentage := est.readPercentage
+
+	if est.dbStat != nil && est.readBlocks != 0 {
+		readSpeed := float64(est.dbStat.BlocksRead) / (est.dbStat.BlockReadTime / 1000)
+		readPercentage = float64(est.readBlocks) / readSpeed
+	}
+
+	return (est.normal + readPercentage/est.readRatio + est.writePercentage/est.writeRatio) / 100 * elapsed
+}
+
+// EstTime prints estimation timings.
+func (est *Timing) EstTime(elapsed float64) string {
+	minTiming := est.CalcMin(elapsed)
+	maxTiming := est.CalcMax(elapsed)
+
+	estTime := fmt.Sprintf("%.3f...%.3f", minTiming, maxTiming)
+
+	if maxTiming-minTiming <= delta {
+		estTime = fmt.Sprintf("%.3f", maxTiming)
+	}
+
+	return fmt.Sprintf(" (estimated* for prod: %s s)", estTime)
 }

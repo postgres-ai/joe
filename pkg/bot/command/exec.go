@@ -6,7 +6,9 @@ package command
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v4/pgxpool"
@@ -14,10 +16,13 @@ import (
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
 
 	"gitlab.com/postgres-ai/joe/features/definition"
+	"gitlab.com/postgres-ai/joe/pkg/bot/querier"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/models"
+	"gitlab.com/postgres-ai/joe/pkg/pgexplain"
 	"gitlab.com/postgres-ai/joe/pkg/services/estimator"
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
+	"gitlab.com/postgres-ai/joe/pkg/util/operator"
 )
 
 const (
@@ -25,9 +30,8 @@ const (
 	msgExecOptionReq = "Use `exec` to run query, e.g. `exec drop index some_index_name`"
 
 	// profiling default values.
-	profilingInterval = 20 * time.Millisecond
-	strSize           = 128
-	sampleThreshold   = 100
+	profilingInterval = 10 * time.Millisecond
+	sampleThreshold   = 20
 )
 
 // ExecCmd defines the exec command.
@@ -51,6 +55,16 @@ func NewExec(estCfg definition.Estimator, command *platform.Command, msg *models
 	}
 }
 
+const dbStatQuery = `
+select
+  blk_write_time,
+  blks_read,
+  blks_hit,
+  blk_read_time
+from pg_stat_bgwriter, pg_stat_database
+where datname = current_database();
+`
+
 // Execute runs the exec command.
 func (cmd ExecCmd) Execute(ctx context.Context) error {
 	if cmd.command.Query == "" {
@@ -68,15 +82,28 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 	p := estimator.NewProfiler(cmd.db, estimator.TraceOptions{
 		Pid:      pid,
 		Interval: cmd.estCfg.ProfilingInterval,
-		StrSize:  strSize,
 	})
 
 	// Start profiling.
 	go p.Start(ctx)
 
-	if _, err := conn.Exec(ctx, cmd.command.Query); err != nil {
-		log.Err("Failed to exec command: ", err)
-		return err
+	var explain *pgexplain.Explain = nil
+
+	op := strings.SplitN(cmd.command.Query, " ", 2)[0]
+
+	switch {
+	case operator.IsDML(op):
+		explain, err = getExplain(ctx, conn, cmd.command.Query)
+		if err != nil {
+			log.Err("Failed to exec command: ", err)
+			return err
+		}
+
+	default:
+		if _, err := conn.Exec(ctx, cmd.command.Query); err != nil {
+			log.Err("Failed to exec command: ", err)
+			return err
+		}
 	}
 
 	if err := conn.Conn().Close(ctx); err != nil {
@@ -93,8 +120,30 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 	if p.CountSamples() >= cmd.estCfg.SampleThreshold {
 		cmd.message.AppendText(fmt.Sprintf("```%s```", p.RenderStat()))
 
-		estimationTime = fmt.Sprintf(" (estimated* for prod: %.3f s)",
-			estimator.CalcTiming(p.WaitEventsRatio(), cmd.estCfg.ReadRatio, cmd.estCfg.WriteRatio, p.TotalTime()))
+		est := estimator.NewTiming(p.WaitEventsRatio(), cmd.estCfg.ReadRatio, cmd.estCfg.WriteRatio)
+
+		if explain != nil {
+			dbStat := estimator.StatDatabase{}
+
+			if err := cmd.db.QueryRow(ctx, dbStatQuery).Scan(
+				&dbStat.BlockWriteTime,
+				&dbStat.BlocksRead,
+				&dbStat.BlocksHit,
+				&dbStat.BlockReadTime); err != nil {
+				log.Err("Failed to collect database stat: ", err)
+				return err
+			}
+
+			readBlocks := explain.SharedHitBlocks + explain.SharedReadBlocks
+
+			est.SetDBStat(dbStat)
+			est.SetReadBlocks(readBlocks)
+
+			log.Dbg(fmt.Sprintf("%#v, SharedHitBlocks: %d, SharedReadBlocks: %d",
+				dbStat, explain.SharedHitBlocks, explain.SharedReadBlocks))
+		}
+
+		estimationTime = est.EstTime(p.TotalTime())
 		description = fmt.Sprintf("\n⠀* <%s|How estimation works>", timingEstimatorDocLink)
 	}
 
@@ -127,4 +176,27 @@ func getConn(ctx context.Context, db *pgxpool.Pool) (*pgxpool.Conn, int, error) 
 	}
 
 	return conn, pid, nil
+}
+
+// getExplain analyzes query.
+func getExplain(ctx context.Context, conn *pgxpool.Conn, query string) (*pgexplain.Explain, error) {
+	explainAnalyze, err := querier.DBQueryWithResponse(ctx, conn, queryExplainAnalyze+query)
+	if err != nil {
+		log.Err("Failed to exec command: ", err)
+		return nil, err
+	}
+
+	var explains []pgexplain.Explain
+
+	if err := json.NewDecoder(strings.NewReader(explainAnalyze)).Decode(&explains); err != nil {
+		return nil, err
+	}
+
+	if len(explains) == 0 {
+		return nil, errors.New("Empty explain")
+	}
+
+	explain := explains[0]
+
+	return &explain, nil
 }
