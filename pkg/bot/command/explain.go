@@ -21,6 +21,7 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/pgexplain"
 	"gitlab.com/postgres-ai/joe/pkg/services/estimator"
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
+	"gitlab.com/postgres-ai/joe/pkg/util/operator"
 	"gitlab.com/postgres-ai/joe/pkg/util/text"
 )
 
@@ -54,11 +55,10 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 	p := estimator.NewProfiler(db, estimator.TraceOptions{
 		Pid:      pid,
 		Interval: profilingInterval,
-		StrSize:  strSize,
 	})
 
 	cmd := NewPlan(command, msg, db, msgSvc)
-	msgInitText, err := cmd.explainWithoutExecution(ctx, conn)
+	msgInitText, err := cmd.explainWithoutExecution(ctx)
 	if err != nil {
 		return errors.Wrap(err, "failed to run explain without execution")
 	}
@@ -158,7 +158,30 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 	if p.CountSamples() >= sampleThreshold {
 		msg.AppendText(fmt.Sprintf("*Profiling of wait events:*\n```%s```\n", p.RenderStat()))
 
-		explain.EstimationTime = estimator.CalcTiming(p.WaitEventsRatio(), estCfg.ReadRatio, estCfg.WriteRatio, p.TotalTime())
+		est := estimator.NewTiming(p.WaitEventsRatio(), estCfg.ReadRatio, estCfg.WriteRatio)
+
+		if operator.IsDML(strings.SplitN(cmd.command.Query, " ", 2)[0]) {
+			dbStat := estimator.StatDatabase{}
+
+			if err := db.QueryRow(ctx, dbStatQuery).Scan(
+				&dbStat.BlockWriteTime,
+				&dbStat.BlocksRead,
+				&dbStat.BlocksHit,
+				&dbStat.BlockReadTime); err != nil {
+				log.Err("Failed to collect database stat: ", err)
+				return err
+			}
+
+			readBlocks := explain.SharedHitBlocks + explain.SharedReadBlocks
+
+			est.SetDBStat(dbStat)
+			est.SetReadBlocks(readBlocks)
+
+			log.Dbg(fmt.Sprintf("%#v, SharedHitBlocks: %d, SharedReadBlocks: %d",
+				dbStat, explain.SharedHitBlocks, explain.SharedReadBlocks))
+		}
+
+		explain.EstimationTime = est.EstTime(p.TotalTime())
 	}
 
 	// Summary.
@@ -166,7 +189,7 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 	command.Stats = stats
 
 	description := ""
-	if explain.EstimationTime != 0 {
+	if explain.EstimationTime != "" {
 		description = fmt.Sprintf("\n⠀* <%s|How estimation works>", timingEstimatorDocLink)
 	}
 

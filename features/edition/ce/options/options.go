@@ -22,8 +22,8 @@ const (
 	defaultDBLabLimit        = 1
 	defaultReadRatio         = 1
 	defaultWriteRatio        = 1
-	defaultProfilingInterval = 20 * time.Millisecond
-	defaultSampleThreshold   = 100
+	defaultProfilingInterval = 10 * time.Millisecond
+	defaultSampleThreshold   = 20
 )
 
 // Extra provides a mock of Enterprise flags.
