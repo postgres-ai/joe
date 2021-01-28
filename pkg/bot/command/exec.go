@@ -144,7 +144,7 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 		}
 
 		estimationTime = est.EstTime(p.TotalTime())
-		description = fmt.Sprintf("\n⠀* <%s|How estimation works>", timingEstimatorDocLink)
+		description = fmt.Sprintf("\n⠀* Estimated timing for production (experimental). <%s|How it works>", timingEstimatorDocLink)
 	}
 
 	result := fmt.Sprintf("The query has been executed. Duration: %.3f s%s", p.TotalTime(), estimationTime)
