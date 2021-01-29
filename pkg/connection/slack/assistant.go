@@ -329,6 +329,9 @@ func (a *Assistant) parseEvent(rawEvent []byte) (slackevents.EventsAPIEvent, err
 
 // verifyRequest verifies a request coming from Slack
 func (a *Assistant) verifyRequest(r *http.Request) error {
+	log.Dbg("Verification request")
+	log.Dbg("Headers: ", r.Header)
+
 	secretsVerifier, err := slack.NewSecretsVerifier(r.Header, a.credentialsCfg.SigningSecret)
 	if err != nil {
 		return errors.Wrap(err, "failed to init the secrets verifier")
