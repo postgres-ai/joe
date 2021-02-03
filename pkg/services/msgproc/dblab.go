@@ -186,11 +186,11 @@ func (s *ProcessingService) createDBLabClone(ctx context.Context, user *usermana
 
 	clientRequest := types.CloneCreateRequest{
 		ID:        sessionID,
-		Project:   s.config.Project,
 		Protected: false,
 		DB: &types.DatabaseRequest{
-			Username: joeUserNamePrefix + user.UserInfo.Name,
-			Password: pwd,
+			Username:   joeUserNamePrefix + user.UserInfo.Name,
+			Password:   pwd,
+			Restricted: true,
 		},
 	}
 
