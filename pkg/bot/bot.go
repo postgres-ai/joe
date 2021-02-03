@@ -15,7 +15,6 @@ import (
 
 	_ "github.com/lib/pq"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 
 	"gitlab.com/postgres-ai/database-lab/pkg/client/dblabapi"
 	"gitlab.com/postgres-ai/database-lab/pkg/log"
@@ -110,7 +109,7 @@ func (a *App) initDBLabInstances() error {
 		dbLabClient, err := dblabapi.NewClient(dblabapi.Options{
 			Host:              dbLab.URL,
 			VerificationToken: dbLab.Token,
-		}, logrus.New())
+		})
 
 		if err != nil {
 			return errors.Wrap(err, "failed to create a Database Lab client")
