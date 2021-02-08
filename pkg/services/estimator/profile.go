@@ -29,6 +29,8 @@ const (
 			FROM pg_stat_activity WHERE pid = $1 /* pgcenter profile */`
 
 	waitForBackendActivity = 2 * time.Millisecond
+	totalPercent           = 100
+	millisecondsInSecond   = 1000
 )
 
 // waitEvent defines an auxiliary struct to sort events.
@@ -166,7 +168,7 @@ func (p *Profiler) countWaitings(curr TraceStat, prev TraceStat) {
 
 	/* calculate percents */
 	for k, v := range p.waitEventDurations {
-		p.waitEventPercents[k] = (100 * v) / curr.queryDurationSec.Float64
+		p.waitEventPercents[k] = (totalPercent * v) / curr.queryDurationSec.Float64
 	}
 
 	p.sampleCounter++
