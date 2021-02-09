@@ -6,7 +6,7 @@
 package operator
 
 import (
-	"gitlab.com/postgres-ai/database-lab/pkg/util"
+	"gitlab.com/postgres-ai/database-lab/v2/pkg/util"
 )
 
 var (
