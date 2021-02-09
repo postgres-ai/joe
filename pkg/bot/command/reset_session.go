@@ -8,8 +8,8 @@ import (
 	"context"
 	"time"
 
-	"gitlab.com/postgres-ai/database-lab/pkg/client/dblabapi"
-	"gitlab.com/postgres-ai/database-lab/pkg/log"
+	"gitlab.com/postgres-ai/database-lab/v2/pkg/client/dblabapi"
+	"gitlab.com/postgres-ai/database-lab/v2/pkg/log"
 
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/foreword"

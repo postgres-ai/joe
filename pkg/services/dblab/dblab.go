@@ -6,7 +6,7 @@
 package dblab
 
 import (
-	"gitlab.com/postgres-ai/database-lab/pkg/client/dblabapi"
+	"gitlab.com/postgres-ai/database-lab/v2/pkg/client/dblabapi"
 
 	"gitlab.com/postgres-ai/joe/pkg/config"
 )

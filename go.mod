@@ -18,6 +18,6 @@ require (
 	github.com/sethvargo/go-password v0.2.0
 	github.com/slack-go/slack v0.6.4
 	github.com/stretchr/testify v1.5.1
-	gitlab.com/postgres-ai/database-lab v0.4.4-0.20210203114221-dac9c454aaa1
+	gitlab.com/postgres-ai/database-lab/v2 v2.1.1-0.20210209134110-e925a34a322b
 	gopkg.in/yaml.v2 v2.2.8
 )

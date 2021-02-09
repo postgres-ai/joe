@@ -14,7 +14,7 @@ import (
 	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/pkg/errors"
 
-	"gitlab.com/postgres-ai/database-lab/pkg/log"
+	"gitlab.com/postgres-ai/database-lab/v2/pkg/log"
 
 	"gitlab.com/postgres-ai/joe/features"
 	"gitlab.com/postgres-ai/joe/pkg/bot"

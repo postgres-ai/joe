@@ -11,8 +11,8 @@ import (
 
 	"github.com/pkg/errors"
 
-	"gitlab.com/postgres-ai/database-lab/pkg/log"
-	dblabmodels "gitlab.com/postgres-ai/database-lab/pkg/models"
+	"gitlab.com/postgres-ai/database-lab/v2/pkg/log"
+	dblabmodels "gitlab.com/postgres-ai/database-lab/v2/pkg/models"
 
 	"gitlab.com/postgres-ai/joe/pkg/models"
 	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"

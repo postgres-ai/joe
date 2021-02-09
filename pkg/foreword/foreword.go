@@ -14,7 +14,7 @@ import (
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/pkg/errors"
 
-	"gitlab.com/postgres-ai/database-lab/pkg/log"
+	"gitlab.com/postgres-ai/database-lab/v2/pkg/log"
 )
 
 // MsgSessionForewordTpl provides a template of session foreword message.

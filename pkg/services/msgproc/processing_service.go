@@ -15,9 +15,9 @@ import (
 
 	"github.com/pkg/errors"
 
-	"gitlab.com/postgres-ai/database-lab/pkg/client/dblabapi"
-	"gitlab.com/postgres-ai/database-lab/pkg/log"
-	"gitlab.com/postgres-ai/database-lab/pkg/util"
+	"gitlab.com/postgres-ai/database-lab/v2/pkg/client/dblabapi"
+	"gitlab.com/postgres-ai/database-lab/v2/pkg/log"
+	"gitlab.com/postgres-ai/database-lab/v2/pkg/util"
 
 	"gitlab.com/postgres-ai/joe/features"
 	"gitlab.com/postgres-ai/joe/features/definition"
