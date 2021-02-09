@@ -30,9 +30,12 @@ const (
 const HypoPGCaption = "*HypoPG response:*\n"
 
 // hypoPGExceptionMessage defines an error message on failure of extension initialize.
-const hypoPGExceptionMessage = `:warning: Cannot init the HypoPG extension.
+const hypoPGExceptionMessage = `:warning: The HypoPG extension is not installed.
 Make sure that the extension has been installed in your Postgres image for Database Lab: https://postgres.ai/docs/database-lab/supported_databases.
 For a quick start, you can use prepared images: https://hub.docker.com/repository/docker/postgresai/extended-postgres created by *Postgres.ai*, or prepare your own.`
+
+// errHypoPGNotInstalled defines an error when the HypoPG extension is not installed.
+var errHypoPGNotInstalled = errors.New("the HypoPG extension is not installed")
 
 // HypoCmd defines a hypo command.
 type HypoCmd struct {
@@ -59,7 +62,7 @@ func (h *HypoCmd) Execute() error {
 	ctx := context.TODO()
 
 	if err := h.initExtension(ctx); err != nil {
-		if pgError, ok := err.(*pgconn.PgError); ok && pgError.Code == querier.SystemPQErrorCodeUndefinedFile {
+		if pgError, ok := err.(*pgconn.PgError); ok && pgError.Code == querier.SystemPQErrorCodeUndefinedFile || err == errHypoPGNotInstalled {
 			h.message.AppendText(hypoPGExceptionMessage)
 
 			if err := h.messenger.UpdateText(h.message); err != nil {
@@ -104,9 +107,19 @@ func (h *HypoCmd) parseQuery() (string, string) {
 }
 
 func (h *HypoCmd) initExtension(ctx context.Context) error {
-	_, err := h.db.Exec(ctx, "create extension if not exists hypopg")
+	res := h.db.QueryRow(ctx, "select exists(select 1 from pg_extension where extname='hypopg')")
 
-	return err
+	var exists bool
+
+	if err := res.Scan(&exists); err != nil {
+		return errors.Wrap(err, "failed to check if the HypoPG extension is installed")
+	}
+
+	if !exists {
+		return errHypoPGNotInstalled
+	}
+
+	return nil
 }
 
 func (h *HypoCmd) create(ctx context.Context) error {
