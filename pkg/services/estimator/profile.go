@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgtype/pgxtype"
@@ -31,6 +32,10 @@ const (
 	waitForBackendActivity = 2 * time.Millisecond
 	totalPercent           = 100
 	millisecondsInSecond   = 1000
+
+	// profiling default values.
+	sampleThreshold   = 20
+	profilingInterval = 10 * time.Millisecond
 )
 
 // waitEvent defines an auxiliary struct to sort events.
@@ -50,8 +55,9 @@ type TraceStat struct {
 
 // TraceOptions defines program's configuration options.
 type TraceOptions struct {
-	Pid      int           // PID of profiled backend.
-	Interval time.Duration // Profiling interval.
+	Pid             int           // PID of profiled backend.
+	Interval        time.Duration // Profiling interval.
+	SampleThreshold int
 }
 
 // Profiler defines a profiling structure.
@@ -62,11 +68,20 @@ type Profiler struct {
 	waitEventDurations map[string]float64 // wait events and its durations.
 	waitEventPercents  map[string]float64 // wait events and its percent ratios.
 	sampleCounter      int
+	once               sync.Once
 	exitChan           chan struct{}
 }
 
 // NewProfiler creates a new profiler.
 func NewProfiler(conn pgxtype.Querier, opts TraceOptions) *Profiler {
+	if opts.Interval == 0 {
+		opts.Interval = profilingInterval
+	}
+
+	if opts.SampleThreshold == 0 {
+		opts.SampleThreshold = sampleThreshold
+	}
+
 	return &Profiler{
 		conn:               conn,
 		opts:               opts,
@@ -147,7 +162,14 @@ func (p *Profiler) Start(ctx context.Context) {
 		prev = curr
 	}
 
-	p.exitChan <- struct{}{}
+	p.Stop()
+}
+
+// Stop signals the end of data collection.
+func (p *Profiler) Stop() {
+	p.once.Do(func() {
+		close(p.exitChan)
+	})
 }
 
 // Finish returns a channel that's receiving data when profiling done.
@@ -183,6 +205,11 @@ func (p *Profiler) resetCounters() {
 // CountSamples returns a number of samples.
 func (p *Profiler) CountSamples() int {
 	return p.sampleCounter
+}
+
+// IsEnoughSamples checks if enough samples have been collected.
+func (p *Profiler) IsEnoughSamples() bool {
+	return p.sampleCounter >= p.opts.SampleThreshold
 }
 
 // TotalTime returns a total time of profiling events.

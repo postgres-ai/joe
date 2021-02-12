@@ -24,17 +24,17 @@ type Config struct {
 // App defines a general application configuration.
 type App struct {
 	Version           string
-	Host              string        `env:"SERVER_HOST"`
-	Port              uint          `env:"SERVER_PORT" env-default:"2400"`
-	MinNotifyDuration time.Duration `env:"MIN_NOTIFY_DURATION" env-default:"60s"`
-	Debug             bool          `env:"JOE_DEBUG"`
+	Host              string        `env:"JOE_APP_HOST"`
+	Port              uint          `env:"JOE_APP_PORT" env-default:"2400"`
+	MinNotifyDuration time.Duration `env:"JOE_APP_MIN_NOTIFY_DURATION" env-default:"60s"`
+	Debug             bool          `env:"JOE_APP_DEBUG"`
 }
 
 // Platform describes configuration parameters of a Postgres.ai platform.
 type Platform struct {
-	URL            string `yaml:"url" env:"PLATFORM_URL" env-default:"https://postgres.ai/api/general"`
-	Token          string `yaml:"token" env:"PLATFORM_TOKEN"`
-	HistoryEnabled bool   `yaml:"historyEnabled" env:"HISTORY_ENABLED"`
+	URL            string `yaml:"url" env:"JOE_PLATFORM_URL" env-default:"https://postgres.ai/api/general"`
+	Token          string `yaml:"token" env:"JOE_PLATFORM_TOKEN"`
+	HistoryEnabled bool   `yaml:"historyEnabled" env:"JOE_PLATFORM_HISTORY_ENABLED"`
 }
 
 // ChannelMapping contains configuration parameters of communication types and Database Labs.

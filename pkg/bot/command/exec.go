@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/pkg/errors"
@@ -28,10 +27,6 @@ import (
 const (
 	// msgExecOptionReq describes an exec error.
 	msgExecOptionReq = "Use `exec` to run query, e.g. `exec drop index some_index_name`"
-
-	// profiling default values.
-	profilingInterval = 10 * time.Millisecond
-	sampleThreshold   = 20
 )
 
 // ExecCmd defines the exec command.
@@ -80,12 +75,13 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 	defer conn.Release()
 
 	p := estimator.NewProfiler(cmd.db, estimator.TraceOptions{
-		Pid:      pid,
-		Interval: cmd.estCfg.ProfilingInterval,
+		Pid:             pid,
+		Interval:        cmd.estCfg.ProfilingInterval,
+		SampleThreshold: cmd.estCfg.SampleThreshold,
 	})
 
 	// Start profiling.
-	go p.Start(ctx)
+	estimator.Run(ctx, p, cmd.estCfg.ReadRatio, cmd.estCfg.WriteRatio)
 
 	var explain *pgexplain.Explain = nil
 
@@ -117,7 +113,7 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 	estimationTime, description := "", ""
 
 	// Show stats if the total number of samples more than the default threshold.
-	if p.CountSamples() >= cmd.estCfg.SampleThreshold {
+	if p.IsEnoughSamples() {
 		cmd.message.AppendText(fmt.Sprintf("```%s```", p.RenderStat()))
 
 		est := estimator.NewTiming(p.WaitEventsRatio(), cmd.estCfg.ReadRatio, cmd.estCfg.WriteRatio)

@@ -30,11 +30,10 @@ type Enterprise struct {
 	Estimator Estimator `yaml:"estimator"`
 }
 
-// TODO (akartasov): add `env-default` tags after https://github.com/ilyakaznacheev/cleanenv/issues/40 has been merged.
 // Quota contains quota configuration parameters.
 type Quota struct {
-	Limit    uint `description:"limit request rates to up to 2x of this number" env:"EE_QUOTA_LIMIT"`
-	Interval uint `description:"a time interval (in seconds) to apply a quota-limit" env:"EE_QUOTA_INTERVAL"`
+	Limit    uint `description:"limit request rates to up to 2x of this number" env-default:"10" env:"EE_QUOTA_LIMIT"`
+	Interval uint `description:"a time interval (in seconds) to apply a quota-limit" env-default:"60" env:"EE_QUOTA_INTERVAL"`
 }
 
 // Audit contains audit configuration parameters.
@@ -43,16 +42,18 @@ type Audit struct {
 }
 
 // DBLab contains Database Lab configuration parameters.
+//nolint:lll
 type DBLab struct {
-	InstanceLimit uint `yaml:"instanceLimit" description:"limit of available Database Lab instances" env:"EE_DBLAB_INSTANCE_LIMIT"`
+	InstanceLimit uint `yaml:"instanceLimit" env-default:"2" description:"limit of available Database Lab instances" env:"EE_DBLAB_INSTANCE_LIMIT"`
 }
 
 // Estimator describes Enterprise options to estimate query timing.
+//nolint:lll
 type Estimator struct {
-	ReadRatio         float64       `yaml:"readRatio" description:"set up the read ratio of the estimator" env:"EE_ESTIMATOR_READ_RATIO"`
-	WriteRatio        float64       `yaml:"writeRatio" description:"set up the write ratio of the estimator" env:"EE_ESTIMATOR_WRITE_RATIO"`
-	ProfilingInterval time.Duration `yaml:"profilingInterval" description:"set up the profiling interval of the estimator" env:"EE_ESTIMATOR_PROFILING_INTERVAL"`
-	SampleThreshold   int           `yaml:"sampleThreshold" description:"set up the samples threshold of the estimator" env:"EE_ESTIMATOR_SAMPLE_THRESHOLD"`
+	ReadRatio         float64       `yaml:"readRatio" env-default:"1" description:"set up the read ratio of the estimator" env:"EE_ESTIMATOR_READ_RATIO"`
+	WriteRatio        float64       `yaml:"writeRatio" env-default:"1" description:"set up the write ratio of the estimator" env:"EE_ESTIMATOR_WRITE_RATIO"`
+	ProfilingInterval time.Duration `yaml:"profilingInterval" env-default:"10ms" description:"set up the profiling interval of the estimator" env:"EE_ESTIMATOR_PROFILING_INTERVAL"`
+	SampleThreshold   int           `yaml:"sampleThreshold" env-default:"20" description:"set up the samples threshold of the estimator" env:"EE_ESTIMATOR_SAMPLE_THRESHOLD"`
 }
 
 // Provider provides Enterprise configuration options.
