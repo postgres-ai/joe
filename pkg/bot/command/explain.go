@@ -53,8 +53,9 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 	defer conn.Release()
 
 	p := estimator.NewProfiler(db, estimator.TraceOptions{
-		Pid:      pid,
-		Interval: profilingInterval,
+		Pid:             pid,
+		Interval:        estCfg.ProfilingInterval,
+		SampleThreshold: estCfg.SampleThreshold,
 	})
 
 	cmd := NewPlan(command, msg, db, msgSvc)
@@ -63,8 +64,7 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 		return errors.Wrap(err, "failed to run explain without execution")
 	}
 
-	// Start profiling.
-	go p.Start(ctx)
+	estimator.Run(ctx, p, estCfg.ReadRatio, estCfg.WriteRatio)
 
 	// Explain analyze request and processing.
 	explainAnalyze, err := querier.DBQueryWithResponse(ctx, conn, queryExplainAnalyze+command.Query)
@@ -155,7 +155,7 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 	<-p.Finish()
 
 	// Show stats if the total number of samples more than the default threshold.
-	if p.CountSamples() >= sampleThreshold {
+	if p.IsEnoughSamples() {
 		msg.AppendText(fmt.Sprintf("*Profiling of wait events:*\n```%s```\n", p.RenderStat()))
 
 		est := estimator.NewTiming(p.WaitEventsRatio(), estCfg.ReadRatio, estCfg.WriteRatio)

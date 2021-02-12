@@ -6,6 +6,7 @@
 package estimator
 
 import (
+	"context"
 	"fmt"
 )
 
@@ -179,4 +180,19 @@ func (est *Timing) EstTime(elapsed float64) string {
 	}
 
 	return fmt.Sprintf(" (estimated* for prod: %s s)", estTime)
+}
+
+// Run starts profiling if it needs to be done.
+func Run(ctx context.Context, p *Profiler, readRatio, writeRatio float64) {
+	if p.opts.SampleThreshold > 0 && shouldEstimate(readRatio, writeRatio) {
+		go p.Start(ctx)
+		return
+	}
+
+	p.Stop()
+}
+
+// shouldEstimate checks ratios to determine whether to skip an estimation.
+func shouldEstimate(readRatio, writeRatio float64) bool {
+	return (readRatio != 0 || writeRatio != 0) && (readRatio != 1 || writeRatio != 1)
 }

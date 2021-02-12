@@ -5,7 +5,7 @@ go 1.15
 require (
 	github.com/dustin/go-humanize v1.0.0
 	github.com/hako/durafmt v0.0.0-20191009132224-3f39dc1ed9f4
-	github.com/ilyakaznacheev/cleanenv v1.2.2
+	github.com/ilyakaznacheev/cleanenv v1.2.5
 	github.com/jackc/pgconn v1.7.0
 	github.com/jackc/pgtype v1.6.2
 	github.com/jackc/pgx/v4 v4.9.0
@@ -18,6 +18,6 @@ require (
 	github.com/sethvargo/go-password v0.2.0
 	github.com/slack-go/slack v0.6.4
 	github.com/stretchr/testify v1.5.1
-	gitlab.com/postgres-ai/database-lab/v2 v2.1.1-0.20210209134110-e925a34a322b
-	gopkg.in/yaml.v2 v2.2.8
+	gitlab.com/postgres-ai/database-lab/v2 v2.2.0
+	gopkg.in/yaml.v2 v2.3.0
 )

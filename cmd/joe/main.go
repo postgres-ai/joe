@@ -27,7 +27,7 @@ var buildTime, version string
 func main() {
 	version := formatBotVersion()
 
-	botCfg, err := loadConfig("config/config.yml")
+	botCfg, err := loadConfig("config/config.yaml")
 	if err != nil {
 		log.Fatal("failed to load config: %v", err)
 	}

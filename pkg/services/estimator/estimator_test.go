@@ -35,3 +35,41 @@ func TestEstimateTiming(t *testing.T) {
 	estimatedTime := est.CalcMin(cloneTiming)
 	assert.Equal(t, expectedTime, math.Round(estimatedTime*100)/100)
 }
+
+func TestShouldEstimate(t *testing.T) {
+	testCases := []struct {
+		readRatio      float64
+		writeRatio     float64
+		shouldEstimate bool
+	}{
+		{
+			readRatio:      0,
+			writeRatio:     0,
+			shouldEstimate: false,
+		},
+		{
+			readRatio:      1,
+			writeRatio:     1,
+			shouldEstimate: false,
+		},
+		{
+			readRatio:      1,
+			writeRatio:     0,
+			shouldEstimate: true,
+		},
+		{
+			readRatio:      0,
+			writeRatio:     1,
+			shouldEstimate: true,
+		},
+		{
+			readRatio:      0.5,
+			writeRatio:     1.2,
+			shouldEstimate: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		assert.Equal(t, tc.shouldEstimate, shouldEstimate(tc.readRatio, tc.writeRatio))
+	}
+}
