@@ -158,7 +158,10 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 
 // getConn returns an acquired connection and Postgres backend PID.
 func getConn(ctx context.Context, db *pgxpool.Pool) (*pgxpool.Conn, int, error) {
-	var pid int
+	var (
+		pid int
+		err error
+	)
 
 	conn, err := db.Acquire(ctx)
 	if err != nil {
@@ -166,7 +169,13 @@ func getConn(ctx context.Context, db *pgxpool.Pool) (*pgxpool.Conn, int, error) 
 		return nil, 0, err
 	}
 
-	if err := conn.QueryRow(ctx, `select pg_backend_pid()`).Scan(&pid); err != nil {
+	defer func() {
+		if err != nil && conn != nil {
+			conn.Release()
+		}
+	}()
+
+	if err = conn.QueryRow(ctx, `select pg_backend_pid()`).Scan(&pid); err != nil {
 		log.Err("failed to get backend PID: ", err)
 		return nil, 0, err
 	}
