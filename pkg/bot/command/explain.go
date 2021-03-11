@@ -7,21 +7,21 @@ package command
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgtype/pgxtype"
-	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/pkg/errors"
+
+	"gitlab.com/postgres-ai/database-lab/v2/pkg/client/dblabapi"
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/log"
 
-	"gitlab.com/postgres-ai/joe/features/definition"
 	"gitlab.com/postgres-ai/joe/pkg/bot/querier"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/models"
 	"gitlab.com/postgres-ai/joe/pkg/pgexplain"
-	"gitlab.com/postgres-ai/joe/pkg/services/estimator"
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
-	"gitlab.com/postgres-ai/joe/pkg/util/operator"
+	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"
 	"gitlab.com/postgres-ai/joe/pkg/util/text"
 )
 
@@ -39,12 +39,12 @@ const (
 
 // Explain runs an explain query.
 func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform.Command, msg *models.Message,
-	explainConfig pgexplain.ExplainConfig, estCfg definition.Estimator, db *pgxpool.Pool) error {
+	explainConfig pgexplain.ExplainConfig, dblab *dblabapi.Client, session usermanager.UserSession) error {
 	if command.Query == "" {
 		return errors.New(MsgExplainOptionReq)
 	}
 
-	conn, pid, err := getConn(ctx, db)
+	conn, pid, err := getConn(ctx, session.CloneConnection)
 	if err != nil {
 		log.Err("failed to get connection: ", err)
 		return err
@@ -52,19 +52,19 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 
 	defer conn.Release()
 
-	p := estimator.NewProfiler(db, estimator.TraceOptions{
-		Pid:             pid,
-		Interval:        estCfg.ProfilingInterval,
-		SampleThreshold: estCfg.SampleThreshold,
-	})
-
-	cmd := NewPlan(command, msg, db, msgSvc)
+	cmd := NewPlan(command, msg, session.CloneConnection, msgSvc)
 	msgInitText, err := cmd.explainWithoutExecution(ctx)
 	if err != nil {
 		return errors.Wrap(err, "failed to run explain without execution")
 	}
 
-	estimator.Run(ctx, p, estCfg.ReadRatio, estCfg.WriteRatio)
+	est, err := dblab.Estimate(ctx, session.Clone.ID, strconv.Itoa(pid))
+	if err != nil {
+		return err
+	}
+
+	// Start profiling.
+	<-est.Wait()
 
 	// Explain analyze request and processing.
 	explainAnalyze, err := querier.DBQueryWithResponse(ctx, conn, queryExplainAnalyze+command.Query)
@@ -151,47 +151,28 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 		return err
 	}
 
+	readBlocks := explain.SharedHitBlocks + explain.SharedReadBlocks
+
+	if err := est.SetReadBlocks(readBlocks); err != nil {
+		return errors.Wrap(err, "failed to set a number of read blocks")
+	}
+
 	// Wait for profiling results.
-	<-p.Finish()
+	estResults := est.ReadResult()
+
+	description := ""
 
 	// Show stats if the total number of samples more than the default threshold.
-	if p.IsEnoughSamples() {
-		msg.AppendText(fmt.Sprintf("*Profiling of wait events:*\n```%s```\n", p.RenderStat()))
+	if estResults.IsEnoughStat {
+		msg.AppendText(fmt.Sprintf("*Profiling of wait events:*\n```%s```\n", estResults.RenderedStat))
 
-		est := estimator.NewTiming(p.WaitEventsRatio(), estCfg.ReadRatio, estCfg.WriteRatio)
-
-		if operator.IsDML(strings.SplitN(cmd.command.Query, " ", 2)[0]) {
-			dbStat := estimator.StatDatabase{}
-
-			if err := db.QueryRow(ctx, dbStatQuery).Scan(
-				&dbStat.BlockWriteTime,
-				&dbStat.BlocksRead,
-				&dbStat.BlocksHit,
-				&dbStat.BlockReadTime); err != nil {
-				log.Err("Failed to collect database stat: ", err)
-				return err
-			}
-
-			readBlocks := explain.SharedHitBlocks + explain.SharedReadBlocks
-
-			est.SetDBStat(dbStat)
-			est.SetReadBlocks(readBlocks)
-
-			log.Dbg(fmt.Sprintf("%#v, SharedHitBlocks: %d, SharedReadBlocks: %d",
-				dbStat, explain.SharedHitBlocks, explain.SharedReadBlocks))
-		}
-
-		explain.EstimationTime = est.EstTime(p.TotalTime())
+		explain.EstimationTime = estResults.EstTime
+		description = fmt.Sprintf("\n⠀* Estimated timing for production (experimental). <%s|How it works>", timingEstimatorDocLink)
 	}
 
 	// Summary.
 	stats := explain.RenderStats()
 	command.Stats = stats
-
-	description := ""
-	if explain.EstimationTime != "" {
-		description = fmt.Sprintf("\n⠀* Estimated timing for production (experimental). <%s|How it works>", timingEstimatorDocLink)
-	}
 
 	msg.AppendText(fmt.Sprintf("*Summary:*\n```%s```%s", stats, description))
 	if err = msgSvc.UpdateText(msg); err != nil {
