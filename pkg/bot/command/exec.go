@@ -8,19 +8,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/pkg/errors"
-	"gitlab.com/postgres-ai/database-lab/v2/pkg/log"
 
-	"gitlab.com/postgres-ai/joe/features/definition"
+	"gitlab.com/postgres-ai/database-lab/v2/pkg/client/dblabapi"
+	"gitlab.com/postgres-ai/database-lab/v2/pkg/log"
+	dblabmodels "gitlab.com/postgres-ai/database-lab/v2/pkg/models"
+
 	"gitlab.com/postgres-ai/joe/pkg/bot/querier"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/models"
 	"gitlab.com/postgres-ai/joe/pkg/pgexplain"
-	"gitlab.com/postgres-ai/joe/pkg/services/estimator"
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
+	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"
 	"gitlab.com/postgres-ai/joe/pkg/util/operator"
 )
 
@@ -35,30 +38,22 @@ type ExecCmd struct {
 	message   *models.Message
 	db        *pgxpool.Pool
 	messenger connection.Messenger
-	estCfg    definition.Estimator
+	dblab     *dblabapi.Client
+	clone     *dblabmodels.Clone
 }
 
 // NewExec return a new exec command.
-func NewExec(estCfg definition.Estimator, command *platform.Command, msg *models.Message, db *pgxpool.Pool,
-	messengerSvc connection.Messenger) *ExecCmd {
+func NewExec(command *platform.Command, msg *models.Message, session usermanager.UserSession,
+	messengerSvc connection.Messenger, dblab *dblabapi.Client) *ExecCmd {
 	return &ExecCmd{
 		command:   command,
 		message:   msg,
-		db:        db,
+		db:        session.CloneConnection,
+		clone:     session.Clone,
 		messenger: messengerSvc,
-		estCfg:    estCfg,
+		dblab:     dblab,
 	}
 }
-
-const dbStatQuery = `
-select
-  blk_write_time,
-  blks_read,
-  blks_hit,
-  blk_read_time
-from pg_stat_bgwriter, pg_stat_database
-where datname = current_database();
-`
 
 // Execute runs the exec command.
 func (cmd ExecCmd) Execute(ctx context.Context) error {
@@ -74,14 +69,13 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 
 	defer conn.Release()
 
-	p := estimator.NewProfiler(cmd.db, estimator.TraceOptions{
-		Pid:             pid,
-		Interval:        cmd.estCfg.ProfilingInterval,
-		SampleThreshold: cmd.estCfg.SampleThreshold,
-	})
+	est, err := cmd.dblab.Estimate(ctx, cmd.clone.ID, strconv.Itoa(pid))
+	if err != nil {
+		return err
+	}
 
 	// Start profiling.
-	estimator.Run(ctx, p, cmd.estCfg.ReadRatio, cmd.estCfg.WriteRatio)
+	<-est.Wait()
 
 	var explain *pgexplain.Explain = nil
 
@@ -107,43 +101,28 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 		return err
 	}
 
+	var readBlocks uint64 = 0
+	if explain != nil {
+		readBlocks = explain.SharedHitBlocks + explain.SharedReadBlocks
+	}
+
+	if err := est.SetReadBlocks(readBlocks); err != nil {
+		return errors.Wrap(err, "failed to set a number of read blocks")
+	}
+
 	// Wait for profiling results.
-	<-p.Finish()
+	profResult := est.ReadResult()
 
 	estimationTime, description := "", ""
 
 	// Show stats if the total number of samples more than the default threshold.
-	if p.IsEnoughSamples() {
-		cmd.message.AppendText(fmt.Sprintf("```%s```", p.RenderStat()))
-
-		est := estimator.NewTiming(p.WaitEventsRatio(), cmd.estCfg.ReadRatio, cmd.estCfg.WriteRatio)
-
-		if explain != nil {
-			dbStat := estimator.StatDatabase{}
-
-			if err := cmd.db.QueryRow(ctx, dbStatQuery).Scan(
-				&dbStat.BlockWriteTime,
-				&dbStat.BlocksRead,
-				&dbStat.BlocksHit,
-				&dbStat.BlockReadTime); err != nil {
-				log.Err("Failed to collect database stat: ", err)
-				return err
-			}
-
-			readBlocks := explain.SharedHitBlocks + explain.SharedReadBlocks
-
-			est.SetDBStat(dbStat)
-			est.SetReadBlocks(readBlocks)
-
-			log.Dbg(fmt.Sprintf("%#v, SharedHitBlocks: %d, SharedReadBlocks: %d",
-				dbStat, explain.SharedHitBlocks, explain.SharedReadBlocks))
-		}
-
-		estimationTime = est.EstTime(p.TotalTime())
+	if profResult.IsEnoughStat {
+		cmd.message.AppendText(fmt.Sprintf("```%s```", profResult.RenderedStat))
+		estimationTime = profResult.EstTime
 		description = fmt.Sprintf("\n⠀* Estimated timing for production (experimental). <%s|How it works>", timingEstimatorDocLink)
 	}
 
-	result := fmt.Sprintf("The query has been executed. Duration: %.3f s%s", p.TotalTime(), estimationTime)
+	result := fmt.Sprintf("The query has been executed. Duration: %.3f s%s", profResult.TotalTime, estimationTime)
 
 	cmd.command.Response = result
 	cmd.message.AppendText(result + description)

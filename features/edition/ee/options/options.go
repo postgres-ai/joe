@@ -8,8 +8,6 @@
 package options
 
 import (
-	"time"
-
 	"github.com/ilyakaznacheev/cleanenv"
 
 	"gitlab.com/postgres-ai/joe/features/definition"
@@ -24,10 +22,9 @@ type EnterpriseContainer struct {
 
 // Enterprise defines Enterprise options.
 type Enterprise struct {
-	Quota     Quota     `yaml:"quota"`
-	Audit     Audit     `yaml:"audit"`
-	DBLab     DBLab     `yaml:"dblab"`
-	Estimator Estimator `yaml:"estimator"`
+	Quota Quota `yaml:"quota"`
+	Audit Audit `yaml:"audit"`
+	DBLab DBLab `yaml:"dblab"`
 }
 
 // Quota contains quota configuration parameters.
@@ -45,15 +42,6 @@ type Audit struct {
 //nolint:lll
 type DBLab struct {
 	InstanceLimit uint `yaml:"instanceLimit" env-default:"2" description:"limit of available Database Lab instances" env:"EE_DBLAB_INSTANCE_LIMIT"`
-}
-
-// Estimator describes Enterprise options to estimate query timing.
-//nolint:lll
-type Estimator struct {
-	ReadRatio         float64       `yaml:"readRatio" env-default:"1" description:"set up the read ratio of the estimator" env:"EE_ESTIMATOR_READ_RATIO"`
-	WriteRatio        float64       `yaml:"writeRatio" env-default:"1" description:"set up the write ratio of the estimator" env:"EE_ESTIMATOR_WRITE_RATIO"`
-	ProfilingInterval time.Duration `yaml:"profilingInterval" env-default:"10ms" description:"set up the profiling interval of the estimator" env:"EE_ESTIMATOR_PROFILING_INTERVAL"`
-	SampleThreshold   int           `yaml:"sampleThreshold" env-default:"20" description:"set up the samples threshold of the estimator" env:"EE_ESTIMATOR_SAMPLE_THRESHOLD"`
 }
 
 // Provider provides Enterprise configuration options.
@@ -84,12 +72,6 @@ func (e *Enterprise) toEnterpriseOptions() definition.EnterpriseOptions {
 		},
 		DBLab: definition.DBLab{
 			InstanceLimit: e.DBLab.InstanceLimit,
-		},
-		Estimator: definition.Estimator{
-			ReadRatio:         e.Estimator.ReadRatio,
-			WriteRatio:        e.Estimator.WriteRatio,
-			ProfilingInterval: e.Estimator.ProfilingInterval,
-			SampleThreshold:   e.Estimator.SampleThreshold,
 		},
 	}
 }
