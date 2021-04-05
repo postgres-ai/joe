@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/pkg/errors"
@@ -17,6 +18,7 @@ import (
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/client/dblabapi"
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/log"
 	dblabmodels "gitlab.com/postgres-ai/database-lab/v2/pkg/models"
+	"gitlab.com/postgres-ai/database-lab/v2/pkg/util"
 
 	"gitlab.com/postgres-ai/joe/pkg/bot/querier"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
@@ -81,6 +83,8 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 
 	op := strings.SplitN(cmd.command.Query, " ", 2)[0]
 
+	start := time.Now()
+
 	switch {
 	case operator.IsDML(op):
 		explain, err = getExplain(ctx, conn, cmd.command.Query)
@@ -95,6 +99,8 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 			return err
 		}
 	}
+
+	totalTime := util.DurationToString(time.Since(start))
 
 	if err := conn.Conn().Close(ctx); err != nil {
 		log.Err("Failed to close connection: ", err)
@@ -119,10 +125,11 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 	if profResult.IsEnoughStat {
 		cmd.message.AppendText(fmt.Sprintf("```%s```", profResult.RenderedStat))
 		estimationTime = profResult.EstTime
+		totalTime = fmt.Sprintf("%.3f s", profResult.TotalTime)
 		description = fmt.Sprintf("\n⠀* Estimated timing for production (experimental). <%s|How it works>", timingEstimatorDocLink)
 	}
 
-	result := fmt.Sprintf("The query has been executed. Duration: %.3f s%s", profResult.TotalTime, estimationTime)
+	result := fmt.Sprintf("The query has been executed. Duration: %s%s", totalTime, estimationTime)
 
 	cmd.command.Response = result
 	cmd.message.AppendText(result + description)
