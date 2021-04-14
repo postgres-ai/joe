@@ -73,8 +73,8 @@ type Explain struct {
 	TempWrittenBlocks   uint64
 
 	// IO timing.
-	IOReadTime  float64
-	IOWriteTime float64
+	IOReadTime  *float64
+	IOWriteTime *float64
 
 	ActualRows      uint64
 	MaxRows         uint64
@@ -104,8 +104,8 @@ type Plan struct {
 	TempWrittenBlocks   uint64 `json:"Temp Written Blocks"`
 
 	// IO timing.
-	IOReadTime  float64 `json:"I/O Read Time"`  // ms
-	IOWriteTime float64 `json:"I/O Write Time"` // ms
+	IOReadTime  *float64 `json:"I/O Read Time,omitempty"`  // ms
+	IOWriteTime *float64 `json:"I/O Write Time,omitempty"` // ms
 
 	// Actual.
 	ActualLoops       uint64  `json:"Actual Loops"`
@@ -449,15 +449,15 @@ func (ex *Explain) writeStatsText(writer io.Writer) {
 	fmt.Fprintf(writer, "  - execution: %s%s\n", util.MillisecondsToString(ex.ExecutionTime), ex.EstimationTime)
 
 	ioRead := util.NA
-	if ex.IOReadTime > 0 {
-		ioRead = util.MillisecondsToString(ex.IOReadTime)
+	if ex.IOReadTime != nil {
+		ioRead = util.MillisecondsToString(*ex.IOReadTime)
 	}
 
 	fmt.Fprintf(writer, "    - I/O read: %s\n", ioRead)
 
 	ioWrite := util.NA
-	if ex.IOWriteTime > 0 {
-		ioWrite = util.MillisecondsToString(ex.IOWriteTime)
+	if ex.IOWriteTime != nil {
+		ioWrite = util.MillisecondsToString(*ex.IOWriteTime)
 	}
 
 	fmt.Fprintf(writer, "    - I/O write: %s\n", ioWrite)
@@ -731,11 +731,12 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 	}
 
 	ioTiming := ""
-	if plan.IOReadTime > 0 {
-		ioTiming += fmt.Sprintf(" read=%.3f", plan.IOReadTime)
+	if plan.IOReadTime != nil {
+		ioTiming += fmt.Sprintf(" read=%.3f", *plan.IOReadTime)
 	}
-	if plan.IOWriteTime > 0 {
-		ioTiming += fmt.Sprintf(" write=%.3f", plan.IOWriteTime)
+
+	if plan.IOWriteTime != nil {
+		ioTiming += fmt.Sprintf(" write=%.3f", *plan.IOWriteTime)
 	}
 
 	if len(ioTiming) > 0 {

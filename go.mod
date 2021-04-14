@@ -3,6 +3,7 @@ module gitlab.com/postgres-ai/joe
 go 1.15
 
 require (
+	github.com/AlekSi/pointer v1.1.0
 	github.com/docker/docker v20.10.5+incompatible // indirect
 	github.com/dustin/go-humanize v1.0.0
 	github.com/hako/durafmt v0.0.0-20191009132224-3f39dc1ed9f4
