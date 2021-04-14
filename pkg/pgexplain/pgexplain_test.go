@@ -8,6 +8,8 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/AlekSi/pointer"
+
 	"gitlab.com/postgres-ai/joe/pkg/util"
 
 	"github.com/sergi/go-diff/diffmatchpatch"
@@ -1857,8 +1859,6 @@ func TestStatsText(t *testing.T) {
 				TotalTime:      25,
 				PlanningTime:   3,
 				ExecutionTime:  22,
-				IOReadTime:     0,
-				IOWriteTime:    0,
 				EstimationTime: " (estimated* for prod: 0.0018...0.0021 s)",
 			},
 			expectedResult: `
@@ -1880,8 +1880,8 @@ Shared buffers:
 				TotalTime:     25,
 				PlanningTime:  3,
 				ExecutionTime: 22,
-				IOReadTime:    3,
-				IOWriteTime:   5,
+				IOReadTime:    pointer.ToFloat64(3),
+				IOWriteTime:   pointer.ToFloat64(5),
 			},
 			expectedResult: `
 Time: 25.000 ms
@@ -1889,6 +1889,28 @@ Time: 25.000 ms
   - execution: 22.000 ms
     - I/O read: 3.000 ms
     - I/O write: 5.000 ms
+
+Shared buffers:
+  - hits: 0 from the buffer pool
+  - reads: 0 from the OS file cache, including disk I/O
+  - dirtied: 0
+  - writes: 0
+`,
+		},
+		{
+			explain: Explain{
+				TotalTime:     25,
+				PlanningTime:  3,
+				ExecutionTime: 22,
+				IOReadTime:    pointer.ToFloat64(0),
+				IOWriteTime:   pointer.ToFloat64(0),
+			},
+			expectedResult: `
+Time: 25.000 ms
+  - planning: 3.000 ms
+  - execution: 22.000 ms
+    - I/O read: 0.000 ms
+    - I/O write: 0.000 ms
 
 Shared buffers:
   - hits: 0 from the buffer pool
