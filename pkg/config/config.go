@@ -45,8 +45,9 @@ type ChannelMapping struct {
 
 // DBLabInstance contains Database Lab config.
 type DBLabInstance struct {
-	URL   string
-	Token string
+	URL            string
+	Token          string
+	RequestTimeout time.Duration
 }
 
 // Workspace defines a connection space.
