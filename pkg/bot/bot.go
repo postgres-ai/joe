@@ -109,6 +109,7 @@ func (a *App) initDBLabInstances() error {
 		dbLabClient, err := dblabapi.NewClient(dblabapi.Options{
 			Host:              dbLab.URL,
 			VerificationToken: dbLab.Token,
+			RequestTimeout:    dbLab.RequestTimeout,
 		})
 
 		if err != nil {
