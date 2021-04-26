@@ -151,12 +151,6 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 		return err
 	}
 
-	readBlocks := explain.SharedHitBlocks + explain.SharedReadBlocks
-
-	if err := est.SetReadBlocks(readBlocks); err != nil {
-		return errors.Wrap(err, "failed to set a number of read blocks")
-	}
-
 	// Wait for profiling results.
 	estResults := est.ReadResult()
 
