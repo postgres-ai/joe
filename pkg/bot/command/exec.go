@@ -6,10 +6,8 @@ package command
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v4/pgxpool"
@@ -20,13 +18,10 @@ import (
 	dblabmodels "gitlab.com/postgres-ai/database-lab/v2/pkg/models"
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/util"
 
-	"gitlab.com/postgres-ai/joe/pkg/bot/querier"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/models"
-	"gitlab.com/postgres-ai/joe/pkg/pgexplain"
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"
-	"gitlab.com/postgres-ai/joe/pkg/util/operator"
 )
 
 const (
@@ -79,25 +74,11 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 	// Start profiling.
 	<-est.Wait()
 
-	var explain *pgexplain.Explain = nil
-
-	op := strings.SplitN(cmd.command.Query, " ", 2)[0]
-
 	start := time.Now()
 
-	switch {
-	case operator.IsDML(op):
-		explain, err = getExplain(ctx, conn, cmd.command.Query)
-		if err != nil {
-			log.Err("Failed to exec command: ", err)
-			return err
-		}
-
-	default:
-		if _, err := conn.Exec(ctx, cmd.command.Query); err != nil {
-			log.Err("Failed to exec command: ", err)
-			return err
-		}
+	if _, err := conn.Exec(ctx, cmd.command.Query); err != nil {
+		log.Err("Failed to exec command: ", err)
+		return err
 	}
 
 	totalTime := util.DurationToString(time.Since(start))
@@ -105,15 +86,6 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 	if err := conn.Conn().Close(ctx); err != nil {
 		log.Err("Failed to close connection: ", err)
 		return err
-	}
-
-	var readBlocks uint64 = 0
-	if explain != nil {
-		readBlocks = explain.SharedHitBlocks + explain.SharedReadBlocks
-	}
-
-	if err := est.SetReadBlocks(readBlocks); err != nil {
-		return errors.Wrap(err, "failed to set a number of read blocks")
 	}
 
 	// Wait for profiling results.
@@ -167,27 +139,4 @@ func getConn(ctx context.Context, db *pgxpool.Pool) (*pgxpool.Conn, int, error) 
 	}
 
 	return conn, pid, nil
-}
-
-// getExplain analyzes query.
-func getExplain(ctx context.Context, conn *pgxpool.Conn, query string) (*pgexplain.Explain, error) {
-	explainAnalyze, err := querier.DBQueryWithResponse(ctx, conn, queryExplainAnalyze+query)
-	if err != nil {
-		log.Err("Failed to exec command: ", err)
-		return nil, err
-	}
-
-	var explains []pgexplain.Explain
-
-	if err := json.NewDecoder(strings.NewReader(explainAnalyze)).Decode(&explains); err != nil {
-		return nil, err
-	}
-
-	if len(explains) == 0 {
-		return nil, errors.New("Empty explain")
-	}
-
-	explain := explains[0]
-
-	return &explain, nil
 }
