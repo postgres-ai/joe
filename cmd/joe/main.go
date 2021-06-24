@@ -19,6 +19,7 @@ import (
 	"gitlab.com/postgres-ai/joe/features"
 	"gitlab.com/postgres-ai/joe/pkg/bot"
 	"gitlab.com/postgres-ai/joe/pkg/config"
+	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 )
 
 // ldflag variables.
@@ -38,7 +39,12 @@ func main() {
 
 	botCfg.App.Version = version
 
-	joeBot := bot.NewApp(botCfg, features.NewPack())
+	platformClient, err := platform.NewClient(botCfg.Platform)
+	if err != nil {
+		log.Fatal(errors.Wrap(err, "failed to create a Platform client"))
+	}
+
+	joeBot := bot.NewApp(botCfg, platformClient, features.NewPack())
 	if err := joeBot.RunServer(context.Background()); err != nil {
 		log.Err("HTTP server error:", err)
 	}
