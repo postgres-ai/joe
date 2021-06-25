@@ -41,7 +41,7 @@ type Platform struct {
 // Registration describes configuration parameters to register an application on the Platform.
 type Registration struct {
 	Enable    bool   `yaml:"enable"`
-	PublicURL string `yaml:"publicUrl"`
+	PublicURL string `yaml:"publicURL"`
 }
 
 // ChannelMapping contains configuration parameters of communication types and Database Labs.

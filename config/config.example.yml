@@ -34,8 +34,12 @@ platform:
   # visualization. Default: true.
   historyEnabled: true
 
+# Register the application on the Platform.
 registration:
+  # Enable automatic registration. Default: false.
   enable: false
+
+  # Public Joe Bot URL which is used to register on the Platform.
   publicURL: "https://joe.example.com"
 
 # Channel Mapping is used to allow working with more than one database in

@@ -46,7 +46,7 @@ type Assistant struct {
 
 // meta contains meta information about an assistant service.
 type meta struct {
-	instanceID string
+	instanceID uint64
 	prefix     string
 }
 
@@ -109,9 +109,16 @@ func (a *Assistant) Register(ctx context.Context, project string) error {
 		return nil
 	}
 
+	platformToken, err := a.platformClient.CheckPlatformToken(ctx, platform.TokenCheckRequest{Token: a.appCfg.Platform.Token})
+	if err != nil {
+		return errors.Wrap(err, "failed to check token")
+	}
+
 	registerRequest := platform.RegisterApplicationRequest{
 		URL:     a.appCfg.Registration.PublicURL,
 		Project: project,
+		OrgID:   platformToken.OrganizationID,
+		Token:   a.credentialsCfg.SigningSecret,
 	}
 
 	instanceID, err := a.platformClient.RegisterApplication(ctx, registerRequest)
@@ -126,7 +133,7 @@ func (a *Assistant) Register(ctx context.Context, project string) error {
 
 // Deregister deregisters the assistant from the Platform.
 func (a *Assistant) Deregister(ctx context.Context) error {
-	if !a.appCfg.Registration.Enable || a.meta.instanceID == "" {
+	if !a.appCfg.Registration.Enable || a.meta.instanceID == 0 {
 		log.Dbg("The assistant is not registered. Skip deregistration")
 		return nil
 	}

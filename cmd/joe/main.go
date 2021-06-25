@@ -10,6 +10,11 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/pkg/errors"
@@ -20,6 +25,10 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/bot"
 	"gitlab.com/postgres-ai/joe/pkg/config"
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
+)
+
+const (
+	shutdownTimeout = 60 * time.Second
 )
 
 // ldflag variables.
@@ -44,9 +53,25 @@ func main() {
 		log.Fatal(errors.Wrap(err, "failed to create a Platform client"))
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	shutdownCh := setShutdownListener()
+
 	joeBot := bot.NewApp(botCfg, platformClient, features.NewPack())
-	if err := joeBot.RunServer(context.Background()); err != nil {
-		log.Err("HTTP server error:", err)
+
+	go func() {
+		if err := joeBot.RunServer(ctx); err != nil && err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
+	}()
+
+	<-shutdownCh
+	cancel()
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer shutdownCancel()
+
+	if err := joeBot.Shutdown(shutdownCtx); err != nil {
+		log.Msg(err)
 	}
 }
 
@@ -78,4 +103,11 @@ func loadConfig(configPath string) (*config.Config, error) {
 
 func formatBotVersion() string {
 	return version + "-" + buildTime
+}
+
+func setShutdownListener() chan os.Signal {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+	return c
 }

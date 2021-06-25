@@ -38,6 +38,8 @@ type App struct {
 	Config         *config.Config
 	featurePack    *features.Pack
 	platformClient *platform.Client
+	httpSrv        *http.Server
+	assistants     []connection.Assistant
 
 	dblabMu        *sync.RWMutex
 	dblabInstances map[string]*dblab.Instance
@@ -74,23 +76,47 @@ func (a *App) RunServer(ctx context.Context) error {
 		return errors.Wrap(err, "failed to start Query Optimization Assistants")
 	}
 
-	defer func() {
-		for _, assistantSvc := range assistants {
-			if err := assistantSvc.Deregister(context.Background()); err != nil {
-				log.Err("failed to deregister an assistant", err)
-			}
-		}
-	}()
+	a.assistants = assistants
 
 	http.HandleFunc("/", a.healthCheck)
 
 	log.Msg(fmt.Sprintf("Server start listening on %s:%d", a.Config.App.Host, a.Config.App.Port))
+	a.httpSrv = &http.Server{Addr: fmt.Sprintf("%s:%d", a.Config.App.Host, a.Config.App.Port)}
 
-	if err := http.ListenAndServe(fmt.Sprintf("%s:%d", a.Config.App.Host, a.Config.App.Port), nil); err != nil {
-		return errors.Wrap(err, "failed to start a server")
+	return a.httpSrv.ListenAndServe()
+}
+
+// Shutdown gracefully shuts down the server and deregister assistants.
+func (a *App) Shutdown(ctx context.Context) error {
+	if a.httpSrv != nil {
+		if err := a.httpSrv.Shutdown(ctx); err != nil {
+			log.Msg(err)
+		}
+	}
+
+	if len(a.assistants) > 0 {
+		a.deregisterAssistants(ctx)
 	}
 
 	return nil
+}
+
+func (a *App) deregisterAssistants(ctx context.Context) {
+	wg := sync.WaitGroup{}
+
+	wg.Add(len(a.assistants))
+
+	for _, assistantSvc := range a.assistants {
+		go func(svc connection.Assistant) {
+			defer wg.Done()
+
+			if err := svc.Deregister(ctx); err != nil {
+				log.Err("failed to deregister an assistant", err)
+			}
+		}(assistantSvc)
+	}
+
+	wg.Wait()
 }
 
 func (a *App) initDBLabInstances() error {
@@ -185,11 +211,11 @@ func (a *App) setupChannels(ctx context.Context, assistant connection.Assistant,
 		assistant.AddChannel(channel.ChannelID, channel.Project, dbLabInstance)
 
 		if err := assistant.Init(); err != nil {
-			return errors.Errorf("failed to initialize the %q assistant", channel.ChannelID)
+			return errors.Wrapf(err, "failed to initialize the %q assistant", channel.ChannelID)
 		}
 
 		if err := assistant.Register(ctx, channel.Project); err != nil {
-			return errors.Errorf("failed to register the %q assistant", channel.ChannelID)
+			return errors.Wrapf(err, "failed to register the %q assistant", channel.ChannelID)
 		}
 
 		_ = util.RunInterval(InactiveCloneCheckInterval, func() {
