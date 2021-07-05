@@ -36,22 +36,24 @@ type Assistant struct {
 	credentialsCfg *config.Credentials
 	procMu         sync.RWMutex
 	msgProcessors  map[string]connection.MessageProcessor
-	prefix         string
 	appCfg         *config.Config
 	featurePack    *features.Pack
 	messenger      *Messenger
 	userManager    *usermanager.UserManager
 	platformClient *platform.Client
+	meta           meta
+}
+
+// meta contains meta information about an assistant service.
+type meta struct {
+	instanceID uint64
+	prefix     string
 }
 
 // NewAssistant returns a new assistant service.
-func NewAssistant(cfg *config.Credentials, appCfg *config.Config, handlerPrefix string, pack *features.Pack) (*Assistant, error) {
+func NewAssistant(cfg *config.Credentials, appCfg *config.Config, handlerPrefix string, pack *features.Pack,
+	platformClient *platform.Client) *Assistant {
 	prefix := fmt.Sprintf("/%s", strings.Trim(handlerPrefix, "/"))
-
-	platformClient, err := platform.NewClient(appCfg.Platform)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create a Platform client")
-	}
 
 	messenger := NewMessenger(platformClient)
 	userInformer := NewUserInformer()
@@ -61,14 +63,14 @@ func NewAssistant(cfg *config.Credentials, appCfg *config.Config, handlerPrefix 
 		credentialsCfg: cfg,
 		appCfg:         appCfg,
 		msgProcessors:  make(map[string]connection.MessageProcessor),
-		prefix:         prefix,
 		featurePack:    pack,
 		messenger:      messenger,
 		userManager:    userManager,
 		platformClient: platformClient,
+		meta:           meta{prefix: prefix},
 	}
 
-	return assistant, nil
+	return assistant
 }
 
 func (a *Assistant) validateCredentials() error {
@@ -80,9 +82,7 @@ func (a *Assistant) validateCredentials() error {
 }
 
 // Init registers assistant handlers.
-func (a *Assistant) Init(_ context.Context) error {
-	log.Dbg("URL-path prefix: ", a.prefix)
-
+func (a *Assistant) Init() error {
 	if err := a.validateCredentials(); err != nil {
 		return errors.Wrap(err, "invalid credentials given")
 	}
@@ -94,10 +94,51 @@ func (a *Assistant) Init(_ context.Context) error {
 	verifier := NewVerifier([]byte(a.credentialsCfg.SigningSecret))
 
 	for path, handleFunc := range a.handlers() {
-		http.Handle(fmt.Sprintf("%s/%s", a.prefix, path), verifier.Handler(handleFunc))
+		http.Handle(fmt.Sprintf("%s/%s", a.meta.prefix, path), verifier.Handler(handleFunc))
 	}
 
 	return nil
+}
+
+// Register registers the assistant on the Platform.
+func (a *Assistant) Register(ctx context.Context, project string) error {
+	log.Dbg(fmt.Sprintf("Assistant %s. Project: %q. URL-path prefix: %s", CommunicationType, project, a.meta.prefix))
+
+	if !a.appCfg.Registration.Enable {
+		log.Msg("Auto-registration disabled. To enable it, use the application configuration file")
+		return nil
+	}
+
+	platformToken, err := a.platformClient.CheckPlatformToken(ctx, platform.TokenCheckRequest{Token: a.appCfg.Platform.Token})
+	if err != nil {
+		return errors.Wrap(err, "failed to check token")
+	}
+
+	registerRequest := platform.RegisterApplicationRequest{
+		URL:     a.appCfg.Registration.PublicURL,
+		Project: project,
+		OrgID:   platformToken.OrganizationID,
+		Token:   a.credentialsCfg.SigningSecret,
+	}
+
+	instanceID, err := a.platformClient.RegisterApplication(ctx, registerRequest)
+	if err != nil {
+		return errors.Wrap(err, "failed to register on Platform")
+	}
+
+	a.meta.instanceID = instanceID
+
+	return err
+}
+
+// Deregister deregisters the assistant from the Platform.
+func (a *Assistant) Deregister(ctx context.Context) error {
+	if !a.appCfg.Registration.Enable || a.meta.instanceID == 0 {
+		log.Dbg("The assistant is not registered. Skip deregistration")
+		return nil
+	}
+
+	return a.platformClient.DeregisterApplication(ctx, platform.DeregisterApplicationRequest{InstanceID: a.meta.instanceID})
 }
 
 // AddChannel sets a message processor for a specific channel.
@@ -143,7 +184,7 @@ func (a *Assistant) getProcessingService(channelID string) (connection.MessagePr
 
 // CheckIdleSessions check the running user sessions for idleness.
 func (a *Assistant) CheckIdleSessions(ctx context.Context) {
-	log.Dbg("Check idle sessions", a.prefix)
+	log.Dbg("Check idle sessions", a.meta.prefix)
 
 	a.procMu.RLock()
 	for _, proc := range a.msgProcessors {

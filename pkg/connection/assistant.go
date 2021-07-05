@@ -14,7 +14,13 @@ import (
 // Assistant defines the interface of a Query Optimization assistant.
 type Assistant interface {
 	// Init defines the method to initialize the assistant.
-	Init(context.Context) error
+	Init() error
+
+	// Register defines the method to register the assistant.
+	Register(ctx context.Context, project string) error
+
+	// Deregister defines the method to deregister the assistant.
+	Deregister(ctx context.Context) error
 
 	// CheckIdleSessions defines the method for checking user idle sessions and notification about them.
 	CheckIdleSessions(context.Context)

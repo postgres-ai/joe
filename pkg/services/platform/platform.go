@@ -79,6 +79,8 @@ func NewClient(platformCfg config.Platform) (*Client, error) {
 
 func (p *Client) doRequest(ctx context.Context, request *http.Request, parser responseParser) error {
 	request.Header.Add(accessToken, p.accessToken)
+	request.Header.Add("Content-Type", "application/json")
+
 	request = request.WithContext(ctx)
 
 	response, err := p.client.Do(request)
@@ -107,7 +109,6 @@ func (p *Client) doPost(ctx context.Context, path string, data interface{}, resp
 	postURL := p.buildURL(path).String()
 
 	log.Dbg(fmt.Sprintf("URL: %v", postURL))
-	log.Dbg(fmt.Sprintf("Request: %v", string(reqData)))
 
 	r, err := http.NewRequest(http.MethodPost, postURL, bytes.NewBuffer(reqData))
 	if err != nil {
