@@ -16,6 +16,7 @@ import (
 type Config struct {
 	App            App                          `yaml:"app"`
 	Platform       Platform                     `yaml:"platform"`
+	Registration   Registration                 `yaml:"registration"`
 	ChannelMapping *ChannelMapping              `yaml:"channelMapping"`
 	Explain        pgexplain.ExplainConfig      `yaml:"-"`
 	Enterprise     definition.EnterpriseOptions `yaml:"-"`
@@ -35,6 +36,12 @@ type Platform struct {
 	URL            string `yaml:"url" env:"JOE_PLATFORM_URL" env-default:"https://postgres.ai/api/general"`
 	Token          string `yaml:"token" env:"JOE_PLATFORM_TOKEN"`
 	HistoryEnabled bool   `yaml:"historyEnabled" env:"JOE_PLATFORM_HISTORY_ENABLED"`
+}
+
+// Registration describes configuration parameters to register an application on the Platform.
+type Registration struct {
+	Enable    bool   `yaml:"enable"`
+	PublicURL string `yaml:"publicURL"`
 }
 
 // ChannelMapping contains configuration parameters of communication types and Database Labs.

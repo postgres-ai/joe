@@ -54,7 +54,7 @@ type SlackConfig struct {
 }
 
 // NewAssistant returns a new assistant service.
-func NewAssistant(cfg *config.Credentials, appCfg *config.Config, pack *features.Pack) (*Assistant, error) {
+func NewAssistant(cfg *config.Credentials, appCfg *config.Config, pack *features.Pack, platformClient *platform.Client) *Assistant {
 	slackCfg := &SlackConfig{
 		AccessToken: cfg.AccessToken,
 	}
@@ -67,11 +67,6 @@ func NewAssistant(cfg *config.Credentials, appCfg *config.Config, pack *features
 	userInformer := NewUserInformer(rtm)
 	userManager := usermanager.NewUserManager(userInformer, appCfg.Enterprise.Quota)
 
-	platformManager, err := platform.NewClient(appCfg.Platform)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create a Platform client")
-	}
-
 	assistant := &Assistant{
 		credentialsCfg:  cfg,
 		appCfg:          appCfg,
@@ -80,10 +75,10 @@ func NewAssistant(cfg *config.Credentials, appCfg *config.Config, pack *features
 		rtm:             rtm,
 		messenger:       messenger,
 		userManager:     userManager,
-		platformManager: platformManager,
+		platformManager: platformClient,
 	}
 
-	return assistant, nil
+	return assistant
 }
 
 func (a *Assistant) validateCredentials() error {
@@ -94,10 +89,8 @@ func (a *Assistant) validateCredentials() error {
 	return nil
 }
 
-// Init registers assistant handlers.
-func (a *Assistant) Init(ctx context.Context) error {
-	log.Dbg("Init Slack")
-
+// Init initializes assistant handlers.
+func (a *Assistant) Init() error {
 	if err := a.validateCredentials(); err != nil {
 		return errors.Wrap(err, "invalid credentials given")
 	}
@@ -106,9 +99,19 @@ func (a *Assistant) Init(ctx context.Context) error {
 		return errors.New("no message processor set")
 	}
 
+	return nil
+}
+
+// Register registers the assistant service.
+func (a *Assistant) Register(ctx context.Context, _ string) error {
 	go a.rtm.ManageConnection()
 	go a.handleRTMEvents(ctx, a.rtm.IncomingEvents)
 
+	return nil
+}
+
+// Deregister deregisters the assistant service.
+func (a *Assistant) Deregister(_ context.Context) error {
 	return nil
 }
 

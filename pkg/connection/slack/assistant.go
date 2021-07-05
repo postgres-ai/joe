@@ -55,18 +55,14 @@ type Assistant struct {
 }
 
 // NewAssistant returns a new assistant service.
-func NewAssistant(cfg *config.Credentials, appCfg *config.Config, handlerPrefix string, pack *features.Pack) (*Assistant, error) {
+func NewAssistant(cfg *config.Credentials, appCfg *config.Config, handlerPrefix string, pack *features.Pack,
+	platformClient *platform.Client) *Assistant {
 	prefix := fmt.Sprintf("/%s", strings.Trim(handlerPrefix, "/"))
 
 	chatAPI := slack.New(cfg.AccessToken)
 	messenger := NewMessenger(chatAPI, &MessengerConfig{AccessToken: cfg.AccessToken})
 	userInformer := NewUserInformer(chatAPI)
 	userManager := usermanager.NewUserManager(userInformer, appCfg.Enterprise.Quota)
-
-	platformClient, err := platform.NewClient(appCfg.Platform)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create a Platform client")
-	}
 
 	assistant := &Assistant{
 		credentialsCfg: cfg,
@@ -79,7 +75,7 @@ func NewAssistant(cfg *config.Credentials, appCfg *config.Config, handlerPrefix 
 		platformClient: platformClient,
 	}
 
-	return assistant, nil
+	return assistant
 }
 
 func (a *Assistant) validateCredentials() error {
@@ -90,9 +86,9 @@ func (a *Assistant) validateCredentials() error {
 	return nil
 }
 
-// Init registers assistant handlers.
-func (a *Assistant) Init(_ context.Context) error {
-	log.Dbg("URL-path prefix: ", a.prefix)
+// Init initializes assistant handlers.
+func (a *Assistant) Init() error {
+	log.Dbg(fmt.Sprintf("Assistant %s. URL-path prefix: %s", CommunicationType, a.prefix))
 
 	if err := a.validateCredentials(); err != nil {
 		return errors.Wrap(err, "invalid credentials given")
@@ -106,6 +102,16 @@ func (a *Assistant) Init(_ context.Context) error {
 		http.Handle(fmt.Sprintf("%s/%s", a.prefix, path), handleFunc)
 	}
 
+	return nil
+}
+
+// Register registers the assistant service.
+func (a *Assistant) Register(_ context.Context, _ string) error {
+	return nil
+}
+
+// Deregister deregisters the assistant service.
+func (a *Assistant) Deregister(_ context.Context) error {
 	return nil
 }
 

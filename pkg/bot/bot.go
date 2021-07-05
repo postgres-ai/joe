@@ -15,6 +15,7 @@ import (
 
 	_ "github.com/lib/pq"
 	"github.com/pkg/errors"
+	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/client/dblabapi"
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/log"
@@ -34,8 +35,11 @@ const InactiveCloneCheckInterval = time.Minute
 
 // App defines a application struct.
 type App struct {
-	Config      *config.Config
-	featurePack *features.Pack
+	Config         *config.Config
+	featurePack    *features.Pack
+	platformClient *platform.Client
+	httpSrv        *http.Server
+	assistants     []connection.Assistant
 
 	dblabMu        *sync.RWMutex
 	dblabInstances map[string]*dblab.Instance
@@ -49,12 +53,13 @@ type HealthResponse struct {
 }
 
 // Creates a new application.
-func NewApp(cfg *config.Config, enterprise *features.Pack) *App {
+func NewApp(cfg *config.Config, platformClient *platform.Client, enterprise *features.Pack) *App {
 	bot := App{
 		Config:         cfg,
 		dblabMu:        &sync.RWMutex{},
 		dblabInstances: make(map[string]*dblab.Instance, len(cfg.ChannelMapping.DBLabInstances)),
 		featurePack:    enterprise,
+		platformClient: platformClient,
 	}
 
 	return &bot
@@ -66,32 +71,52 @@ func (a *App) RunServer(ctx context.Context) error {
 		return errors.Wrap(err, "failed to init Database Lab instances")
 	}
 
-	assistants, err := a.getAllAssistants()
+	assistants, err := a.startAssistants(ctx)
 	if err != nil {
-		return errors.Wrap(err, "failed to get application assistants")
+		return errors.Wrap(err, "failed to start Query Optimization Assistants")
 	}
 
-	for _, assistantSvc := range assistants {
-		if err := assistantSvc.Init(ctx); err != nil {
-			return errors.Wrap(err, "failed to init an assistant")
-		}
-
-		svc := assistantSvc
-		// Check idle sessions.
-		_ = util.RunInterval(InactiveCloneCheckInterval, func() {
-			svc.CheckIdleSessions(ctx)
-		})
-	}
+	a.assistants = assistants
 
 	http.HandleFunc("/", a.healthCheck)
 
 	log.Msg(fmt.Sprintf("Server start listening on %s:%d", a.Config.App.Host, a.Config.App.Port))
+	a.httpSrv = &http.Server{Addr: fmt.Sprintf("%s:%d", a.Config.App.Host, a.Config.App.Port)}
 
-	if err := http.ListenAndServe(fmt.Sprintf("%s:%d", a.Config.App.Host, a.Config.App.Port), nil); err != nil {
-		return errors.Wrap(err, "failed to start a server")
+	return a.httpSrv.ListenAndServe()
+}
+
+// Shutdown gracefully shuts down the server and deregister assistants.
+func (a *App) Shutdown(ctx context.Context) error {
+	if a.httpSrv != nil {
+		if err := a.httpSrv.Shutdown(ctx); err != nil {
+			log.Msg(err)
+		}
+	}
+
+	if len(a.assistants) > 0 {
+		a.deregisterAssistants(ctx)
 	}
 
 	return nil
+}
+
+func (a *App) deregisterAssistants(ctx context.Context) {
+	wg := sync.WaitGroup{}
+
+	wg.Add(len(a.assistants))
+
+	for _, assistantSvc := range a.assistants {
+		go func(svc connection.Assistant) {
+			defer wg.Done()
+
+			if err := svc.Deregister(ctx); err != nil {
+				log.Err("failed to deregister an assistant", err)
+			}
+		}(assistantSvc)
+	}
+
+	wg.Wait()
 }
 
 func (a *App) initDBLabInstances() error {
@@ -132,7 +157,7 @@ func (a *App) validateDBLabInstance(instance config.DBLabInstance) error {
 	return nil
 }
 
-func (a *App) getAllAssistants() ([]connection.Assistant, error) {
+func (a *App) startAssistants(ctx context.Context) ([]connection.Assistant, error) {
 	assistants := []connection.Assistant{}
 
 	for workspaceType, workspaceList := range a.Config.ChannelMapping.CommunicationTypes {
@@ -142,7 +167,9 @@ func (a *App) getAllAssistants() ([]connection.Assistant, error) {
 				return nil, errors.Wrap(err, "failed to register workspace assistants")
 			}
 
-			if err := a.setupChannels(assist, workspace); err != nil {
+			log.Dbg(fmt.Sprintf("Initialize the %s assistant", workspaceType))
+
+			if err := a.setupChannels(ctx, assist, workspace); err != nil {
 				return nil, errors.Wrap(err, "failed to register workspace assistants")
 			}
 
@@ -153,25 +180,25 @@ func (a *App) getAllAssistants() ([]connection.Assistant, error) {
 	return assistants, nil
 }
 
-func (a *App) getAssistant(communicationTypeType string, workspaceCfg config.Workspace) (connection.Assistant, error) {
-	handlerPrefix := fmt.Sprintf("/%s", communicationTypeType)
+func (a *App) getAssistant(communicationType string, workspaceCfg config.Workspace) (connection.Assistant, error) {
+	handlerPrefix := fmt.Sprintf("/%s", communicationType)
 
-	switch communicationTypeType {
+	switch communicationType {
 	case slack.CommunicationType:
-		return slack.NewAssistant(&workspaceCfg.Credentials, a.Config, handlerPrefix, a.featurePack)
+		return slack.NewAssistant(&workspaceCfg.Credentials, a.Config, handlerPrefix, a.featurePack, a.platformClient), nil
 
 	case slackrtm.CommunicationType:
-		return slackrtm.NewAssistant(&workspaceCfg.Credentials, a.Config, a.featurePack)
+		return slackrtm.NewAssistant(&workspaceCfg.Credentials, a.Config, a.featurePack, a.platformClient), nil
 
 	case webui.CommunicationType:
-		return webui.NewAssistant(&workspaceCfg.Credentials, a.Config, handlerPrefix, a.featurePack)
+		return webui.NewAssistant(&workspaceCfg.Credentials, a.Config, handlerPrefix, a.featurePack, a.platformClient), nil
 
 	default:
 		return nil, errors.New("unknown workspace type given")
 	}
 }
 
-func (a *App) setupChannels(assistant connection.Assistant, workspace config.Workspace) error {
+func (a *App) setupChannels(ctx context.Context, assistant connection.Assistant, workspace config.Workspace) error {
 	for _, channel := range workspace.Channels {
 		a.dblabMu.RLock()
 
@@ -184,6 +211,20 @@ func (a *App) setupChannels(assistant connection.Assistant, workspace config.Wor
 		a.dblabMu.RUnlock()
 		dbLabInstance.SetCfg(channel.DBLabParams)
 		assistant.AddChannel(channel.ChannelID, channel.Project, dbLabInstance)
+
+		log.Dbg("Set up channel: ", channel.ChannelID)
+
+		if err := assistant.Init(); err != nil {
+			return errors.Wrapf(err, "failed to initialize the %q assistant", channel.ChannelID)
+		}
+
+		if err := assistant.Register(ctx, channel.Project); err != nil {
+			return errors.Wrapf(err, "failed to register the %q assistant", channel.ChannelID)
+		}
+
+		_ = util.RunInterval(InactiveCloneCheckInterval, func() {
+			assistant.CheckIdleSessions(ctx)
+		})
 	}
 
 	return nil
