@@ -1,5 +1,5 @@
 run:
-  timeout: 1m
+  timeout: 90s
   issues-exit-code: 1
   tests: true
   skip-dirs:
@@ -48,6 +48,8 @@ linters-settings:
       - hugeParam
     enabled-tags:
       - performance
+  godot:
+    scope: declarations
 
 linters:
   enable:
@@ -76,6 +78,7 @@ linters:
     - unused
     - unparam
     - wsl
+    - godot
   enable-all: false
   disable:
     - gosec

@@ -25,10 +25,14 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/bot"
 	"gitlab.com/postgres-ai/joe/pkg/config"
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
+	"gitlab.com/postgres-ai/joe/pkg/services/storage"
 )
 
 const (
 	shutdownTimeout = 60 * time.Second
+
+	configFilePath   = "config/config.yml"
+	sessionsFilePath = "config/sessions.json"
 )
 
 // ldflag variables.
@@ -37,7 +41,7 @@ var buildTime, version string
 func main() {
 	version := formatBotVersion()
 
-	botCfg, err := loadConfig("config/config.yml")
+	botCfg, err := loadConfig(configFilePath)
 	if err != nil {
 		log.Fatal("failed to load config: %v", err)
 	}
@@ -56,7 +60,14 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	shutdownCh := setShutdownListener()
 
-	joeBot := bot.NewApp(botCfg, platformClient, features.NewPack())
+	sessionsStorage := storage.NewJSONSessionData(sessionsFilePath)
+	if err := sessionsStorage.Load(); err != nil {
+		log.Fatal("unable to load sessions data: ", err)
+	}
+
+	joeBot := bot.NewApp(botCfg, platformClient, features.NewPack(), sessionsStorage)
+
+	go setSighupListener(ctx, joeBot)
 
 	go func() {
 		if err := joeBot.RunServer(ctx); err != nil && err != http.ErrServerClosed {
@@ -65,6 +76,7 @@ func main() {
 	}()
 
 	<-shutdownCh
+	log.Dbg("shutdown request received")
 	cancel()
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
@@ -110,4 +122,21 @@ func setShutdownListener() chan os.Signal {
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 
 	return c
+}
+
+// setSighupListener allows to dump active sessions.
+func setSighupListener(ctx context.Context, app *bot.App) {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, syscall.SIGHUP)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-c:
+			if err := app.SaveSessions(); err != nil {
+				log.Err("failed to save user session data: ", err)
+			}
+		}
+	}
 }

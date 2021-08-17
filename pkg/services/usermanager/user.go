@@ -37,7 +37,7 @@ type UserSession struct {
 
 	Clone           *dblabmodels.Clone
 	ConnParams      models.Clone
-	CloneConnection *pgxpool.Pool
+	CloneConnection *pgxpool.Pool `json:"-"`
 }
 
 // Quota defines a user quota for requests.

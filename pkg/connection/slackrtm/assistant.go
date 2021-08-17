@@ -24,6 +24,7 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/services/dblab"
 	"gitlab.com/postgres-ai/joe/pkg/services/msgproc"
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
+	"gitlab.com/postgres-ai/joe/pkg/services/storage"
 	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"
 )
 
@@ -44,8 +45,9 @@ type Assistant struct {
 	featurePack     *features.Pack
 	rtm             *slack.RTM
 	messenger       *Messenger
-	userManager     *usermanager.UserManager
+	userInformer    usermanager.UserInformer
 	platformManager *platform.Client
+	sessionStorage  storage.SessionStorage
 }
 
 // SlackConfig defines a slack configuration parameters.
@@ -54,7 +56,8 @@ type SlackConfig struct {
 }
 
 // NewAssistant returns a new assistant service.
-func NewAssistant(cfg *config.Credentials, appCfg *config.Config, pack *features.Pack, platformClient *platform.Client) *Assistant {
+func NewAssistant(cfg *config.Credentials, appCfg *config.Config, pack *features.Pack,
+	platformClient *platform.Client, sessionStorage storage.SessionStorage) *Assistant {
 	slackCfg := &SlackConfig{
 		AccessToken: cfg.AccessToken,
 	}
@@ -65,7 +68,6 @@ func NewAssistant(cfg *config.Credentials, appCfg *config.Config, pack *features
 
 	messenger := NewMessenger(rtm, slackCfg)
 	userInformer := NewUserInformer(rtm)
-	userManager := usermanager.NewUserManager(userInformer, appCfg.Enterprise.Quota)
 
 	assistant := &Assistant{
 		credentialsCfg:  cfg,
@@ -74,8 +76,9 @@ func NewAssistant(cfg *config.Credentials, appCfg *config.Config, pack *features
 		featurePack:     pack,
 		rtm:             rtm,
 		messenger:       messenger,
-		userManager:     userManager,
+		userInformer:    userInformer,
 		platformManager: platformClient,
+		sessionStorage:  sessionStorage,
 	}
 
 	return assistant
@@ -117,12 +120,12 @@ func (a *Assistant) Deregister(_ context.Context) error {
 
 // AddChannel sets a message processor for a specific channel.
 func (a *Assistant) AddChannel(channelID, project string, dbLabInstance *dblab.Instance) {
-	messageProcessor := a.buildMessageProcessor(project, dbLabInstance)
+	messageProcessor := a.buildMessageProcessor(channelID, project, dbLabInstance)
 
 	a.addProcessingService(channelID, messageProcessor)
 }
 
-func (a *Assistant) buildMessageProcessor(project string, dbLabInstance *dblab.Instance) *msgproc.ProcessingService {
+func (a *Assistant) buildMessageProcessor(channelID, project string, dbLabInstance *dblab.Instance) *msgproc.ProcessingService {
 	processingCfg := msgproc.ProcessingConfig{
 		App:      a.appCfg.App,
 		Platform: a.appCfg.Platform,
@@ -132,16 +135,17 @@ func (a *Assistant) buildMessageProcessor(project string, dbLabInstance *dblab.I
 		Project:  project,
 	}
 
-	return msgproc.NewProcessingService(a.messenger, MessageValidator{}, dbLabInstance.Client(), a.userManager, a.platformManager,
+	users := a.sessionStorage.GetUsers(CommunicationType, channelID)
+	um := usermanager.NewUserManager(a.userInformer, a.appCfg.Enterprise.Quota, users)
+
+	return msgproc.NewProcessingService(a.messenger, MessageValidator{}, dbLabInstance.Client(), um, a.platformManager,
 		processingCfg, a.featurePack)
 }
 
 func (a *Assistant) handleRTMEvents(ctx context.Context, incomingEvents chan slack.RTMEvent) {
 	for msg := range incomingEvents {
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			return
-		default:
 		}
 
 		switch ev := msg.Data.(type) {
@@ -211,6 +215,22 @@ func (a *Assistant) getProcessingService(channelID string) (connection.MessagePr
 	return messageProcessor, nil
 }
 
+// RestoreSessions checks sessions after restart and establishes DB connection.
+func (a *Assistant) RestoreSessions(ctx context.Context) error {
+	log.Dbg("Restore sessions", CommunicationType)
+
+	a.procMu.RLock()
+	defer a.procMu.RUnlock()
+
+	for _, proc := range a.msgProcessors {
+		if err := proc.RestoreSessions(ctx); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // CheckIdleSessions check the running user sessions for idleness.
 func (a *Assistant) CheckIdleSessions(ctx context.Context) {
 	log.Dbg("Check Slack idle sessions")
@@ -278,4 +298,16 @@ func unfurlLinks(text string) string {
 	}
 
 	return text
+}
+
+// DumpSessions collects user's data from every message processor to sessionStorage.
+func (a *Assistant) DumpSessions() {
+	log.Dbg("dump sessions", CommunicationType)
+
+	a.procMu.RLock()
+	defer a.procMu.RUnlock()
+
+	for channelID, proc := range a.msgProcessors {
+		a.sessionStorage.SetUsers(CommunicationType, channelID, proc.Users())
+	}
 }
