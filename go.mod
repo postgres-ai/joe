@@ -18,7 +18,7 @@ require (
 	github.com/rs/xid v1.2.1
 	github.com/sergi/go-diff v1.1.0
 	github.com/sethvargo/go-password v0.2.0
-	github.com/slack-go/slack v0.6.4
+	github.com/slack-go/slack v0.9.2
 	github.com/stretchr/testify v1.7.0
 	gitlab.com/postgres-ai/database-lab/v2 v2.2.1-0.20210416085316-cd4052615cf1
 	gopkg.in/yaml.v2 v2.3.0

@@ -68,6 +68,7 @@ type Workspace struct {
 type Credentials struct {
 	AccessToken   string `yaml:"accessToken"`
 	SigningSecret string `yaml:"signingSecret"`
+	AppLevelToken string `yaml:"appLevelToken"`
 }
 
 // Channel defines a connection channel configuration.

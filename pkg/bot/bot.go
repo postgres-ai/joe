@@ -15,6 +15,7 @@ import (
 
 	_ "github.com/lib/pq"
 	"github.com/pkg/errors"
+
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/client/dblabapi"
@@ -25,6 +26,7 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/connection/slack"
 	"gitlab.com/postgres-ai/joe/pkg/connection/slackrtm"
+	"gitlab.com/postgres-ai/joe/pkg/connection/slacksm"
 	"gitlab.com/postgres-ai/joe/pkg/connection/webui"
 	"gitlab.com/postgres-ai/joe/pkg/services/dblab"
 	"gitlab.com/postgres-ai/joe/pkg/util"
@@ -192,6 +194,9 @@ func (a *App) getAssistant(communicationType string, workspaceCfg config.Workspa
 
 	case webui.CommunicationType:
 		return webui.NewAssistant(&workspaceCfg.Credentials, a.Config, handlerPrefix, a.featurePack, a.platformClient), nil
+
+	case slacksm.CommunicationType:
+		return slacksm.NewAssistant(&workspaceCfg.Credentials, a.Config, a.featurePack, a.platformClient), nil
 
 	default:
 		return nil, errors.New("unknown workspace type given")
