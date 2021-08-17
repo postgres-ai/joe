@@ -162,6 +162,42 @@ channelMapping:
               # used in a clone's pg_hba.conf. See https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-SSLMODE-STATEMENTS
               sslmode: prefer
 
+    # Communication type: Slack Socket Mode.
+    slacksm:
+      # Workspace name. Feel free to choose any name, it is just an alias.
+      - name: Workspace
+
+        # This mode requires AppLevel token in addition to bot token
+        # See https://api.slack.com/authentication/token-types
+        credentials:
+          # Bot User OAuth Access.
+          accessToken: xoxb-XXXX
+          # AppLevel token is required for connections:write scope
+          appLevelToken: xapp-XXXX
+
+        channels:
+          # Slack channel ID. In Slack app, right-click on the channel name,
+          # and choose "Additional options > Copy link". From that link, we
+          # need the last part consisting of 9 letters starting with "C".
+          - channelID: CXXXXXXXX
+
+            # Postgres.ai Platform project to which user sessions are to be assigned.
+            project: "demo"
+
+            # Database Lab alias from the "dblabServers" section.
+            dblabServer: prod1
+
+            # PostgreSQL connection parameters used to connect to a clone.
+            # The username/password are not needed; they will be randomly
+            # generated each time a new clone is created.
+            dblabParams:
+              # It is recommended to leave "postgres" here, because this DB
+              # usually exists in any PostgreSQL setup.
+              dbname: postgres
+              # It is NOT recommended to work without SSL. This value will be
+              # used in a clone's pg_hba.conf. See https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-SSLMODE-STATEMENTS
+              sslmode: prefer
+
 # Enterprise Edition options – only to use with active Postgres.ai Platform EE
 # subscription. Changing these options you confirm that you have active
 # subscription to Postgres.ai Platform Enterprise Edition.

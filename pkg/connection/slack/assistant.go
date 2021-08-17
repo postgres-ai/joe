@@ -267,7 +267,7 @@ func (a *Assistant) handleEvent(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			msg := a.appMentionEventToIncomingMessage(ev)
+			msg := AppMentionEventToIncomingMessage(ev)
 			msgProcessor.ProcessAppMentionEvent(msg)
 
 		case *slackevents.MessageEvent:
@@ -284,7 +284,7 @@ func (a *Assistant) handleEvent(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			msg := a.messageEventToIncomingMessage(ev)
+			msg := MessageEventToIncomingMessage(ev)
 			msgProcessor.ProcessMessageEvent(context.TODO(), msg)
 
 		default:
@@ -296,8 +296,8 @@ func (a *Assistant) handleEvent(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// appMentionEventToIncomingMessage converts a Slack application mention event to the standard incoming message.
-func (a *Assistant) appMentionEventToIncomingMessage(event *slackevents.AppMentionEvent) models.IncomingMessage {
+// AppMentionEventToIncomingMessage converts a Slack application mention event to the standard incoming message.
+func AppMentionEventToIncomingMessage(event *slackevents.AppMentionEvent) models.IncomingMessage {
 	inputEvent := models.IncomingMessage{
 		Text:      event.Text,
 		ChannelID: event.Channel,
@@ -309,8 +309,8 @@ func (a *Assistant) appMentionEventToIncomingMessage(event *slackevents.AppMenti
 	return inputEvent
 }
 
-// messageEventToIncomingMessage converts a Slack message event to the standard incoming message.
-func (a *Assistant) messageEventToIncomingMessage(event *slackevents.MessageEvent) models.IncomingMessage {
+// MessageEventToIncomingMessage converts a Slack message event to the standard incoming message.
+func MessageEventToIncomingMessage(event *slackevents.MessageEvent) models.IncomingMessage {
 	message := unfurlLinks(event.Text)
 
 	inputEvent := models.IncomingMessage{
