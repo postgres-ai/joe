@@ -27,6 +27,7 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/connection/slackrtm"
 	"gitlab.com/postgres-ai/joe/pkg/connection/webui"
 	"gitlab.com/postgres-ai/joe/pkg/services/dblab"
+	"gitlab.com/postgres-ai/joe/pkg/services/storage"
 	"gitlab.com/postgres-ai/joe/pkg/util"
 )
 
@@ -43,6 +44,8 @@ type App struct {
 
 	dblabMu        *sync.RWMutex
 	dblabInstances map[string]*dblab.Instance
+
+	sessionStorage storage.PersistentSessionStorage
 }
 
 // HealthResponse represents a response for heath-check requests.
@@ -53,13 +56,15 @@ type HealthResponse struct {
 }
 
 // Creates a new application.
-func NewApp(cfg *config.Config, platformClient *platform.Client, enterprise *features.Pack) *App {
+func NewApp(cfg *config.Config, platformClient *platform.Client,
+	enterprise *features.Pack, sessions storage.PersistentSessionStorage) *App {
 	bot := App{
 		Config:         cfg,
 		dblabMu:        &sync.RWMutex{},
 		dblabInstances: make(map[string]*dblab.Instance, len(cfg.ChannelMapping.DBLabInstances)),
 		featurePack:    enterprise,
 		platformClient: platformClient,
+		sessionStorage: sessions,
 	}
 
 	return &bot
@@ -95,10 +100,23 @@ func (a *App) Shutdown(ctx context.Context) error {
 	}
 
 	if len(a.assistants) > 0 {
+		if err := a.SaveSessions(); err != nil {
+			log.Err("unable to dump sessionStorage data: ", err)
+		}
+
 		a.deregisterAssistants(ctx)
 	}
 
 	return nil
+}
+
+// SaveSessions dumps session data to the disk.
+func (a *App) SaveSessions() error {
+	for _, assistantSvc := range a.assistants {
+		assistantSvc.DumpSessions()
+	}
+
+	return a.sessionStorage.Save()
 }
 
 func (a *App) deregisterAssistants(ctx context.Context) {
@@ -185,13 +203,13 @@ func (a *App) getAssistant(communicationType string, workspaceCfg config.Workspa
 
 	switch communicationType {
 	case slack.CommunicationType:
-		return slack.NewAssistant(&workspaceCfg.Credentials, a.Config, handlerPrefix, a.featurePack, a.platformClient), nil
+		return slack.NewAssistant(&workspaceCfg.Credentials, a.Config, handlerPrefix, a.featurePack, a.platformClient, a.sessionStorage), nil
 
 	case slackrtm.CommunicationType:
-		return slackrtm.NewAssistant(&workspaceCfg.Credentials, a.Config, a.featurePack, a.platformClient), nil
+		return slackrtm.NewAssistant(&workspaceCfg.Credentials, a.Config, a.featurePack, a.platformClient, a.sessionStorage), nil
 
 	case webui.CommunicationType:
-		return webui.NewAssistant(&workspaceCfg.Credentials, a.Config, handlerPrefix, a.featurePack, a.platformClient), nil
+		return webui.NewAssistant(&workspaceCfg.Credentials, a.Config, handlerPrefix, a.featurePack, a.platformClient, a.sessionStorage), nil
 
 	default:
 		return nil, errors.New("unknown workspace type given")
@@ -220,6 +238,10 @@ func (a *App) setupChannels(ctx context.Context, assistant connection.Assistant,
 
 		if err := assistant.Register(ctx, channel.Project); err != nil {
 			return errors.Wrapf(err, "failed to register the %q assistant", channel.ChannelID)
+		}
+
+		if err := assistant.RestoreSessions(ctx); err != nil {
+			return errors.Wrapf(err, "failed to restore active sessions for the %q assistant", channel.ChannelID)
 		}
 
 		_ = util.RunInterval(InactiveCloneCheckInterval, func() {

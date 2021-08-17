@@ -19,26 +19,32 @@ type UserInformer interface {
 	GetUserInfo(userID string) (models.UserInfo, error)
 }
 
+// UserList represents map of users stored in UserManager.
+type UserList map[string]*User // UID -> UserInfo.
+
 // UserManager defines a user manager service.
 type UserManager struct {
 	UserInformer UserInformer
 	QuotaConfig  definition.Quota
 
 	usersMutex sync.RWMutex
-	users      map[string]*User // UID -> UserInfo.
+	users      UserList
 }
 
 // NewUserManager creates a new user manager.
-func NewUserManager(informer UserInformer, quotaCfg definition.Quota) *UserManager {
+func NewUserManager(informer UserInformer, quotaCfg definition.Quota, users UserList) *UserManager {
+	if users == nil {
+		users = make(UserList)
+	}
 	return &UserManager{
 		UserInformer: informer,
 		QuotaConfig:  quotaCfg,
-		users:        make(map[string]*User),
+		users:        users,
 	}
 }
 
 // Users returns all users.
-func (um *UserManager) Users() map[string]*User {
+func (um *UserManager) Users() UserList {
 	return um.users
 }
 

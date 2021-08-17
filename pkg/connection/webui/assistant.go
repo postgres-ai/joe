@@ -25,6 +25,7 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/services/dblab"
 	"gitlab.com/postgres-ai/joe/pkg/services/msgproc"
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
+	"gitlab.com/postgres-ai/joe/pkg/services/storage"
 	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"
 )
 
@@ -39,9 +40,11 @@ type Assistant struct {
 	appCfg         *config.Config
 	featurePack    *features.Pack
 	messenger      *Messenger
-	userManager    *usermanager.UserManager
+	userInformer   usermanager.UserInformer
 	platformClient *platform.Client
 	meta           meta
+
+	sessionStorage storage.SessionStorage
 }
 
 // meta contains meta information about an assistant service.
@@ -52,12 +55,11 @@ type meta struct {
 
 // NewAssistant returns a new assistant service.
 func NewAssistant(cfg *config.Credentials, appCfg *config.Config, handlerPrefix string, pack *features.Pack,
-	platformClient *platform.Client) *Assistant {
+	platformClient *platform.Client, sessionStorage storage.SessionStorage) *Assistant {
 	prefix := fmt.Sprintf("/%s", strings.Trim(handlerPrefix, "/"))
 
 	messenger := NewMessenger(platformClient)
 	userInformer := NewUserInformer()
-	userManager := usermanager.NewUserManager(userInformer, appCfg.Enterprise.Quota)
 
 	assistant := &Assistant{
 		credentialsCfg: cfg,
@@ -65,8 +67,9 @@ func NewAssistant(cfg *config.Credentials, appCfg *config.Config, handlerPrefix 
 		msgProcessors:  make(map[string]connection.MessageProcessor),
 		featurePack:    pack,
 		messenger:      messenger,
-		userManager:    userManager,
+		userInformer:   userInformer,
 		platformClient: platformClient,
+		sessionStorage: sessionStorage,
 		meta:           meta{prefix: prefix},
 	}
 
@@ -143,12 +146,12 @@ func (a *Assistant) Deregister(ctx context.Context) error {
 
 // AddChannel sets a message processor for a specific channel.
 func (a *Assistant) AddChannel(channelID, project string, dbLabInstance *dblab.Instance) {
-	messageProcessor := a.buildMessageProcessor(project, dbLabInstance)
+	messageProcessor := a.buildMessageProcessor(channelID, project, dbLabInstance)
 
 	a.addProcessingService(channelID, messageProcessor)
 }
 
-func (a *Assistant) buildMessageProcessor(project string, dbLabInstance *dblab.Instance) *msgproc.ProcessingService {
+func (a *Assistant) buildMessageProcessor(channelID, project string, dbLabInstance *dblab.Instance) *msgproc.ProcessingService {
 	processingCfg := msgproc.ProcessingConfig{
 		App:      a.appCfg.App,
 		Platform: a.appCfg.Platform,
@@ -158,7 +161,10 @@ func (a *Assistant) buildMessageProcessor(project string, dbLabInstance *dblab.I
 		Project:  project,
 	}
 
-	return msgproc.NewProcessingService(a.messenger, MessageValidator{}, dbLabInstance.Client(), a.userManager, a.platformClient,
+	users := a.sessionStorage.GetUsers(CommunicationType, channelID)
+	um := usermanager.NewUserManager(a.userInformer, a.appCfg.Enterprise.Quota, users)
+
+	return msgproc.NewProcessingService(a.messenger, MessageValidator{}, dbLabInstance.Client(), um, a.platformClient,
 		processingCfg, a.featurePack)
 }
 
@@ -180,6 +186,22 @@ func (a *Assistant) getProcessingService(channelID string) (connection.MessagePr
 	}
 
 	return messageProcessor, nil
+}
+
+// RestoreSessions checks sessions after restart and establishes DB connection.
+func (a *Assistant) RestoreSessions(ctx context.Context) error {
+	log.Dbg("Restore sessions", CommunicationType)
+
+	a.procMu.RLock()
+	defer a.procMu.RUnlock()
+
+	for _, proc := range a.msgProcessors {
+		if err := proc.RestoreSessions(ctx); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // CheckIdleSessions check the running user sessions for idleness.
@@ -312,4 +334,16 @@ func (a *Assistant) commandHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go svc.ProcessMessageEvent(context.TODO(), webMessage.ToIncomingMessage())
+}
+
+// DumpSessions collects user's data from every message processor to sessionStorage.
+func (a *Assistant) DumpSessions() {
+	log.Dbg("dump sessions", CommunicationType)
+
+	a.procMu.RLock()
+	defer a.procMu.RUnlock()
+
+	for channelID, proc := range a.msgProcessors {
+		a.sessionStorage.SetUsers(CommunicationType, channelID, proc.Users())
+	}
 }

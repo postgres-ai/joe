@@ -29,10 +29,8 @@ func (s *ProcessingService) CheckIdleSessions(ctx context.Context) {
 
 	// TODO(akartasov): Fix data races.
 	for _, user := range s.UserManager.Users() {
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			return
-		default:
 		}
 
 		if user == nil || user.Session.Clone == nil {
@@ -60,26 +58,105 @@ func (s *ProcessingService) CheckIdleSessions(ctx context.Context) {
 		s.stopSession(user)
 	}
 
-	s.notifyDirectly(directToNotify)
-	s.notifyChannels(channelsToNotify)
-}
-
-// notifyChannels publishes messages in every channel with a list of users.
-func (s *ProcessingService) notifyChannels(channels map[string][]string) {
-	for channelID, chatUserIDs := range channels {
-		if len(chatUserIDs) == 0 {
-			continue
-		}
-
+	s.notifyDirectly(directToNotify, models.StatusOK, "Stopped idle session")
+	s.notifyChannels(channelsToNotify, func(chatUserIDs []string) string {
 		formattedUserList := make([]string, 0, len(chatUserIDs))
 		for _, chatUserID := range chatUserIDs {
 			formattedUserList = append(formattedUserList, fmt.Sprintf("<@%s>", chatUserID))
 		}
 
-		msgText := "Stopped idle sessions for: " + strings.Join(formattedUserList, ", ")
+		return "Stopped idle sessions for: " + strings.Join(formattedUserList, ", ")
+	})
+}
+
+// RestoreSessions checks sessions after restart and establishes DB connection.
+func (s *ProcessingService) RestoreSessions(ctx context.Context) error {
+	if len(s.UserManager.Users()) == 0 {
+		return nil
+	}
+
+	// List of channelIDs with a users to notify.
+	channelsToNotify := make(map[string][]string)
+
+	// List of sessionIDs.
+	directToNotify := make([]string, 0)
+
+	for _, user := range s.UserManager.Users() {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		if user == nil || user.Session.Clone == nil {
+			continue
+		}
+
+		clone, err := s.DBLab.GetClone(ctx, user.Session.Clone.ID)
+		if err != nil {
+			log.Err("failed to get DBLab clone: ", err)
+			s.stopSession(user)
+
+			continue
+		}
+
+		if clone.Status.Code != dblabmodels.StatusOK {
+			log.Msg("DBLab is not active, stop user session. CloneID: ", user.Session.Clone.ID)
+			s.stopSession(user)
+
+			continue
+		}
+
+		if clone.DB.Port != user.Session.ConnParams.Port ||
+			// we can't check hostname this way, looks like clone.DB.Host is depends on DLE config and could be localhost
+			/*clone.DB.Host != user.Session.ConnParams.Host ||*/
+			clone.DB.Username != user.Session.ConnParams.Username ||
+			clone.DB.DBName != user.Session.ConnParams.Name {
+			log.Msg("Session connection params has been changed in config. Stopping user session. CloneID: ", user.Session.Clone.ID)
+			s.stopSession(user)
+
+			continue
+		}
+
+		db, err := initConn(user.Session.ConnParams)
+		if err != nil {
+			log.Err("failed to init database connection, stop session: ", err)
+			s.stopSession(user)
+
+			continue
+		}
+
+		user.Session.Clone = clone
+		user.Session.CloneConnection = db
+
+		if user.Session.Direct {
+			directToNotify = append(directToNotify, getSessionID(user))
+		} else {
+			channelsToNotify[user.Session.ChannelID] = append(channelsToNotify[user.Session.ChannelID], user.UserInfo.ID)
+		}
+	}
+
+	s.notifyDirectly(directToNotify, models.StatusOK, fmt.Sprintf("Joe bot was restarted (version: %s).", s.config.App.Version))
+	s.notifyChannels(channelsToNotify, func(chatUserIDs []string) string {
+		formattedUserList := make([]string, 0, len(chatUserIDs))
+		for _, chatUserID := range chatUserIDs {
+			formattedUserList = append(formattedUserList, fmt.Sprintf("<@%s>", chatUserID))
+		}
+
+		return fmt.Sprintf("Joe bot was restarted (version: %s). Active sessions for: ", s.config.App.Version) +
+			strings.Join(formattedUserList, ", ")
+	})
+
+	return nil
+}
+
+// notifyChannelsRestartSession publishes messages in every channel with a list of users.
+func (s *ProcessingService) notifyChannels(channels map[string][]string, msgFormatter func(chatUserIDs []string) string) {
+	for channelID, chatUserIDs := range channels {
+		if len(chatUserIDs) == 0 {
+			continue
+		}
 
 		msg := models.NewMessage(models.IncomingMessage{ChannelID: channelID})
-		msg.SetText(msgText)
+		msg.SetText(msgFormatter(chatUserIDs))
 
 		if err := s.messenger.Publish(msg); err != nil {
 			log.Err("Bot: Cannot publish a message", err)
@@ -88,12 +165,12 @@ func (s *ProcessingService) notifyChannels(channels map[string][]string) {
 }
 
 // notifyDirectly publishes a direct message about idle sessions.
-func (s *ProcessingService) notifyDirectly(sessionList []string) {
+func (s *ProcessingService) notifyDirectly(sessionList []string, status models.MessageStatus, message string) {
 	for _, sessionID := range sessionList {
 		msg := models.NewMessage(models.IncomingMessage{})
 		msg.SessionID = sessionID
-		msg.SetStatus(models.StatusOK)
-		msg.SetText("Stopped idle session")
+		msg.SetStatus(status)
+		msg.SetText(message)
 
 		if err := s.messenger.Publish(msg); err != nil {
 			log.Err("Bot: Cannot publish a direct message", err)
@@ -154,4 +231,9 @@ func (s *ProcessingService) destroySession(u *usermanager.User) error {
 	s.stopSession(u)
 
 	return nil
+}
+
+// Users returns all tracked users with session data.
+func (s *ProcessingService) Users() usermanager.UserList {
+	return s.UserManager.Users()
 }
