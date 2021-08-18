@@ -214,7 +214,7 @@ func (a *App) getAssistant(communicationType string, workspaceCfg config.Workspa
 		return webui.NewAssistant(&workspaceCfg.Credentials, a.Config, handlerPrefix, a.featurePack, a.platformClient, a.sessionStorage), nil
 
 	case slacksm.CommunicationType:
-		return slacksm.NewAssistant(&workspaceCfg.Credentials, a.Config, a.featurePack, a.platformClient), nil
+		return slacksm.NewAssistant(&workspaceCfg.Credentials, a.Config, a.featurePack, a.platformClient, a.sessionStorage), nil
 
 	default:
 		return nil, errors.New("unknown workspace type given")
