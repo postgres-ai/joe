@@ -21,10 +21,11 @@ import (
 	"gitlab.com/postgres-ai/joe/features"
 	"gitlab.com/postgres-ai/joe/pkg/config"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
-	slack_assistent "gitlab.com/postgres-ai/joe/pkg/connection/slack"
+	slackConnect "gitlab.com/postgres-ai/joe/pkg/connection/slack"
 	"gitlab.com/postgres-ai/joe/pkg/services/dblab"
 	"gitlab.com/postgres-ai/joe/pkg/services/msgproc"
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
+	"gitlab.com/postgres-ai/joe/pkg/services/storage"
 	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"
 )
 
@@ -40,9 +41,10 @@ type Assistant struct {
 	featurePack     *features.Pack
 	api             *slack.Client
 	client          *socketmode.Client
-	messenger       *slack_assistent.Messenger
-	userManager     *usermanager.UserManager
+	messenger       *slackConnect.Messenger
+	userInformer    usermanager.UserInformer
 	platformManager *platform.Client
+	sessionStorage  storage.SessionStorage
 }
 
 // Config defines a slack configuration parameters.
@@ -52,7 +54,8 @@ type Config struct {
 }
 
 // NewAssistant returns a new assistant service.
-func NewAssistant(cfg *config.Credentials, appCfg *config.Config, pack *features.Pack, platformClient *platform.Client) *Assistant {
+func NewAssistant(cfg *config.Credentials, appCfg *config.Config, pack *features.Pack,
+	platformClient *platform.Client, sessionStorage storage.SessionStorage) *Assistant {
 	slackCfg := &Config{
 		AccessToken:   cfg.AccessToken,
 		AppLevelToken: cfg.AppLevelToken,
@@ -63,16 +66,11 @@ func NewAssistant(cfg *config.Credentials, appCfg *config.Config, pack *features
 		slack.OptionAppLevelToken(cfg.AppLevelToken),
 	)
 
-	client := socketmode.New(
-		api,
-		socketmode.OptionDebug(appCfg.App.Debug),
-	)
+	client := socketmode.New(api, socketmode.OptionDebug(appCfg.App.Debug))
 
-	messenger := slack_assistent.NewMessenger(api, &slack_assistent.MessengerConfig{
+	messenger := slackConnect.NewMessenger(api, &slackConnect.MessengerConfig{
 		AccessToken: slackCfg.AccessToken,
 	})
-	userInformer := slack_assistent.NewUserInformer(api)
-	userManager := usermanager.NewUserManager(userInformer, appCfg.Enterprise.Quota)
 
 	assistant := &Assistant{
 		credentialsCfg:  cfg,
@@ -82,8 +80,9 @@ func NewAssistant(cfg *config.Credentials, appCfg *config.Config, pack *features
 		api:             api,
 		client:          client,
 		messenger:       messenger,
-		userManager:     userManager,
+		userInformer:    slackConnect.NewUserInformer(api),
 		platformManager: platformClient,
+		sessionStorage:  sessionStorage,
 	}
 
 	return assistant
@@ -112,20 +111,17 @@ func (a *Assistant) Init() error {
 
 // Register registers the assistant service.
 func (a *Assistant) Register(ctx context.Context, _ string) error {
-	_, err := a.api.AuthTestContext(ctx)
-	if err != nil {
+	if _, err := a.api.AuthTestContext(ctx); err != nil {
 		return errors.Wrap(err, "failed to perform slack auth test")
 	}
 
-	// fail fast to ensure slack app is properly configured
-	_, _, err = a.api.StartSocketModeContext(ctx)
-	if err != nil {
+	// Fail fast to ensure the slack app is properly configured.
+	if _, _, err := a.api.StartSocketModeContext(ctx); err != nil {
 		return errors.Wrap(err, "failed to init slack socket mode")
 	}
 
 	go func() {
-		err := a.client.RunContext(ctx)
-		if err != nil {
+		if err := a.client.RunContext(ctx); err != nil {
 			log.Errf("failed to run slack SocketMode assistant: ", err)
 		}
 	}()
@@ -142,12 +138,12 @@ func (a *Assistant) Deregister(_ context.Context) error {
 
 // AddChannel sets a message processor for a specific channel.
 func (a *Assistant) AddChannel(channelID, project string, dbLabInstance *dblab.Instance) {
-	messageProcessor := a.buildMessageProcessor(project, dbLabInstance)
+	messageProcessor := a.buildMessageProcessor(channelID, project, dbLabInstance)
 
 	a.addProcessingService(channelID, messageProcessor)
 }
 
-func (a *Assistant) buildMessageProcessor(project string, dbLabInstance *dblab.Instance) *msgproc.ProcessingService {
+func (a *Assistant) buildMessageProcessor(channelID, project string, dbLabInstance *dblab.Instance) *msgproc.ProcessingService {
 	processingCfg := msgproc.ProcessingConfig{
 		App:      a.appCfg.App,
 		Platform: a.appCfg.Platform,
@@ -157,11 +153,14 @@ func (a *Assistant) buildMessageProcessor(project string, dbLabInstance *dblab.I
 		Project:  project,
 	}
 
+	userList := a.sessionStorage.GetUsers(CommunicationType, channelID)
+	userManager := usermanager.NewUserManager(a.userInformer, a.appCfg.Enterprise.Quota, userList)
+
 	return msgproc.NewProcessingService(
 		a.messenger,
-		slack_assistent.MessageValidator{},
+		slackConnect.MessageValidator{},
 		dbLabInstance.Client(),
-		a.userManager,
+		userManager,
 		a.platformManager,
 		processingCfg,
 		a.featurePack,
@@ -169,8 +168,6 @@ func (a *Assistant) buildMessageProcessor(project string, dbLabInstance *dblab.I
 }
 
 func (a *Assistant) handleSocketEvents(ctx context.Context, incomingEvents chan socketmode.Event) {
-	client := a.client
-
 	var evt socketmode.Event
 
 	for {
@@ -195,7 +192,10 @@ func (a *Assistant) handleSocketEvents(ctx context.Context, incomingEvents chan 
 			}
 
 			log.Dbg(fmt.Sprintf("Event %s received: %+v", eventsAPIEvent.Type, eventsAPIEvent))
-			client.Ack(*evt.Request)
+
+			if evt.Request != nil {
+				a.client.Ack(*evt.Request)
+			}
 
 			switch eventsAPIEvent.Type {
 			case slackevents.CallbackEvent:
@@ -211,20 +211,8 @@ func (a *Assistant) handleSocketEvents(ctx context.Context, incomingEvents chan 
 				}
 
 			default:
-				client.Debugf("unsupported Events API event received")
+				log.Dbg("unsupported Events API event received")
 			}
-
-		case socketmode.EventTypeInteractive:
-			_, ok := evt.Data.(slack.InteractionCallback)
-			if !ok {
-				log.Dbg(fmt.Sprintf("Ignored %+v", evt))
-				continue
-			}
-
-			var payload interface{}
-
-			client.Ack(*evt.Request, payload)
-			log.Dbg("Ignore event type: ", evt.Type)
 
 		default:
 			log.Dbg("Ignore event type: ", evt.Type)
@@ -249,7 +237,7 @@ func (a *Assistant) handleMessageEvent(ctx context.Context, ev *slackevents.Mess
 		return
 	}
 
-	msg := slack_assistent.MessageEventToIncomingMessage(ev)
+	msg := slackConnect.MessageEventToIncomingMessage(ev)
 	go msgProcessor.ProcessMessageEvent(ctx, msg)
 }
 
@@ -262,7 +250,7 @@ func (a *Assistant) handleAppMentionEvent(_ context.Context, ev *slackevents.App
 		return
 	}
 
-	msg := slack_assistent.AppMentionEventToIncomingMessage(ev)
+	msg := slackConnect.AppMentionEventToIncomingMessage(ev)
 	msgProcessor.ProcessAppMentionEvent(msg)
 }
 
@@ -302,4 +290,32 @@ func (a *Assistant) lenMessageProcessor() int {
 	defer a.procMu.RUnlock()
 
 	return len(a.msgProcessors)
+}
+
+// RestoreSessions checks sessions after restart and establishes DB connection.
+func (a *Assistant) RestoreSessions(ctx context.Context) error {
+	log.Dbg("Restore sessions", CommunicationType)
+
+	a.procMu.RLock()
+	defer a.procMu.RUnlock()
+
+	for _, proc := range a.msgProcessors {
+		if err := proc.RestoreSessions(ctx); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// DumpSessions collects user's data from every message processor to sessionStorage.
+func (a *Assistant) DumpSessions() {
+	log.Dbg("Dump sessions", CommunicationType)
+
+	a.procMu.RLock()
+	defer a.procMu.RUnlock()
+
+	for channelID, proc := range a.msgProcessors {
+		a.sessionStorage.SetUsers(CommunicationType, channelID, proc.Users())
+	}
 }
