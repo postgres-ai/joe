@@ -1,4 +1,4 @@
-FROM alpine:3.11
+FROM alpine:latest
 
 RUN apk add --no-cache bash postgresql-client
 
