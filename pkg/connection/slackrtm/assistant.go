@@ -98,15 +98,11 @@ func (a *Assistant) Init() error {
 		return errors.Wrap(err, "invalid credentials given")
 	}
 
-	if a.lenMessageProcessor() == 0 {
-		return errors.New("no message processor set")
-	}
-
 	return nil
 }
 
 // Register registers the assistant service.
-func (a *Assistant) Register(ctx context.Context, _ string) error {
+func (a *Assistant) Register(ctx context.Context) error {
 	go a.rtm.ManageConnection()
 	go a.handleRTMEvents(ctx, a.rtm.IncomingEvents)
 
@@ -119,20 +115,20 @@ func (a *Assistant) Deregister(_ context.Context) error {
 }
 
 // AddChannel sets a message processor for a specific channel.
-func (a *Assistant) AddChannel(channelID, project string, dbLabInstance *dblab.Instance) {
-	messageProcessor := a.buildMessageProcessor(channelID, project, dbLabInstance)
+func (a *Assistant) AddChannel(channelID string, dbLabInstance *dblab.Instance) {
+	messageProcessor := a.buildMessageProcessor(channelID, dbLabInstance)
 
 	a.addProcessingService(channelID, messageProcessor)
 }
 
-func (a *Assistant) buildMessageProcessor(channelID, project string, dbLabInstance *dblab.Instance) *msgproc.ProcessingService {
+func (a *Assistant) buildMessageProcessor(channelID string, dbLabInstance *dblab.Instance) *msgproc.ProcessingService {
 	processingCfg := msgproc.ProcessingConfig{
 		App:      a.appCfg.App,
 		Platform: a.appCfg.Platform,
 		Explain:  a.appCfg.Explain,
 		DBLab:    dbLabInstance.Config(),
 		EntOpts:  a.appCfg.Enterprise,
-		Project:  project,
+		Project:  a.appCfg.Platform.Project,
 	}
 
 	users := a.sessionStorage.GetUsers(CommunicationType, channelID)
@@ -233,20 +229,11 @@ func (a *Assistant) RestoreSessions(ctx context.Context) error {
 
 // CheckIdleSessions check the running user sessions for idleness.
 func (a *Assistant) CheckIdleSessions(ctx context.Context) {
-	log.Dbg("Check Slack idle sessions")
-
 	a.procMu.RLock()
 	for _, proc := range a.msgProcessors {
 		proc.CheckIdleSessions(ctx)
 	}
 	a.procMu.RUnlock()
-}
-
-func (a *Assistant) lenMessageProcessor() int {
-	a.procMu.RLock()
-	defer a.procMu.RUnlock()
-
-	return len(a.msgProcessors)
 }
 
 // desktopNotificationEventToIncomingMessage converts a Slack application mention event to the standard incoming message.

@@ -90,10 +90,6 @@ func (a *Assistant) Init() error {
 		return errors.Wrap(err, "invalid credentials given")
 	}
 
-	if a.lenMessageProcessor() == 0 {
-		return errors.New("no message processor set")
-	}
-
 	verifier := NewVerifier([]byte(a.credentialsCfg.SigningSecret))
 
 	for path, handleFunc := range a.handlers() {
@@ -104,8 +100,8 @@ func (a *Assistant) Init() error {
 }
 
 // Register registers the assistant on the Platform.
-func (a *Assistant) Register(ctx context.Context, project string) error {
-	log.Dbg(fmt.Sprintf("Assistant %s. Project: %q. URL-path prefix: %s", CommunicationType, project, a.meta.prefix))
+func (a *Assistant) Register(ctx context.Context) error {
+	log.Dbg(fmt.Sprintf("Assistant %s. Project: %q. URL-path prefix: %s", CommunicationType, a.appCfg.Platform.Project, a.meta.prefix))
 
 	if !a.appCfg.Registration.Enable {
 		log.Msg("Auto-registration disabled. To enable it, use the application configuration file")
@@ -119,7 +115,7 @@ func (a *Assistant) Register(ctx context.Context, project string) error {
 
 	registerRequest := platform.RegisterApplicationRequest{
 		URL:     a.appCfg.Registration.PublicURL,
-		Project: project,
+		Project: a.appCfg.Platform.Project,
 		OrgID:   platformToken.OrganizationID,
 		Token:   a.credentialsCfg.SigningSecret,
 	}
@@ -145,20 +141,20 @@ func (a *Assistant) Deregister(ctx context.Context) error {
 }
 
 // AddChannel sets a message processor for a specific channel.
-func (a *Assistant) AddChannel(channelID, project string, dbLabInstance *dblab.Instance) {
-	messageProcessor := a.buildMessageProcessor(channelID, project, dbLabInstance)
+func (a *Assistant) AddChannel(channelID string, dbLabInstance *dblab.Instance) {
+	messageProcessor := a.buildMessageProcessor(channelID, dbLabInstance)
 
 	a.addProcessingService(channelID, messageProcessor)
 }
 
-func (a *Assistant) buildMessageProcessor(channelID, project string, dbLabInstance *dblab.Instance) *msgproc.ProcessingService {
+func (a *Assistant) buildMessageProcessor(channelID string, dbLabInstance *dblab.Instance) *msgproc.ProcessingService {
 	processingCfg := msgproc.ProcessingConfig{
 		App:      a.appCfg.App,
 		Platform: a.appCfg.Platform,
 		Explain:  a.appCfg.Explain,
 		DBLab:    dbLabInstance.Config(),
 		EntOpts:  a.appCfg.Enterprise,
-		Project:  project,
+		Project:  a.appCfg.Platform.Project,
 	}
 
 	users := a.sessionStorage.GetUsers(CommunicationType, channelID)
@@ -206,20 +202,11 @@ func (a *Assistant) RestoreSessions(ctx context.Context) error {
 
 // CheckIdleSessions check the running user sessions for idleness.
 func (a *Assistant) CheckIdleSessions(ctx context.Context) {
-	log.Dbg("Check idle sessions", a.meta.prefix)
-
 	a.procMu.RLock()
 	for _, proc := range a.msgProcessors {
 		proc.CheckIdleSessions(ctx)
 	}
 	a.procMu.RUnlock()
-}
-
-func (a *Assistant) lenMessageProcessor() int {
-	a.procMu.RLock()
-	defer a.procMu.RUnlock()
-
-	return len(a.msgProcessors)
 }
 
 func (a *Assistant) handlers() map[string]http.HandlerFunc {

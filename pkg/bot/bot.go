@@ -16,8 +16,6 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/pkg/errors"
 
-	"gitlab.com/postgres-ai/joe/pkg/services/platform"
-
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/client/dblabapi"
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/log"
 
@@ -29,6 +27,7 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/connection/slacksm"
 	"gitlab.com/postgres-ai/joe/pkg/connection/webui"
 	"gitlab.com/postgres-ai/joe/pkg/services/dblab"
+	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 	"gitlab.com/postgres-ai/joe/pkg/services/storage"
 	"gitlab.com/postgres-ai/joe/pkg/util"
 )
@@ -189,6 +188,14 @@ func (a *App) startAssistants(ctx context.Context) ([]connection.Assistant, erro
 
 			log.Dbg(fmt.Sprintf("Initialize the %s assistant", workspaceType))
 
+			if err := assist.Init(); err != nil {
+				return nil, errors.Wrapf(err, "failed to initialize assistant: %s", workspace.Name)
+			}
+
+			if err := assist.Register(ctx); err != nil {
+				return nil, errors.Wrapf(err, "failed to register assistant: %s", workspace.Name)
+			}
+
 			if err := a.setupChannels(ctx, assist, workspace); err != nil {
 				return nil, errors.Wrap(err, "failed to register workspace assistants")
 			}
@@ -233,23 +240,18 @@ func (a *App) setupChannels(ctx context.Context, assistant connection.Assistant,
 
 		a.dblabMu.RUnlock()
 		dbLabInstance.SetCfg(channel.DBLabParams)
-		assistant.AddChannel(channel.ChannelID, channel.Project, dbLabInstance)
+		assistant.AddChannel(channel.ChannelID, dbLabInstance)
 
-		log.Dbg("Set up channel: ", channel.ChannelID)
-
-		if err := assistant.Init(); err != nil {
-			return errors.Wrapf(err, "failed to initialize the %q assistant", channel.ChannelID)
-		}
-
-		if err := assistant.Register(ctx, channel.Project); err != nil {
-			return errors.Wrapf(err, "failed to register the %q assistant", channel.ChannelID)
-		}
+		log.Dbg("Set up channel:", channel.ChannelID)
 
 		if err := assistant.RestoreSessions(ctx); err != nil {
 			return errors.Wrapf(err, "failed to restore active sessions for the %q assistant", channel.ChannelID)
 		}
 
+		channelID := channel.ChannelID
+
 		_ = util.RunInterval(InactiveCloneCheckInterval, func() {
+			log.Dbg("Check idle sessions for channel:", channelID)
 			assistant.CheckIdleSessions(ctx)
 		})
 	}

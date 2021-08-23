@@ -35,6 +35,7 @@ type App struct {
 type Platform struct {
 	URL            string `yaml:"url" env:"JOE_PLATFORM_URL" env-default:"https://postgres.ai/api/general"`
 	Token          string `yaml:"token" env:"JOE_PLATFORM_TOKEN"`
+	Project        string `yaml:"project" env:"JOE_PLATFORM_PROJECT"`
 	HistoryEnabled bool   `yaml:"historyEnabled" env:"JOE_PLATFORM_HISTORY_ENABLED"`
 }
 
@@ -75,7 +76,6 @@ type Credentials struct {
 type Channel struct {
 	ChannelID   string      `yaml:"channelID" json:"channel_id"`
 	DBLabID     string      `yaml:"dblabServer" json:"-"`
-	Project     string      `yaml:"project" json:"-"`
 	DBLabParams DBLabParams `yaml:"dblabParams" json:"-"`
 }
 
