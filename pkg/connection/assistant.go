@@ -18,7 +18,7 @@ type Assistant interface {
 	Init() error
 
 	// Register defines the method to register the assistant.
-	Register(ctx context.Context, project string) error
+	Register(ctx context.Context) error
 
 	// Deregister defines the method to deregister the assistant.
 	Deregister(ctx context.Context) error
@@ -30,7 +30,7 @@ type Assistant interface {
 	CheckIdleSessions(context.Context)
 
 	// AddChannel adds a new Database Lab instance to communication via the assistant.
-	AddChannel(channelID, project string, dbLabInstance *dblab.Instance)
+	AddChannel(channelID string, dbLabInstance *dblab.Instance)
 
 	// DumpSessions iterates over channels and collects user's sessions to storage
 	DumpSessions()
