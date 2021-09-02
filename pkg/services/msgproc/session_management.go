@@ -47,7 +47,7 @@ func (s *ProcessingService) CheckIdleSessions(ctx context.Context) {
 			continue
 		}
 
-		log.Dbg("Session idle: %v %v", user, user.Session)
+		log.Dbg("Session idle: ", user, user.Session)
 
 		if user.Session.Direct {
 			directToNotify = append(directToNotify, getSessionID(user))

@@ -260,6 +260,12 @@ func (a *Assistant) handleEvent(w http.ResponseWriter, r *http.Request) {
 		case *slackevents.MessageEvent:
 			log.Dbg("Event type: Message")
 
+			if ev.SubType == "message_changed" {
+				// Skip messages changes.
+				log.Dbg("Event filtered: message_changed events are ignored")
+				return
+			}
+
 			if ev.BotID != "" {
 				// Skip messages sent by bots.
 				return
@@ -275,11 +281,11 @@ func (a *Assistant) handleEvent(w http.ResponseWriter, r *http.Request) {
 			msgProcessor.ProcessMessageEvent(context.TODO(), msg)
 
 		default:
-			log.Dbg("Event filtered: Inner event type not supported")
+			log.Dbg("Event filtered: Inner event type not supported", eventsAPIEvent.InnerEvent.Type)
 		}
 
 	default:
-		log.Dbg("Event filtered: Event type not supported")
+		log.Dbg("Event filtered: Event type not supported", eventsAPIEvent.Type)
 	}
 }
 

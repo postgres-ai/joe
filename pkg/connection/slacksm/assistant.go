@@ -62,7 +62,6 @@ func NewAssistant(cfg *config.Credentials, appCfg *config.Config, pack *features
 	}
 
 	api := slack.New(slackCfg.AccessToken,
-		slack.OptionDebug(appCfg.App.Debug),
 		slack.OptionAppLevelToken(cfg.AppLevelToken),
 	)
 

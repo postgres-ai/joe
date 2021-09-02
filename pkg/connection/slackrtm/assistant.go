@@ -62,7 +62,7 @@ func NewAssistant(cfg *config.Credentials, appCfg *config.Config, pack *features
 		AccessToken: cfg.AccessToken,
 	}
 
-	chatAPI := slack.New(slackCfg.AccessToken, slack.OptionDebug(appCfg.App.Debug))
+	chatAPI := slack.New(slackCfg.AccessToken)
 
 	rtm := chatAPI.NewRTM()
 
