@@ -43,10 +43,10 @@ func main() {
 
 	botCfg, err := loadConfig(configFilePath)
 	if err != nil {
-		log.Fatal("failed to load config: %v", err)
+		log.Fatal("failed to load config: ", err)
 	}
 
-	log.DEBUG = botCfg.App.Debug
+	log.SetDebug(botCfg.App.Debug)
 
 	log.Dbg("version: ", version)
 

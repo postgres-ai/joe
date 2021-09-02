@@ -140,7 +140,7 @@ func NewProcessingService(messengerSvc connection.Messenger, msgValidator connec
 func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMessage models.IncomingMessage) {
 	// Filter incoming message.
 	if err := s.messageValidator.Validate(&incomingMessage); err != nil {
-		log.Err(errors.Wrap(err, "incoming message is invalid"))
+		log.Err(errors.Wrapf(err, "incoming message is invalid %#v", incomingMessage))
 		return
 	}
 

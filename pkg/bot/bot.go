@@ -243,18 +243,16 @@ func (a *App) setupChannels(ctx context.Context, assistant connection.Assistant,
 		assistant.AddChannel(channel.ChannelID, dbLabInstance)
 
 		log.Dbg("Set up channel:", channel.ChannelID)
-
-		if err := assistant.RestoreSessions(ctx); err != nil {
-			return errors.Wrapf(err, "failed to restore active sessions for the %q assistant", channel.ChannelID)
-		}
-
-		channelID := channel.ChannelID
-
-		_ = util.RunInterval(InactiveCloneCheckInterval, func() {
-			log.Dbg("Check idle sessions for channel:", channelID)
-			assistant.CheckIdleSessions(ctx)
-		})
 	}
+
+	if err := assistant.RestoreSessions(ctx); err != nil {
+		return errors.Wrapf(err, "failed to restore active sessions for the %q workspace", workspace.Name)
+	}
+
+	_ = util.RunInterval(InactiveCloneCheckInterval, func() {
+		log.Dbg("Check idle sessions: ", workspace.Name)
+		assistant.CheckIdleSessions(ctx)
+	})
 
 	return nil
 }
