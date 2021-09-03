@@ -47,7 +47,7 @@ func (tr Transmitter) Run(commandParam string) (string, error) {
 	out, err := tr.runPsql(cmdStr)
 	if err != nil {
 		if runnerError, ok := err.(runners.RunnerError); ok {
-			return "", fmt.Errorf("psql error: %s", runnerError.Stderr)
+			return "", fmt.Errorf("psql error: %w", runnerError)
 		}
 
 		return "", errors.Wrapf(err, "failed to execute command")
