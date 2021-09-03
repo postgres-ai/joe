@@ -1,5 +1,5 @@
 # Joe Bot configuration.
-# Copy this file to: ./config/config.yml
+# Copy this file to: ~/.dblab/joe/configs/joe.yml
 
 app:
   # HTTP server IP address or host.

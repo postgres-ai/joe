@@ -8,3 +8,6 @@
 /deploy/
 
 config/config.yml
+configs/config.yml
+configs/joe.yml
+meta/sessions.json

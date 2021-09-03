@@ -10,16 +10,6 @@ run() {
 
   set +x
 
-  # Instead of editing default values here create a separate config file.
-  # e.g. for staging environment create a file /deploy/configs/staging.sh
-  # use `export` to define variables and run with `ENV=staging makerun.sh`.
-  if [ -z ${ENV+x} ]; then
-    echo "Using default variables"
-    source ./config/envs/default.sh
-  else
-    source ./config/envs/${ENV}.sh
-  fi
-
   # Read and set git status info if it wasn't done before.
   if [ "$INCLUDE_GIT_STATUS" == "true" ] && [ -z "$GIT_COMMIT_HASH" ]; then
     echo "Fetching git status..."

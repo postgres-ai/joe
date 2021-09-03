@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
 	"syscall"
 	"time"
 
@@ -30,9 +31,6 @@ import (
 
 const (
 	shutdownTimeout = 60 * time.Second
-
-	configFilePath   = "config/config.yml"
-	sessionsFilePath = "config/sessions.json"
 )
 
 // ldflag variables.
@@ -41,7 +39,7 @@ var buildTime, version string
 func main() {
 	version := formatBotVersion()
 
-	botCfg, err := loadConfig(configFilePath)
+	botCfg, err := loadAppConfig()
 	if err != nil {
 		log.Fatal("failed to load config: ", err)
 	}
@@ -60,7 +58,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	shutdownCh := setShutdownListener()
 
-	sessionsStorage := storage.NewJSONSessionData(sessionsFilePath)
+	sessionsStorage := storage.NewJSONSessionData(path.Join(config.MetadataPath, config.SessionsFilename))
 	if err := sessionsStorage.Load(); err != nil {
 		log.Fatal("unable to load sessions data: ", err)
 	}
@@ -87,8 +85,11 @@ func main() {
 	}
 }
 
-func loadConfig(configPath string) (*config.Config, error) {
-	var botCfg config.Config
+func loadAppConfig() (*config.Config, error) {
+	var (
+		botCfg     config.Config
+		configPath = path.Join(config.ConfigsPath, config.AppFilename)
+	)
 
 	if err := cleanenv.ReadConfig(configPath, &botCfg); err != nil {
 		return nil, errors.Wrap(err, "failed to read a config file")
