@@ -91,7 +91,8 @@ build-image-latest:
     REGISTRY_PASSWORD: "${DH_CI_REGISTRY_PASSWORD}"
     REGISTRY: "${DH_CI_REGISTRY}"
     DOCKER_NAME: postgresai/joe
-    TAGS: "${DOCKER_NAME}:latest,${DOCKER_NAME}:${CI_COMMIT_TAG}"
+    DOCKER_DEV_NAME: "registry.gitlab.com/postgres-ai/joe"
+    TAGS: "${DOCKER_NAME}:latest,${DOCKER_NAME}:${CI_COMMIT_TAG},${DOCKER_DEV_NAME}:${CI_COMMIT_TAG}"
 
 build-image-rc:
   <<: *build_image_definition
@@ -101,4 +102,5 @@ build-image-rc:
     REGISTRY_PASSWORD: "${DH_CI_REGISTRY_PASSWORD}"
     REGISTRY: "${DH_CI_REGISTRY}"
     DOCKER_NAME: postgresai/joe
-    TAGS: "${DOCKER_NAME}:${CI_COMMIT_TAG}"
+    DOCKER_DEV_NAME: "registry.gitlab.com/postgres-ai/joe"
+    TAGS: "${DOCKER_NAME}:${CI_COMMIT_TAG},${DOCKER_DEV_NAME}:${CI_COMMIT_TAG}"
