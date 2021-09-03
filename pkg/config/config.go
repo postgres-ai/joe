@@ -12,6 +12,20 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/pgexplain"
 )
 
+const (
+	// ConfigsPath declares the directory where configuration files are stored.
+	ConfigsPath = "configs"
+
+	// AppFilename declares name of the application configuration file.
+	AppFilename = "joe.yml"
+
+	// MetadataPath declares path where metadata files are stored.
+	MetadataPath = "meta"
+
+	// SessionsFilename declares name of the file that stores current Joe Bot sessions.
+	SessionsFilename = "sessions.json"
+)
+
 // Config defines an App configuration.
 type Config struct {
 	App            App                          `yaml:"app"`
