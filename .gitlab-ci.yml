@@ -91,8 +91,17 @@ build-image-latest:
     REGISTRY_PASSWORD: "${DH_CI_REGISTRY_PASSWORD}"
     REGISTRY: "${DH_CI_REGISTRY}"
     DOCKER_NAME: postgresai/joe
-    DOCKER_DEV_NAME: "registry.gitlab.com/postgres-ai/joe"
-    TAGS: "${DOCKER_NAME}:latest,${DOCKER_NAME}:${CI_COMMIT_TAG},${DOCKER_DEV_NAME}:${CI_COMMIT_TAG}"
+    TAGS: "${DOCKER_NAME}:latest,${DOCKER_NAME}:${CI_COMMIT_TAG}"
+
+build-image-latest-dev-registry:
+  <<: *build_image_definition
+  <<: *only_tag_release
+  variables:
+    REGISTRY_USER: "${CI_REGISTRY_USER}"
+    REGISTRY_PASSWORD: "${CI_REGISTRY_PASSWORD}"
+    REGISTRY: "${CI_REGISTRY}"
+    DOCKER_NAME: "registry.gitlab.com/postgres-ai/joe"
+    TAGS: "${DOCKER_NAME}:${CI_COMMIT_TAG}"
 
 build-image-rc:
   <<: *build_image_definition
@@ -102,5 +111,14 @@ build-image-rc:
     REGISTRY_PASSWORD: "${DH_CI_REGISTRY_PASSWORD}"
     REGISTRY: "${DH_CI_REGISTRY}"
     DOCKER_NAME: postgresai/joe
-    DOCKER_DEV_NAME: "registry.gitlab.com/postgres-ai/joe"
-    TAGS: "${DOCKER_NAME}:${CI_COMMIT_TAG},${DOCKER_DEV_NAME}:${CI_COMMIT_TAG}"
+    TAGS: "${DOCKER_NAME}:${CI_COMMIT_TAG}"
+
+build-image-rc-dev-registry:
+  <<: *build_image_definition
+  <<: *only_tag_rc
+  variables:
+    REGISTRY_USER: "${CI_REGISTRY_USER}"
+    REGISTRY_PASSWORD: "${CI_REGISTRY_PASSWORD}"
+    REGISTRY: "${CI_REGISTRY}"
+    DOCKER_NAME: "registry.gitlab.com/postgres-ai/joe"
+    TAGS: "${DOCKER_NAME}:${CI_COMMIT_TAG}"
