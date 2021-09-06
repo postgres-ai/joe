@@ -17,6 +17,7 @@ import (
 
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/client/dblabapi"
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/log"
+	"gitlab.com/postgres-ai/database-lab/v2/pkg/services/provision/runners"
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/util"
 
 	"gitlab.com/postgres-ai/joe/features"
@@ -335,7 +336,7 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 	}
 
 	if err != nil {
-		if _, ok := err.(*net.OpError); !ok {
+		if _, ok := err.(*net.OpError); !ok && !errors.As(err, &runners.RunnerError{}) {
 			if err := s.messenger.Fail(msg, err.Error()); err != nil {
 				log.Err(err)
 			}
