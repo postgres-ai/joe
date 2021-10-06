@@ -44,13 +44,13 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 		return errors.New(MsgExplainOptionReq)
 	}
 
-	conn, pid, err := getConn(ctx, session.CloneConnection)
+	pid, err := getConn(ctx, session.CloneConnection)
 	if err != nil {
 		log.Err("failed to get connection: ", err)
 		return err
 	}
 
-	defer conn.Release()
+	defer session.CloneConnection.Release()
 
 	cmd := NewPlan(command, msg, session.CloneConnection, msgSvc)
 	msgInitText, err := cmd.explainWithoutExecution(ctx)
@@ -67,15 +67,15 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 	<-est.Wait()
 
 	// Explain analyze request and processing.
-	explainAnalyze, err := querier.DBQueryWithResponse(ctx, conn, queryExplainAnalyze+command.Query)
+	explainAnalyze, err := querier.DBQueryWithResponse(ctx, session.CloneConnection, queryExplainAnalyze+command.Query)
 	if err != nil {
 		return err
 	}
 
-	if err := conn.Conn().Close(ctx); err != nil {
+	/*	if err := session.CloneConnection.Close(ctx); err != nil {
 		log.Err("Failed to close connection: ", err)
 		return err
-	}
+	}*/
 
 	command.PlanExecJSON = explainAnalyze
 

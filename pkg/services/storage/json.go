@@ -12,7 +12,7 @@ import (
 
 // JSONSessionStorage stores user session in file in json format.
 type JSONSessionStorage struct {
-	usersByChannel map[string]usermanager.UserList // map[assistent-channelID]map[userID]User
+	usersByChannel map[string]usermanager.UserList // map[assistant-channelID]map[userID]User
 
 	filePath string
 }

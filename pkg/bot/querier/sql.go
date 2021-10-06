@@ -26,7 +26,7 @@ const (
 )
 
 // DBQuery runs query and returns table results.
-func DBQuery(ctx context.Context, db *pgxpool.Pool, query string, args ...interface{}) ([][]string, error) {
+func DBQuery(ctx context.Context, db *pgxpool.Conn, query string, args ...interface{}) ([][]string, error) {
 	return runTableQuery(ctx, db, query, args...)
 }
 

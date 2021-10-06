@@ -27,12 +27,12 @@ const MsgPlanOptionReq = "Use `plan` to see the query's plan without execution, 
 type PlanCmd struct {
 	command   *platform.Command
 	message   *models.Message
-	db        *pgxpool.Pool
+	db        *pgxpool.Conn
 	messenger connection.Messenger
 }
 
 // NewPlan return a new plan command.
-func NewPlan(cmd *platform.Command, msg *models.Message, db *pgxpool.Pool, messengerSvc connection.Messenger) *PlanCmd {
+func NewPlan(cmd *platform.Command, msg *models.Message, db *pgxpool.Conn, messengerSvc connection.Messenger) *PlanCmd {
 	return &PlanCmd{
 		command:   cmd,
 		message:   msg,

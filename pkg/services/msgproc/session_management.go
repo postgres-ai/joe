@@ -213,7 +213,8 @@ func (s *ProcessingService) stopSession(user *usermanager.User) {
 	user.Session.PlatformSessionID = ""
 
 	if user.Session.CloneConnection != nil {
-		user.Session.CloneConnection.Close()
+		// user.Session.CloneConnection.Close()
+		user.Session.CloneConnection.Release()
 		user.Session.CloneConnection = nil
 	}
 }

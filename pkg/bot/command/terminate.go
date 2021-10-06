@@ -26,14 +26,14 @@ const TerminateCaption = "*Terminate response:*\n"
 type TerminateCmd struct {
 	command   *platform.Command
 	message   *models.Message
-	db        *pgxpool.Pool
+	db        *pgxpool.Conn
 	messenger connection.Messenger
 }
 
 var _ definition.Executor = (*TerminateCmd)(nil)
 
 // NewTerminateCmd return a new terminate command.
-func NewTerminateCmd(cmd *platform.Command, msg *models.Message, db *pgxpool.Pool, messengerSvc connection.Messenger) *TerminateCmd {
+func NewTerminateCmd(cmd *platform.Command, msg *models.Message, db *pgxpool.Conn, messengerSvc connection.Messenger) *TerminateCmd {
 	return &TerminateCmd{
 		command:   cmd,
 		message:   msg,

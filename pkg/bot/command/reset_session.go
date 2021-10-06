@@ -35,14 +35,17 @@ func ResetSession(ctx context.Context, cmd *platform.Command, msg *models.Messag
 		return err
 	}
 
-	allIdleConnections := session.CloneConnection.AcquireAllIdle(ctx)
-	for _, idleConnection := range allIdleConnections {
-		if err := idleConnection.Conn().Close(ctx); err != nil {
-			log.Err("Failed to close idle connection: ", err)
-		}
+	// TODO: check idle connections.
+	/*	allIdleConnections := session.CloneConnection.AcquireAllIdle(ctx)
+		for _, idleConnection := range allIdleConnections {
+			if err := idleConnection.Conn().Close(ctx); err != nil {
+				log.Err("Failed to close idle connection: ", err)
+			}
 
-		idleConnection.Release()
-	}
+			idleConnection.Release()
+		}*/
+
+	session.CloneConnection.Release()
 
 	fwData := &foreword.Content{
 		SessionID:  clone.ID,

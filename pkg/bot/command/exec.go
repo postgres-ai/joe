@@ -33,7 +33,7 @@ const (
 type ExecCmd struct {
 	command   *platform.Command
 	message   *models.Message
-	db        *pgxpool.Pool
+	db        *pgxpool.Conn
 	messenger connection.Messenger
 	dblab     *dblabapi.Client
 	clone     *dblabmodels.Clone
@@ -58,13 +58,14 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 		return errors.New(msgExecOptionReq)
 	}
 
-	conn, pid, err := getConn(ctx, cmd.db)
+	pid, err := getConn(ctx, cmd.db)
 	if err != nil {
 		log.Err("failed to get connection: ", err)
 		return err
 	}
 
-	defer conn.Release()
+	// TODO: check
+	defer cmd.db.Release()
 
 	est, err := cmd.dblab.Estimate(ctx, cmd.clone.ID, strconv.Itoa(pid))
 	if err != nil {
@@ -76,14 +77,15 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 
 	start := time.Now()
 
-	if _, err := conn.Exec(ctx, cmd.command.Query); err != nil {
+	if _, err := cmd.db.Exec(ctx, cmd.command.Query); err != nil {
 		log.Err("Failed to exec command: ", err)
 		return err
 	}
 
 	totalTime := util.DurationToString(time.Since(start))
 
-	if err := conn.Conn().Close(ctx); err != nil {
+	// TODO: check
+	if err := cmd.db.Conn().Close(ctx); err != nil {
 		log.Err("Failed to close connection: ", err)
 		return err
 	}
@@ -115,28 +117,28 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 }
 
 // getConn returns an acquired connection and Postgres backend PID.
-func getConn(ctx context.Context, db *pgxpool.Pool) (*pgxpool.Conn, int, error) {
+func getConn(ctx context.Context, db *pgxpool.Conn) (int, error) {
 	var (
 		pid int
 		err error
 	)
 
-	conn, err := db.Acquire(ctx)
-	if err != nil {
-		log.Err("failed to acquire connection: ", err)
-		return nil, 0, err
-	}
-
-	defer func() {
-		if err != nil && conn != nil {
-			conn.Release()
+	/*	conn, err := db.Acquire(ctx)
+		if err != nil {
+			log.Err("failed to acquire connection: ", err)
+			return nil, 0, err
 		}
-	}()
 
-	if err = conn.QueryRow(ctx, `select pg_backend_pid()`).Scan(&pid); err != nil {
+		defer func() {
+			if err != nil && conn != nil {
+				conn.Release()
+			}
+		}()*/
+
+	if err = db.QueryRow(ctx, `select pg_backend_pid()`).Scan(&pid); err != nil {
 		log.Err("failed to get backend PID: ", err)
-		return nil, 0, err
+		return 0, err
 	}
 
-	return conn, pid, nil
+	return pid, nil
 }

@@ -41,12 +41,12 @@ var errHypoPGNotInstalled = errors.New("the HypoPG extension is not installed")
 type HypoCmd struct {
 	command   *platform.Command
 	message   *models.Message
-	db        *pgxpool.Pool
+	db        *pgxpool.Conn
 	messenger connection.Messenger
 }
 
 // NewHypo creates a new Hypo command.
-func NewHypo(cmd *platform.Command, msg *models.Message, db *pgxpool.Pool, msgSvc connection.Messenger) *HypoCmd {
+func NewHypo(cmd *platform.Command, msg *models.Message, db *pgxpool.Conn, msgSvc connection.Messenger) *HypoCmd {
 	return &HypoCmd{
 		command:   cmd,
 		message:   msg,

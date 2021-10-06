@@ -27,14 +27,14 @@ const ActivityCaption = "*Activity response:*\n"
 type ActivityCmd struct {
 	command   *platform.Command
 	message   *models.Message
-	db        *pgxpool.Pool
+	db        *pgxpool.Conn
 	messenger connection.Messenger
 }
 
 var _ definition.Executor = (*ActivityCmd)(nil)
 
 // NewActivityCmd return a new exec command.
-func NewActivityCmd(cmd *platform.Command, msg *models.Message, db *pgxpool.Pool, messengerSvc connection.Messenger) *ActivityCmd {
+func NewActivityCmd(cmd *platform.Command, msg *models.Message, db *pgxpool.Conn, messengerSvc connection.Messenger) *ActivityCmd {
 	return &ActivityCmd{
 		command:   cmd,
 		message:   msg,

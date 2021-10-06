@@ -167,14 +167,20 @@ func (s *ProcessingService) buildDBLabCloneConn(dbParams dblabmodels.Database) m
 	}
 }
 
-func initConn(dblabClone models.Clone) (*pgxpool.Pool, error) {
-	conn, err := pgxpool.Connect(context.Background(), dblabClone.ConnectionString())
+func initConn(dblabClone models.Clone) (*pgxpool.Conn, error) {
+	pool, err := pgxpool.Connect(context.Background(), dblabClone.ConnectionString())
 	if err != nil {
 		log.Err("DB connection:", err)
 		return nil, err
 	}
 
-	return conn, nil
+	connection, err := pool.Acquire(context.TODO())
+	if err != nil {
+		log.Err("DB pool:", err)
+		return nil, err
+	}
+
+	return connection, nil
 }
 
 // createDBLabClone creates a new clone.
