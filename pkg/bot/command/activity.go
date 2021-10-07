@@ -27,18 +27,18 @@ const ActivityCaption = "*Activity response:*\n"
 type ActivityCmd struct {
 	command   *platform.Command
 	message   *models.Message
-	db        *pgxpool.Conn
+	pool      *pgxpool.Pool
 	messenger connection.Messenger
 }
 
 var _ definition.Executor = (*ActivityCmd)(nil)
 
 // NewActivityCmd return a new exec command.
-func NewActivityCmd(cmd *platform.Command, msg *models.Message, db *pgxpool.Conn, messengerSvc connection.Messenger) *ActivityCmd {
+func NewActivityCmd(cmd *platform.Command, msg *models.Message, db *pgxpool.Pool, messengerSvc connection.Messenger) *ActivityCmd {
 	return &ActivityCmd{
 		command:   cmd,
 		message:   msg,
-		db:        db,
+		pool:      db,
 		messenger: messengerSvc,
 	}
 }
@@ -62,7 +62,7 @@ where state in ('active', 'idle in transaction', 'disabled') and pid <> pg_backe
 	tableString := &strings.Builder{}
 	tableString.WriteString(ActivityCaption)
 
-	activity, err := querier.DBQuery(context.TODO(), c.db, query)
+	activity, err := querier.DBQuery(context.TODO(), c.pool, query)
 	if err != nil {
 		return errors.Wrap(err, "failed to make query")
 	}

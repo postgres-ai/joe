@@ -55,7 +55,7 @@ func (s *ProcessingService) CheckIdleSessions(ctx context.Context) {
 			channelsToNotify[user.Session.ChannelID] = append(channelsToNotify[user.Session.ChannelID], user.UserInfo.ID)
 		}
 
-		s.stopSession(user)
+		s.stopSession(ctx, user)
 	}
 
 	s.notifyDirectly(directToNotify, models.StatusOK, "Stopped idle session")
@@ -93,14 +93,14 @@ func (s *ProcessingService) RestoreSessions(ctx context.Context) error {
 		clone, err := s.DBLab.GetClone(ctx, user.Session.Clone.ID)
 		if err != nil {
 			log.Err("failed to get DBLab clone: ", err)
-			s.stopSession(user)
+			s.stopSession(ctx, user)
 
 			continue
 		}
 
 		if clone.Status.Code != dblabmodels.StatusOK {
 			log.Msg("DBLab is not active, stop user session. CloneID: ", user.Session.Clone.ID)
-			s.stopSession(user)
+			s.stopSession(ctx, user)
 
 			continue
 		}
@@ -111,21 +111,22 @@ func (s *ProcessingService) RestoreSessions(ctx context.Context) error {
 			clone.DB.Username != user.Session.ConnParams.Username ||
 			clone.DB.DBName != user.Session.ConnParams.Name {
 			log.Msg("Session connection params has been changed in config. Stopping user session. CloneID: ", user.Session.Clone.ID)
-			s.stopSession(user)
+			s.stopSession(ctx, user)
 
 			continue
 		}
 
-		db, err := initConn(user.Session.ConnParams)
+		db, userConn, err := initConn(ctx, user.Session.ConnParams)
 		if err != nil {
 			log.Err("failed to init database connection, stop session: ", err)
-			s.stopSession(user)
+			s.stopSession(ctx, user)
 
 			continue
 		}
 
 		user.Session.Clone = clone
-		user.Session.CloneConnection = db
+		user.Session.Pool = db
+		user.Session.CloneConnection = userConn
 
 		if user.Session.Direct {
 			directToNotify = append(directToNotify, getSessionID(user))
@@ -207,29 +208,36 @@ func (s *ProcessingService) isActiveSession(ctx context.Context, cloneID string)
 	return true
 }
 
-func (s *ProcessingService) stopSession(user *usermanager.User) {
+func (s *ProcessingService) stopSession(ctx context.Context, user *usermanager.User) {
 	user.Session.Clone = nil
 	user.Session.ConnParams = models.Clone{}
 	user.Session.PlatformSessionID = ""
 
 	if user.Session.CloneConnection != nil {
-		// user.Session.CloneConnection.Close()
-		user.Session.CloneConnection.Release()
+		if err := user.Session.CloneConnection.Close(ctx); err != nil {
+			log.Err(err.Error())
+		}
+
 		user.Session.CloneConnection = nil
+	}
+
+	if user.Session.Pool != nil {
+		user.Session.Pool.Close()
+		user.Session.Pool = nil
 	}
 }
 
 // destroySession destroys a DatabaseLab session.
-func (s *ProcessingService) destroySession(u *usermanager.User) error {
+func (s *ProcessingService) destroySession(ctx context.Context, u *usermanager.User) error {
 	log.Dbg("Destroying session...")
 
 	if u.Session.Clone != nil {
-		if err := s.DBLab.DestroyClone(context.TODO(), u.Session.Clone.ID); err != nil {
+		if err := s.DBLab.DestroyClone(ctx, u.Session.Clone.ID); err != nil {
 			return errors.Wrap(err, "failed to destroy clone")
 		}
 	}
 
-	s.stopSession(u)
+	s.stopSession(ctx, u)
 
 	return nil
 }

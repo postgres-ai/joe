@@ -33,7 +33,7 @@ const (
 type ExecCmd struct {
 	command   *platform.Command
 	message   *models.Message
-	db        *pgxpool.Conn
+	pool      *pgxpool.Pool
 	messenger connection.Messenger
 	dblab     *dblabapi.Client
 	clone     *dblabmodels.Clone
@@ -45,7 +45,7 @@ func NewExec(command *platform.Command, msg *models.Message, session usermanager
 	return &ExecCmd{
 		command:   command,
 		message:   msg,
-		db:        session.CloneConnection,
+		pool:      session.Pool,
 		clone:     session.Clone,
 		messenger: messengerSvc,
 		dblab:     dblab,
@@ -58,14 +58,13 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 		return errors.New(msgExecOptionReq)
 	}
 
-	pid, err := getConn(ctx, cmd.db)
+	conn, pid, err := getConn(ctx, cmd.pool)
 	if err != nil {
 		log.Err("failed to get connection: ", err)
 		return err
 	}
 
-	// TODO: check
-	defer cmd.db.Release()
+	defer conn.Release()
 
 	est, err := cmd.dblab.Estimate(ctx, cmd.clone.ID, strconv.Itoa(pid))
 	if err != nil {
@@ -77,15 +76,14 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 
 	start := time.Now()
 
-	if _, err := cmd.db.Exec(ctx, cmd.command.Query); err != nil {
+	if _, err := conn.Exec(ctx, cmd.command.Query); err != nil {
 		log.Err("Failed to exec command: ", err)
 		return err
 	}
 
 	totalTime := util.DurationToString(time.Since(start))
 
-	// TODO: check
-	if err := cmd.db.Conn().Close(ctx); err != nil {
+	if err := conn.Conn().Close(ctx); err != nil {
 		log.Err("Failed to close connection: ", err)
 		return err
 	}
@@ -117,28 +115,28 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 }
 
 // getConn returns an acquired connection and Postgres backend PID.
-func getConn(ctx context.Context, db *pgxpool.Conn) (int, error) {
+func getConn(ctx context.Context, db *pgxpool.Pool) (*pgxpool.Conn, int, error) {
 	var (
 		pid int
 		err error
 	)
 
-	/*	conn, err := db.Acquire(ctx)
-		if err != nil {
-			log.Err("failed to acquire connection: ", err)
-			return nil, 0, err
-		}
+	conn, err := db.Acquire(ctx)
+	if err != nil {
+		log.Err("failed to acquire connection: ", err)
+		return nil, 0, err
+	}
 
-		defer func() {
-			if err != nil && conn != nil {
-				conn.Release()
-			}
-		}()*/
+	defer func() {
+		if err != nil && conn != nil {
+			conn.Release()
+		}
+	}()
 
 	if err = db.QueryRow(ctx, `select pg_backend_pid()`).Scan(&pid); err != nil {
 		log.Err("failed to get backend PID: ", err)
-		return 0, err
+		return nil, 0, err
 	}
 
-	return pid, nil
+	return conn, pid, nil
 }

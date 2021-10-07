@@ -47,7 +47,7 @@ type Content struct {
 }
 
 // EnrichForewordInfo adds database details to foreword data.
-func (f *Content) EnrichForewordInfo(ctx context.Context, db *pgxpool.Conn) error {
+func (f *Content) EnrichForewordInfo(ctx context.Context, db *pgxpool.Pool) error {
 	r := db.QueryRow(ctx, "select current_setting('server_version'), pg_size_pretty(pg_database_size($1))", f.DBName)
 
 	if err := r.Scan(&f.DBVersion, &f.DBSize); err != nil {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dustin/go-humanize/english"
+	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/pkg/errors"
 
@@ -37,7 +38,8 @@ type UserSession struct {
 
 	Clone           *dblabmodels.Clone
 	ConnParams      models.Clone
-	CloneConnection *pgxpool.Conn `json:"-"`
+	Pool            *pgxpool.Pool `json:"-"`
+	CloneConnection *pgx.Conn     `json:"-"`
 }
 
 // Quota defines a user quota for requests.
