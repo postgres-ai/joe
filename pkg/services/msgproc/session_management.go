@@ -116,7 +116,7 @@ func (s *ProcessingService) RestoreSessions(ctx context.Context) error {
 			continue
 		}
 
-		db, userConn, err := initConn(ctx, user.Session.ConnParams)
+		pool, userConn, err := initConn(ctx, user.Session.ConnParams)
 		if err != nil {
 			log.Err("failed to init database connection, stop session: ", err)
 			s.stopSession(ctx, user)
@@ -125,7 +125,7 @@ func (s *ProcessingService) RestoreSessions(ctx context.Context) error {
 		}
 
 		user.Session.Clone = clone
-		user.Session.Pool = db
+		user.Session.Pool = pool
 		user.Session.CloneConnection = userConn
 
 		if user.Session.Direct {
@@ -217,14 +217,10 @@ func (s *ProcessingService) stopSession(ctx context.Context, user *usermanager.U
 		if err := user.Session.CloneConnection.Close(ctx); err != nil {
 			log.Err(err.Error())
 		}
-
-		user.Session.CloneConnection = nil
 	}
 
-	if user.Session.Pool != nil {
-		user.Session.Pool.Close()
-		user.Session.Pool = nil
-	}
+	user.Session.CloneConnection = nil
+	user.Session.Pool = nil
 }
 
 // destroySession destroys a DatabaseLab session.

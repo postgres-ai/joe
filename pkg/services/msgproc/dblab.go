@@ -70,6 +70,12 @@ const (
 	PasswordMinSymbols = 0
 )
 
+// Database connection configuration options.
+const (
+	maxConnLifetime = 0
+	maxConnIdleTime = 480 * time.Minute
+)
+
 // runSession starts a user session if not exists.
 func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.User, incomingMessage models.IncomingMessage) (err error) {
 	sMsg := models.NewMessage(incomingMessage)
@@ -170,15 +176,24 @@ func (s *ProcessingService) buildDBLabCloneConn(dbParams dblabmodels.Database) m
 }
 
 func initConn(ctx context.Context, dblabClone models.Clone) (*pgxpool.Pool, *pgx.Conn, error) {
-	pool, err := pgxpool.Connect(context.Background(), dblabClone.ConnectionString())
+	connectionConfig, err := pgxpool.ParseConfig(dblabClone.ConnectionString())
 	if err != nil {
-		log.Err("DB connection:", err)
+		log.Err("Failed to parse connection config:", err)
+		return nil, nil, err
+	}
+
+	connectionConfig.MaxConnLifetime = maxConnLifetime
+	connectionConfig.MaxConnIdleTime = maxConnIdleTime
+
+	pool, err := pgxpool.ConnectConfig(context.Background(), connectionConfig)
+	if err != nil {
+		log.Err("Failed to init connection:", err)
 		return nil, nil, err
 	}
 
 	connection, err := pool.Acquire(ctx)
 	if err != nil {
-		log.Err("DB pool:", err)
+		log.Err("Failed to acquire user connection:", err)
 		return nil, nil, err
 	}
 

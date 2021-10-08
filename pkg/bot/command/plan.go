@@ -27,7 +27,7 @@ const MsgPlanOptionReq = "Use `plan` to see the query's plan without execution, 
 type PlanCmd struct {
 	command   *platform.Command
 	message   *models.Message
-	db        *pgx.Conn
+	userConn  *pgx.Conn
 	messenger connection.Messenger
 }
 
@@ -36,7 +36,7 @@ func NewPlan(cmd *platform.Command, msg *models.Message, db *pgx.Conn, messenger
 	return &PlanCmd{
 		command:   cmd,
 		message:   msg,
-		db:        db,
+		userConn:  db,
 		messenger: messengerSvc,
 	}
 }
@@ -59,7 +59,7 @@ func (cmd PlanCmd) Execute(ctx context.Context) error {
 // explainWithoutExecution runs explain without execution.
 func (cmd *PlanCmd) explainWithoutExecution(ctx context.Context) (string, error) {
 	// Explain request and show.
-	explainResult, err := querier.DBQueryWithResponse(ctx, cmd.db, queryExplain+cmd.command.Query)
+	explainResult, err := querier.DBQueryWithResponse(ctx, cmd.userConn, queryExplain+cmd.command.Query)
 	if err != nil {
 		return "", err
 	}
@@ -72,7 +72,7 @@ func (cmd *PlanCmd) explainWithoutExecution(ctx context.Context) (string, error)
 	includeHypoPG := false
 	explainPlanTitle := ""
 
-	if hypoIndexes, err := listHypoIndexes(ctx, cmd.db); err == nil && len(hypoIndexes) > 0 {
+	if hypoIndexes, err := listHypoIndexes(ctx, cmd.userConn); err == nil && len(hypoIndexes) > 0 {
 		if isHypoIndexInvolved(explainResult, hypoIndexes) {
 			explainPlanTitle = " (HypoPG involved :ghost:)"
 			includeHypoPG = true
@@ -132,7 +132,7 @@ func (cmd *PlanCmd) explainWithoutExecution(ctx context.Context) (string, error)
 }
 
 func (cmd *PlanCmd) runQueryWithoutHypo(ctx context.Context) (string, error) {
-	tx, err := cmd.db.Begin(ctx)
+	tx, err := cmd.userConn.Begin(ctx)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to start a transaction")
 	}

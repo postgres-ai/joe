@@ -7,6 +7,7 @@ package webui
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/pkg/errors"
 
@@ -66,7 +67,7 @@ func (m Messenger) UpdateStatus(message *models.Message, status models.MessageSt
 
 // Fail finishes the communication and marks message as failed.
 func (m Messenger) Fail(message *models.Message, text string) error {
-	errText := fmt.Sprintf("ERROR: %s", text)
+	errText := fmt.Sprintf("ERROR: %s", strings.TrimPrefix(text, "ERROR: "))
 
 	if message.IsPublished() {
 		message.AppendText(errText)

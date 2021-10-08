@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/pkg/errors"
 
@@ -34,6 +35,7 @@ type ExecCmd struct {
 	command   *platform.Command
 	message   *models.Message
 	pool      *pgxpool.Pool
+	userConn  *pgx.Conn
 	messenger connection.Messenger
 	dblab     *dblabapi.Client
 	clone     *dblabmodels.Clone
@@ -46,6 +48,7 @@ func NewExec(command *platform.Command, msg *models.Message, session usermanager
 		command:   command,
 		message:   msg,
 		pool:      session.Pool,
+		userConn:  session.CloneConnection,
 		clone:     session.Clone,
 		messenger: messengerSvc,
 		dblab:     dblab,
@@ -58,13 +61,13 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 		return errors.New(msgExecOptionReq)
 	}
 
-	conn, pid, err := getConn(ctx, cmd.pool)
+	serviceConn, pid, err := getConn(ctx, cmd.pool)
 	if err != nil {
 		log.Err("failed to get connection: ", err)
 		return err
 	}
 
-	defer conn.Release()
+	defer serviceConn.Release()
 
 	est, err := cmd.dblab.Estimate(ctx, cmd.clone.ID, strconv.Itoa(pid))
 	if err != nil {
@@ -76,14 +79,14 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 
 	start := time.Now()
 
-	if _, err := conn.Exec(ctx, cmd.command.Query); err != nil {
+	if _, err := cmd.userConn.Exec(ctx, cmd.command.Query); err != nil {
 		log.Err("Failed to exec command: ", err)
 		return err
 	}
 
 	totalTime := util.DurationToString(time.Since(start))
 
-	if err := conn.Conn().Close(ctx); err != nil {
+	if err := serviceConn.Conn().Close(ctx); err != nil {
 		log.Err("Failed to close connection: ", err)
 		return err
 	}
