@@ -349,7 +349,6 @@ func (a *Assistant) parseEvent(rawEvent []byte) (slackevents.EventsAPIEvent, err
 
 // verifyRequest verifies a request coming from Slack
 func (a *Assistant) verifyRequest(r *http.Request) error {
-	log.Dbg("Headers: ", r.Header)
 	secretsVerifier, err := slack.NewSecretsVerifier(r.Header, a.credentialsCfg.SigningSecret)
 	if err != nil {
 		return errors.Wrap(err, "failed to init the secrets verifier")
@@ -359,8 +358,6 @@ func (a *Assistant) verifyRequest(r *http.Request) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to read the request body")
 	}
-
-	log.Dbg("Body: ", body)
 
 	// Set a body with the same data we read.
 	r.Body = ioutil.NopCloser(bytes.NewBuffer(body))
