@@ -28,7 +28,7 @@ const (
 func LoadExplainConfig() (pgexplain.ExplainConfig, error) {
 	var explainConfig pgexplain.ExplainConfig
 
-	if err := readConfig(&explainConfig, path.Join("configs", explainPath, explainFilename)); err != nil {
+	if err := readConfig(&explainConfig, path.Join(explainPath, explainFilename)); err != nil {
 		return explainConfig, err
 	}
 
