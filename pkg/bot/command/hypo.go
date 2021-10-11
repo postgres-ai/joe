@@ -107,7 +107,7 @@ func (h *HypoCmd) parseQuery() (string, string) {
 }
 
 func (h *HypoCmd) initExtension(ctx context.Context) error {
-	res := h.pool.QueryRow(ctx, "select exists(select 1 from pg_extension where extname='hypopg')")
+	res := h.pool.QueryRow(ctx, "select exists(select from pg_extension where extname = 'hypopg')")
 
 	var exists bool
 
