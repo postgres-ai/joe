@@ -152,7 +152,7 @@ func (m *Messenger) UpdateStatus(message *models.Message, status models.MessageS
 func (m *Messenger) Fail(message *models.Message, text string) error {
 	var err error
 
-	errText := fmt.Sprintf("ERROR: %s", text)
+	errText := fmt.Sprintf("ERROR: %s", strings.TrimPrefix(text, "ERROR: "))
 
 	if message.IsPublished() {
 		message.AppendText(errText)

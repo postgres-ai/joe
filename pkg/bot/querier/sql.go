@@ -11,7 +11,6 @@ import (
 
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgtype/pgxtype"
-	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/olekukonko/tablewriter"
 	"github.com/pkg/errors"
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/log"
@@ -26,7 +25,7 @@ const (
 )
 
 // DBQuery runs query and returns table results.
-func DBQuery(ctx context.Context, db *pgxpool.Pool, query string, args ...interface{}) ([][]string, error) {
+func DBQuery(ctx context.Context, db pgxtype.Querier, query string, args ...interface{}) ([][]string, error) {
 	return runTableQuery(ctx, db, query, args...)
 }
 
