@@ -35,7 +35,13 @@ func ResetSession(ctx context.Context, cmd *platform.Command, msg *models.Messag
 		return err
 	}
 
-	allIdleConnections := session.CloneConnection.AcquireAllIdle(ctx)
+	if session.CloneConnection != nil {
+		if err := session.CloneConnection.Close(ctx); err != nil {
+			log.Err("Failed to close user connection:", err)
+		}
+	}
+
+	allIdleConnections := session.Pool.AcquireAllIdle(ctx)
 	for _, idleConnection := range allIdleConnections {
 		if err := idleConnection.Conn().Close(ctx); err != nil {
 			log.Err("Failed to close idle connection: ", err)
@@ -55,7 +61,7 @@ func ResetSession(ctx context.Context, cmd *platform.Command, msg *models.Messag
 		DSADiff:    "-",
 	}
 
-	if err := fwData.EnrichForewordInfo(ctx, session.CloneConnection); err != nil {
+	if err := fwData.EnrichForewordInfo(ctx, session.Pool); err != nil {
 		return err
 	}
 

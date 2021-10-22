@@ -26,7 +26,7 @@ const TerminateCaption = "*Terminate response:*\n"
 type TerminateCmd struct {
 	command   *platform.Command
 	message   *models.Message
-	db        *pgxpool.Pool
+	pool      *pgxpool.Pool
 	messenger connection.Messenger
 }
 
@@ -37,7 +37,7 @@ func NewTerminateCmd(cmd *platform.Command, msg *models.Message, db *pgxpool.Poo
 	return &TerminateCmd{
 		command:   cmd,
 		message:   msg,
-		db:        db,
+		pool:      db,
 		messenger: messengerSvc,
 	}
 }
@@ -51,7 +51,7 @@ func (c *TerminateCmd) Execute() error {
 
 	query := "select pg_terminate_backend($1)::text"
 
-	terminate, err := querier.DBQuery(context.TODO(), c.db, query, pid)
+	terminate, err := querier.DBQuery(context.TODO(), c.pool, query, pid)
 	if err != nil {
 		return errors.Wrap(err, "failed to make query")
 	}

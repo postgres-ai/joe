@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/pkg/errors"
 	"github.com/rs/xid"
@@ -69,6 +70,12 @@ const (
 	PasswordMinSymbols = 0
 )
 
+// Database connection configuration options.
+const (
+	maxConnLifetime = 0
+	maxConnIdleTime = 480 * time.Minute
+)
+
 // runSession starts a user session if not exists.
 func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.User, incomingMessage models.IncomingMessage) (err error) {
 	sMsg := models.NewMessage(incomingMessage)
@@ -78,7 +85,7 @@ func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.Us
 	}
 
 	// Stop clone session if not active.
-	s.stopSession(user)
+	s.stopSession(ctx, user)
 
 	messageText := strings.Builder{}
 
@@ -122,7 +129,7 @@ func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.Us
 
 	dblabClone := s.buildDBLabCloneConn(clone.DB)
 
-	db, err := initConn(dblabClone)
+	db, userConn, err := initConn(ctx, dblabClone)
 	if err != nil {
 		return errors.Wrap(err, "failed to init database connection")
 	}
@@ -133,7 +140,8 @@ func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.Us
 
 	user.Session.ConnParams = dblabClone
 	user.Session.Clone = clone
-	user.Session.CloneConnection = db
+	user.Session.Pool = db
+	user.Session.CloneConnection = userConn
 	user.Session.LastActionTs = time.Now()
 	user.Session.ChannelID = incomingMessage.ChannelID
 
@@ -167,14 +175,29 @@ func (s *ProcessingService) buildDBLabCloneConn(dbParams dblabmodels.Database) m
 	}
 }
 
-func initConn(dblabClone models.Clone) (*pgxpool.Pool, error) {
-	conn, err := pgxpool.Connect(context.Background(), dblabClone.ConnectionString())
+func initConn(ctx context.Context, dblabClone models.Clone) (*pgxpool.Pool, *pgx.Conn, error) {
+	connectionConfig, err := pgxpool.ParseConfig(dblabClone.ConnectionString())
 	if err != nil {
-		log.Err("DB connection:", err)
-		return nil, err
+		log.Err("Failed to parse connection config:", err)
+		return nil, nil, err
 	}
 
-	return conn, nil
+	connectionConfig.MaxConnLifetime = maxConnLifetime
+	connectionConfig.MaxConnIdleTime = maxConnIdleTime
+
+	pool, err := pgxpool.ConnectConfig(context.Background(), connectionConfig)
+	if err != nil {
+		log.Err("Failed to init connection:", err)
+		return nil, nil, err
+	}
+
+	connection, err := pool.Acquire(ctx)
+	if err != nil {
+		log.Err("Failed to acquire user connection:", err)
+		return nil, nil, err
+	}
+
+	return pool, connection.Conn(), nil
 }
 
 // createDBLabClone creates a new clone.
@@ -227,7 +250,7 @@ func (s *ProcessingService) createPlatformSession(ctx context.Context, user *use
 	if err != nil {
 		log.Err("API: Create platform session:", err)
 
-		if err := s.destroySession(user); err != nil {
+		if err := s.destroySession(ctx, user); err != nil {
 			return errors.Wrap(err, "failed to stop a user session")
 		}
 

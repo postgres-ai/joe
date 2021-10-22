@@ -41,7 +41,7 @@ var errHypoPGNotInstalled = errors.New("the HypoPG extension is not installed")
 type HypoCmd struct {
 	command   *platform.Command
 	message   *models.Message
-	db        *pgxpool.Pool
+	pool      *pgxpool.Pool
 	messenger connection.Messenger
 }
 
@@ -50,7 +50,7 @@ func NewHypo(cmd *platform.Command, msg *models.Message, db *pgxpool.Pool, msgSv
 	return &HypoCmd{
 		command:   cmd,
 		message:   msg,
-		db:        db,
+		pool:      db,
 		messenger: msgSvc,
 	}
 }
@@ -107,7 +107,7 @@ func (h *HypoCmd) parseQuery() (string, string) {
 }
 
 func (h *HypoCmd) initExtension(ctx context.Context) error {
-	res := h.db.QueryRow(ctx, "select exists(select 1 from pg_extension where extname='hypopg')")
+	res := h.pool.QueryRow(ctx, "select exists(select from pg_extension where extname = 'hypopg')")
 
 	var exists bool
 
@@ -123,7 +123,7 @@ func (h *HypoCmd) initExtension(ctx context.Context) error {
 }
 
 func (h *HypoCmd) create(ctx context.Context) error {
-	res, err := querier.DBQuery(ctx, h.db, "select indexrelid::text, indexname from hypopg_create_index($1)", h.command.Query)
+	res, err := querier.DBQuery(ctx, h.pool, "select indexrelid::text, indexname from hypopg_create_index($1)", h.command.Query)
 	if err != nil {
 		return errors.Wrap(err, "failed to run creation query")
 	}
@@ -151,7 +151,7 @@ func (h *HypoCmd) describe(ctx context.Context, indexID string) error {
 		queryArgs = append(queryArgs, indexID)
 	}
 
-	res, err := querier.DBQuery(ctx, h.db, query, queryArgs...)
+	res, err := querier.DBQuery(ctx, h.pool, query, queryArgs...)
 	if err != nil {
 		return errors.Wrap(err, "failed to run description query")
 	}
@@ -173,7 +173,7 @@ func (h *HypoCmd) drop(ctx context.Context, indexID string) error {
 		return errors.Errorf("failed to drop a hypothetical index: indexrelid required")
 	}
 
-	_, err := querier.DBQuery(ctx, h.db, "select * from hypopg_drop_index($1)", indexID)
+	_, err := querier.DBQuery(ctx, h.pool, "select * from hypopg_drop_index($1)", indexID)
 	if err != nil {
 		return errors.Wrap(err, "failed to drop index")
 	}
@@ -182,7 +182,7 @@ func (h *HypoCmd) drop(ctx context.Context, indexID string) error {
 }
 
 func (h *HypoCmd) reset(ctx context.Context) error {
-	if _, err := h.db.Exec(ctx, "select * from hypopg_reset()"); err != nil {
+	if _, err := h.pool.Exec(ctx, "select * from hypopg_reset()"); err != nil {
 		return errors.Wrap(err, "failed to reset indexes")
 	}
 

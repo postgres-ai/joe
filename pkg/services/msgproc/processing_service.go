@@ -158,7 +158,7 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 		return
 	}
 
-	if err := s.prepareUserSession(user, incomingMessage); err != nil {
+	if err := s.prepareUserSession(ctx, user, incomingMessage); err != nil {
 		log.Err(err)
 		return
 	}
@@ -311,7 +311,7 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 			log.Err(fmt.Sprintf("Failed to reset session: %v. Trying to reboot session.", err))
 
 			// Try to reboot the session.
-			if err := s.rebootSession(msg, user); err != nil {
+			if err := s.rebootSession(ctx, msg, user); err != nil {
 				log.Err(err)
 			}
 
@@ -319,15 +319,15 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 		}
 
 	case receivedCommand == CommandHypo:
-		hypoCmd := command.NewHypo(platformCmd, msg, user.Session.CloneConnection, s.messenger)
+		hypoCmd := command.NewHypo(platformCmd, msg, user.Session.Pool, s.messenger)
 		err = hypoCmd.Execute()
 
 	case receivedCommand == CommandActivity:
-		activityCmd := command.NewActivityCmd(platformCmd, msg, user.Session.CloneConnection, s.messenger)
+		activityCmd := command.NewActivityCmd(platformCmd, msg, user.Session.Pool, s.messenger)
 		err = activityCmd.Execute()
 
 	case receivedCommand == CommandTerminate:
-		terminateCmd := command.NewTerminateCmd(platformCmd, msg, user.Session.CloneConnection, s.messenger)
+		terminateCmd := command.NewTerminateCmd(platformCmd, msg, user.Session.Pool, s.messenger)
 		err = terminateCmd.Execute()
 
 	case util.Contains(allowedPsqlCommands, receivedCommand):
@@ -349,7 +349,8 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 			if err := s.messenger.UpdateText(msg); err != nil {
 				log.Err(fmt.Sprintf("failed to append message on session close: %+v", err))
 			}
-			s.stopSession(user)
+
+			s.stopSession(ctx, user)
 
 			im := models.IncomingMessage{
 				ChannelID: msg.ChannelID,
@@ -404,9 +405,9 @@ func (s *ProcessingService) saveHistory(ctx context.Context, msg *models.Message
 }
 
 // prepareUserSession sets base properties for the user session according to the incoming message.
-func (s *ProcessingService) prepareUserSession(user *usermanager.User, incomingMessage models.IncomingMessage) error {
+func (s *ProcessingService) prepareUserSession(ctx context.Context, user *usermanager.User, incomingMessage models.IncomingMessage) error {
 	if user.Session.ChannelID != "" && user.Session.ChannelID != incomingMessage.ChannelID {
-		if err := s.destroySession(user); err != nil {
+		if err := s.destroySession(ctx, user); err != nil {
 			return errors.Wrap(err, "failed to destroy old user session")
 		}
 	}
@@ -423,16 +424,16 @@ func (s *ProcessingService) prepareUserSession(user *usermanager.User, incomingM
 }
 
 // rebootSession stops a Joe session and creates a new one.
-func (s *ProcessingService) rebootSession(msg *models.Message, user *usermanager.User) error {
+func (s *ProcessingService) rebootSession(ctx context.Context, msg *models.Message, user *usermanager.User) error {
 	msg.AppendText("Session was closed by Database Lab.\n")
 
 	if err := s.messenger.UpdateText(msg); err != nil {
 		return errors.Wrapf(err, "failed to append message on session close: %+v", err)
 	}
 
-	s.stopSession(user)
+	s.stopSession(ctx, user)
 
-	if err := s.runSession(context.TODO(), user, models.IncomingMessage{ChannelID: msg.ChannelID}); err != nil {
+	if err := s.runSession(ctx, user, models.IncomingMessage{ChannelID: msg.ChannelID}); err != nil {
 		return errors.Wrap(err, "failed to run session")
 	}
 
