@@ -109,7 +109,7 @@ channelMapping:
         channels:
           # Slack channel ID. In Slack app, right-click on the channel name,
           # and choose "Additional options > Copy link". From that link, we
-          # need the last part consisting of 9 letters starting with "C".
+          # need the last part starting with "C" (e.g., "C01234ABCDE").
           - channelID: CXXXXXXXX
 
             # Postgres.ai Platform project to which user sessions are to be assigned.
@@ -142,7 +142,7 @@ channelMapping:
         channels:
           # Slack channel ID. In Slack app, right-click on the channel name,
           # and choose "Additional options > Copy link". From that link, we
-          # need the last part consisting of 9 letters starting with "C".
+          # need the last part starting with "C" (e.g., "C01234ABCDE").
           - channelID: CXXXXXXXX
 
             # Postgres.ai Platform project to which user sessions are to be assigned.
