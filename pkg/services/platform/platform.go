@@ -26,11 +26,21 @@ import (
 
 const (
 	accessToken = "Access-Token"
+
+	// StatusInProgress defines the status of the Platform command when it starts.
+	StatusInProgress = "in_progress"
+
+	// StatusFailed defines the status of the Platform command when it fails.
+	StatusFailed = "failed"
+
+	// StatusSuccess defines the status of the Platform command when it succeeds.
+	StatusSuccess = "success"
 )
 
 // Command represents an incoming command and its results.
 type Command struct {
 	SessionID string `json:"session_id"`
+	Status    string `json:"status"`
 
 	Command  string `json:"command"`
 	Query    string `json:"query"`
@@ -47,6 +57,17 @@ type Command struct {
 	Error string `json:"error"`
 
 	Timestamp string `json:"timestamp"`
+}
+
+// NewCommand create a new Platform command.
+func NewCommand(sessionID string, command string, query string, timestamp string) *Command {
+	return &Command{
+		SessionID: sessionID,
+		Status:    StatusInProgress,
+		Command:   command,
+		Query:     query,
+		Timestamp: timestamp,
+	}
 }
 
 // Client provides a Platform API client.
@@ -141,6 +162,27 @@ func (p *Client) PostCommand(ctx context.Context, command *Command) (PostCommand
 	log.Dbg("API: Post command success", commandResp.CommandID)
 
 	return commandResp, nil
+}
+
+// UpdateCommand makes an HTTP request to update the command state on the Platform.
+func (p *Client) UpdateCommand(ctx context.Context, command *Command) error {
+	log.Dbg("Platform API: update command")
+
+	commandResp := APIResponse{}
+
+	if err := p.doPost(ctx, "/rpc/joe_session_command_update", command, &commandResp); err != nil {
+		return errors.Wrap(err, "failed to do request")
+	}
+
+	if commandResp.Code != "" || commandResp.Message != "" {
+		log.Dbg(fmt.Sprintf("Unsuccessful response given. Request: %v", command))
+
+		return errors.Errorf("error: %v", commandResp)
+	}
+
+	log.Dbg("API: Update command success")
+
+	return nil
 }
 
 // CreatePlatformSession makes an HTTP request to create a new Platform session.

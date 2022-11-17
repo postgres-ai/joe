@@ -282,11 +282,16 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 		log.Err(err)
 	}
 
-	platformCmd := &platform.Command{
-		SessionID: user.Session.PlatformSessionID,
-		Command:   receivedCommand,
-		Query:     query,
-		Timestamp: incomingMessage.Timestamp,
+	platformCmd := platform.NewCommand(user.Session.PlatformSessionID, receivedCommand, query, incomingMessage.Timestamp)
+
+	if err := s.saveHistory(ctx, msg, platformCmd); err != nil {
+		log.Err(err)
+
+		if err := s.messenger.Fail(msg, err.Error()); err != nil {
+			log.Err(err)
+		}
+
+		return
 	}
 
 	switch {
@@ -336,6 +341,14 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 	}
 
 	if err != nil {
+		platformCmd.Status = platform.StatusFailed
+
+		if err := s.updateHistory(ctx, platformCmd); err != nil {
+			log.Err(err)
+
+			return
+		}
+
 		if _, ok := err.(*net.OpError); !ok && !errors.As(err, &runners.RunnerError{}) {
 			if err := s.messenger.Fail(msg, err.Error()); err != nil {
 				log.Err(err)
@@ -364,12 +377,10 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 		}
 	}
 
-	if err := s.saveHistory(ctx, msg, platformCmd); err != nil {
-		log.Err(err)
+	platformCmd.Status = platform.StatusSuccess
 
-		if err := s.messenger.Fail(msg, err.Error()); err != nil {
-			log.Err(err)
-		}
+	if err := s.updateHistory(ctx, platformCmd); err != nil {
+		log.Err(err)
 
 		return
 	}
@@ -402,6 +413,15 @@ func (s *ProcessingService) saveHistory(ctx context.Context, msg *models.Message
 	}
 
 	return nil
+}
+
+// saveHistory updates the state of the existing command on the Platform.
+func (s *ProcessingService) updateHistory(ctx context.Context, platformCmd *platform.Command) error {
+	if !s.config.Platform.HistoryEnabled {
+		return nil
+	}
+
+	return s.platformManager.UpdateCommand(ctx, platformCmd)
 }
 
 // prepareUserSession sets base properties for the user session according to the incoming message.
