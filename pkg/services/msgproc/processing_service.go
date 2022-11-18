@@ -403,6 +403,8 @@ func (s *ProcessingService) saveHistory(ctx context.Context, msg *models.Message
 		return errors.Wrap(err, "failed to post a command")
 	}
 
+	platformCmd.ID = commandResponse.CommandID
+
 	if commandResponse.CommandLink != "" && platformCmd.Command == CommandExplain {
 		msg.AppendText(fmt.Sprintf("Details and visualization: %s.", commandResponse.CommandLink))
 

@@ -39,6 +39,7 @@ const (
 
 // Command represents an incoming command and its results.
 type Command struct {
+	ID        uint   `json:"id"`
 	SessionID string `json:"session_id"`
 	Status    string `json:"status"`
 
