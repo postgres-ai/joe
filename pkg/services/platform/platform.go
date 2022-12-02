@@ -144,13 +144,29 @@ func (p *Client) doPost(ctx context.Context, path string, data interface{}, resp
 	return nil
 }
 
+// CreateCommandRequest defines request to create a new session command.
+type CreateCommandRequest struct {
+	SessionID string `json:"session_id"`
+	Status    string `json:"status"`
+	Command   string `json:"command"`
+	Query     string `json:"query"`
+	Timestamp string `json:"timestamp"`
+}
+
 // PostCommand makes an HTTP request to post a command to Platform.
 func (p *Client) PostCommand(ctx context.Context, command *Command) (PostCommandResponse, error) {
 	log.Dbg("Platform API: post command")
 
+	request := &CreateCommandRequest{
+		SessionID: command.SessionID,
+		Status:    command.Status,
+		Command:   command.Command,
+		Query:     command.Query,
+		Timestamp: command.Timestamp,
+	}
 	commandResp := PostCommandResponse{}
 
-	if err := p.doPost(ctx, "/rpc/joe_session_command_post", command, &commandResp); err != nil {
+	if err := p.doPost(ctx, "/rpc/joe_session_command_create", request, &commandResp); err != nil {
 		return commandResp, errors.Wrap(err, "failed to do request")
 	}
 
@@ -165,13 +181,39 @@ func (p *Client) PostCommand(ctx context.Context, command *Command) (PostCommand
 	return commandResp, nil
 }
 
+// UpdateCommandRequest defines request to update session command.
+type UpdateCommandRequest struct {
+	ID              uint   `json:"id"`
+	Status          string `json:"status"`
+	Response        string `json:"response"`
+	PlanText        string `json:"plan_text"`
+	PlanJSON        string `json:"plan_json"`
+	PlanExecText    string `json:"plan_execution_text"`
+	PlanExecJSON    string `json:"plan_execution_json"`
+	Recommendations string `json:"recommendations"`
+	Stats           string `json:"stats"`
+	Error           string `json:"error"`
+}
+
 // UpdateCommand makes an HTTP request to update the command state on the Platform.
 func (p *Client) UpdateCommand(ctx context.Context, command *Command) error {
 	log.Dbg("Platform API: update command")
 
 	commandResp := APIResponse{}
+	updateRequest := &UpdateCommandRequest{
+		ID:              command.ID,
+		Status:          command.Status,
+		Response:        command.Response,
+		PlanText:        command.PlanText,
+		PlanJSON:        command.PlanJSON,
+		PlanExecText:    command.PlanExecText,
+		PlanExecJSON:    command.PlanExecJSON,
+		Recommendations: command.Recommendations,
+		Stats:           command.Stats,
+		Error:           command.Error,
+	}
 
-	if err := p.doPost(ctx, "/rpc/joe_session_command_update", command, &commandResp); err != nil {
+	if err := p.doPost(ctx, "/rpc/joe_session_command_update", updateRequest, &commandResp); err != nil {
 		return errors.Wrap(err, "failed to do request")
 	}
 

@@ -417,7 +417,7 @@ func (s *ProcessingService) saveHistory(ctx context.Context, msg *models.Message
 	return nil
 }
 
-// saveHistory updates the state of the existing command on the Platform.
+// updateHistory updates the state of the existing command on the Platform.
 func (s *ProcessingService) updateHistory(ctx context.Context, platformCmd *platform.Command) error {
 	if !s.config.Platform.HistoryEnabled {
 		return nil
