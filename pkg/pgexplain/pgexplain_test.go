@@ -8,10 +8,9 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/AlekSi/pointer"
-
 	"gitlab.com/postgres-ai/joe/pkg/util"
 
+	"github.com/AlekSi/pointer"
 	"github.com/sergi/go-diff/diffmatchpatch"
 	"github.com/stretchr/testify/assert"
 )
@@ -1856,15 +1855,14 @@ func TestStatsText(t *testing.T) {
 	}{
 		{
 			explain: Explain{
-				TotalTime:      25,
-				PlanningTime:   3,
-				ExecutionTime:  22,
-				EstimationTime: " (estimated* for prod: 0.0018...0.0021 s)",
+				TotalTime:     25,
+				PlanningTime:  3,
+				ExecutionTime: 22,
 			},
 			expectedResult: `
 Time: 25.000 ms
   - planning: 3.000 ms
-  - execution: 22.000 ms (estimated* for prod: 0.0018...0.0021 s)
+  - execution: 22.000 ms
     - I/O read: N/A
     - I/O write: N/A
 

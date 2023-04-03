@@ -7,14 +7,12 @@ package command
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/pkg/errors"
 
-	"gitlab.com/postgres-ai/database-lab/v2/pkg/client/dblabapi"
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/log"
 	dblabmodels "gitlab.com/postgres-ai/database-lab/v2/pkg/models"
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/util"
@@ -37,13 +35,12 @@ type ExecCmd struct {
 	pool      *pgxpool.Pool
 	userConn  *pgx.Conn
 	messenger connection.Messenger
-	dblab     *dblabapi.Client
 	clone     *dblabmodels.Clone
 }
 
 // NewExec return a new exec command.
 func NewExec(command *platform.Command, msg *models.Message, session usermanager.UserSession,
-	messengerSvc connection.Messenger, dblab *dblabapi.Client) *ExecCmd {
+	messengerSvc connection.Messenger) *ExecCmd {
 	return &ExecCmd{
 		command:   command,
 		message:   msg,
@@ -51,7 +48,6 @@ func NewExec(command *platform.Command, msg *models.Message, session usermanager
 		userConn:  session.CloneConnection,
 		clone:     session.Clone,
 		messenger: messengerSvc,
-		dblab:     dblab,
 	}
 }
 
@@ -61,21 +57,13 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 		return errors.New(msgExecOptionReq)
 	}
 
-	serviceConn, pid, err := getConn(ctx, cmd.pool)
+	serviceConn, err := getConn(ctx, cmd.pool)
 	if err != nil {
 		log.Err("failed to get connection: ", err)
 		return err
 	}
 
 	defer serviceConn.Release()
-
-	est, err := cmd.dblab.Estimate(ctx, cmd.clone.ID, strconv.Itoa(pid))
-	if err != nil {
-		return err
-	}
-
-	// Start profiling.
-	<-est.Wait()
 
 	start := time.Now()
 
@@ -91,23 +79,10 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 		return err
 	}
 
-	// Wait for profiling results.
-	profResult := est.ReadResult()
-
-	estimationTime, description := "", ""
-
-	// Show stats if the total number of samples more than the default threshold.
-	if profResult.IsEnoughStat {
-		cmd.message.AppendText(fmt.Sprintf("```%s```", profResult.RenderedStat))
-		estimationTime = profResult.EstTime
-		totalTime = fmt.Sprintf("%.3f s", profResult.TotalTime)
-		description = fmt.Sprintf("\n⠀* Estimated timing for production (experimental). <%s|How it works>", timingEstimatorDocLink)
-	}
-
-	result := fmt.Sprintf("The query has been executed. Duration: %s%s", totalTime, estimationTime)
+	result := fmt.Sprintf("The query has been executed. Duration: %s", totalTime)
 
 	cmd.command.Response = result
-	cmd.message.AppendText(result + description)
+	cmd.message.AppendText(result)
 
 	if err = cmd.messenger.UpdateText(cmd.message); err != nil {
 		log.Err("failed to update text while running the exec command:", err)
@@ -118,28 +93,12 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 }
 
 // getConn returns an acquired connection and Postgres backend PID.
-func getConn(ctx context.Context, db *pgxpool.Pool) (*pgxpool.Conn, int, error) {
-	var (
-		pid int
-		err error
-	)
-
+func getConn(ctx context.Context, db *pgxpool.Pool) (*pgxpool.Conn, error) {
 	conn, err := db.Acquire(ctx)
 	if err != nil {
 		log.Err("failed to acquire connection: ", err)
-		return nil, 0, err
+		return nil, err
 	}
 
-	defer func() {
-		if err != nil && conn != nil {
-			conn.Release()
-		}
-	}()
-
-	if err = db.QueryRow(ctx, `select pg_backend_pid()`).Scan(&pid); err != nil {
-		log.Err("failed to get backend PID: ", err)
-		return nil, 0, err
-	}
-
-	return conn, pid, nil
+	return conn, nil
 }
