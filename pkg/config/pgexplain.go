@@ -5,7 +5,6 @@
 package config
 
 import (
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -41,7 +40,7 @@ func readConfig(config interface{}, name string) error {
 		return errors.Wrap(err, "failed to build config path")
 	}
 
-	b, err := ioutil.ReadFile(cfgPath)
+	b, err := os.ReadFile(cfgPath)
 	if err != nil {
 		return errors.Errorf("Error loading %s config file: %v", name, err)
 	}

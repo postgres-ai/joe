@@ -1,7 +1,7 @@
 package storage
 
 import (
-	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -67,7 +67,7 @@ func prepareSessionJSON() (string, error) {
   "webui-ProductionDB": {
   }
 }`
-	f, err := ioutil.TempFile("", "joe-json-test")
+	f, err := os.CreateTemp("", "joe-json-test")
 	if err != nil {
 		return "", err
 	}
