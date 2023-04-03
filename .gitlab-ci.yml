@@ -1,4 +1,4 @@
-image: golang:1.15
+image: golang:1.19
 
 include:
   - template: Security/SAST.gitlab-ci.yml

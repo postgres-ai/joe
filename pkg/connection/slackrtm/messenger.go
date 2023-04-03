@@ -6,7 +6,7 @@ package slackrtm
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -250,7 +250,7 @@ func (m *Messenger) DownloadArtifact(privateURL string) ([]byte, error) {
 
 	defer func() { _ = resp.Body.Close() }()
 
-	snippet, err := ioutil.ReadAll(resp.Body)
+	snippet, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot read the snippet content")
 	}

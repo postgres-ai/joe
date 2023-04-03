@@ -2,7 +2,6 @@ package storage
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"os"
 
 	"github.com/pkg/errors"
@@ -31,7 +30,7 @@ func NewJSONSessionData(filePath string) *JSONSessionStorage {
 func (ss *JSONSessionStorage) Load() error {
 	ss.usersByChannel = make(map[string]usermanager.UserList)
 
-	data, err := ioutil.ReadFile(ss.filePath)
+	data, err := os.ReadFile(ss.filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// no sessions data, ignore
@@ -51,7 +50,7 @@ func (ss *JSONSessionStorage) Save() error {
 		return errors.Wrap(err, "failed to encode session data")
 	}
 
-	return ioutil.WriteFile(ss.filePath, data, 0600)
+	return os.WriteFile(ss.filePath, data, 0600)
 }
 
 // GetUsers returns UserList for given message processor.
