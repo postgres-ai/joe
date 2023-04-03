@@ -10,7 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -91,7 +91,7 @@ func (p *Client) doRequest(ctx context.Context, request *http.Request, parser re
 	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
-		body, _ := ioutil.ReadAll(response.Body)
+		body, _ := io.ReadAll(response.Body)
 		log.Dbg(fmt.Sprintf("Response: %v", string(body)))
 
 		return errors.Errorf("unsuccessful status given: %d", response.StatusCode)

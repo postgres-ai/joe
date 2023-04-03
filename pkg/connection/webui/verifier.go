@@ -10,7 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"html"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 
@@ -67,13 +67,13 @@ func (a *Verifier) verifyRequest(r *http.Request) error {
 		return errors.Wrap(err, "failed to decode a request signature")
 	}
 
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		return errors.Wrap(err, "failed to read the request body")
 	}
 
 	// Set a body with the same data we read.
-	r.Body = ioutil.NopCloser(bytes.NewBuffer(body))
+	r.Body = io.NopCloser(bytes.NewBuffer(body))
 
 	if !a.validMAC(body, signature) {
 		return errors.Errorf("invalid %q given", VerificationSignatureKey)

@@ -7,13 +7,11 @@ package command
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/jackc/pgtype/pgxtype"
 	"github.com/pkg/errors"
 
-	"gitlab.com/postgres-ai/database-lab/v2/pkg/client/dblabapi"
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/log"
 
 	"gitlab.com/postgres-ai/joe/pkg/bot/querier"
@@ -32,19 +30,16 @@ const (
 	// Query Explain prefixes.
 	queryExplain        = "EXPLAIN (FORMAT TEXT) "
 	queryExplainAnalyze = "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) "
-
-	// timingEstimatorDocLink defines the link with estimator description.
-	timingEstimatorDocLink = "https://postgres.ai/docs/database-lab/timing-estimator"
 )
 
 // Explain runs an explain query.
 func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform.Command, msg *models.Message,
-	explainConfig pgexplain.ExplainConfig, dblab *dblabapi.Client, session usermanager.UserSession) error {
+	explainConfig pgexplain.ExplainConfig, session usermanager.UserSession) error {
 	if command.Query == "" {
 		return errors.New(MsgExplainOptionReq)
 	}
 
-	serviceConn, pid, err := getConn(ctx, session.Pool)
+	serviceConn, err := getConn(ctx, session.Pool)
 	if err != nil {
 		log.Err("failed to get connection: ", err)
 		return err
@@ -59,14 +54,6 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 	if err != nil {
 		return errors.Wrap(err, "failed to run explain without execution")
 	}
-
-	est, err := dblab.Estimate(ctx, session.Clone.ID, strconv.Itoa(pid))
-	if err != nil {
-		return err
-	}
-
-	// Start profiling.
-	<-est.Wait()
 
 	// Explain analyze request and processing.
 	explainAnalyze, err := querier.DBQueryWithResponse(ctx, session.CloneConnection, queryExplainAnalyze+command.Query)
@@ -153,24 +140,11 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 		return err
 	}
 
-	// Wait for profiling results.
-	estResults := est.ReadResult()
-
-	description := ""
-
-	// Show stats if the total number of samples more than the default threshold.
-	if estResults.IsEnoughStat {
-		msg.AppendText(fmt.Sprintf("*Profiling of wait events:*\n```%s```\n", estResults.RenderedStat))
-
-		explain.EstimationTime = estResults.EstTime
-		description = fmt.Sprintf("\n⠀* Estimated timing for production (experimental). <%s|How it works>", timingEstimatorDocLink)
-	}
-
 	// Summary.
 	stats := explain.RenderStats()
 	command.Stats = stats
 
-	msg.AppendText(fmt.Sprintf("*Summary:*\n```%s```%s", stats, description))
+	msg.AppendText(fmt.Sprintf("*Summary:*\n```%s```", stats))
 	if err = msgSvc.UpdateText(msg); err != nil {
 		log.Err("Show summary: ", err)
 		return err

@@ -8,7 +8,6 @@ package pgtransmission
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"strings"
@@ -59,7 +58,7 @@ func (tr Transmitter) Run(commandParam string) (string, error) {
 }
 
 func (tr Transmitter) runPsql(command string) ([]byte, error) {
-	tempFile, err := ioutil.TempFile("", "psql-query-*")
+	tempFile, err := os.CreateTemp("", "psql-query-*")
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}

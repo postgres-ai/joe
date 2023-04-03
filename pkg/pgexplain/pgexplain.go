@@ -56,8 +56,6 @@ type Explain struct {
 	ExecutionTime float64 `json:"Execution Time"`
 	TotalTime     float64
 
-	EstimationTime string `json:"-"`
-
 	TotalCost float64
 
 	// Buffers.
@@ -446,7 +444,7 @@ func (ex *Explain) writeExplainTextWithoutCosts(writer io.Writer) {
 func (ex *Explain) writeStatsText(writer io.Writer) {
 	fmt.Fprintf(writer, "\nTime: %s\n", util.MillisecondsToString(ex.TotalTime))
 	fmt.Fprintf(writer, "  - planning: %s\n", util.MillisecondsToString(ex.PlanningTime))
-	fmt.Fprintf(writer, "  - execution: %s%s\n", util.MillisecondsToString(ex.ExecutionTime), ex.EstimationTime)
+	fmt.Fprintf(writer, "  - execution: %s\n", util.MillisecondsToString(ex.ExecutionTime))
 
 	ioRead := util.NA
 	if ex.IOReadTime != nil {
