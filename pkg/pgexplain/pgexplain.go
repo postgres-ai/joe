@@ -621,7 +621,7 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 
 	details := formatDetails(plan)
 
-	outputFn("%s%v%s%s%s%s", parallel, nodeType, details, using, on, costsAndTiming)
+	_, _ = outputFn("%s%v%s%s%s%s", parallel, nodeType, details, using, on, costsAndTiming)
 }
 
 func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error), plan *Plan) {
