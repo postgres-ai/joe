@@ -34,6 +34,28 @@ func DBQueryWithResponse(ctx context.Context, db pgxtype.Querier, query string) 
 	return runQuery(ctx, db, query)
 }
 
+const observeQuery = `SELECT l.relation::regclass,
+           c.relkind,
+           l.locktype,
+           l.mode,
+           l.granted,
+           l.fastpath
+    FROM pg_locks l
+    LEFT JOIN pg_class c ON c.oid=l.relation
+    WHERE AND l.pid = $1
+    ORDER BY l.relation ASC;
+
+`
+
+// ObserveLocks selects locks details filtered by pid.
+func ObserveLocks(ctx context.Context, db pgxtype.Querier, pid int) ([][]string, error) {
+	res, err := runTableQuery(ctx, db, observeQuery, pid)
+
+	log.Dbg(res)
+
+	return res, err
+}
+
 func runQuery(ctx context.Context, db pgxtype.Querier, query string) (string, error) {
 	log.Dbg("DB query:", query)
 

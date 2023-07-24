@@ -39,7 +39,7 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 		return errors.New(MsgExplainOptionReq)
 	}
 
-	serviceConn, err := getConn(ctx, session.Pool)
+	serviceConn, pid, err := getConn(ctx, session.Pool)
 	if err != nil {
 		log.Err("failed to get connection: ", err)
 		return err
@@ -49,17 +49,59 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 		serviceConn.Release()
 	}()
 
+	tx, err := serviceConn.Begin(ctx)
+
+	if err != nil {
+		log.Err("failed to get connection: ", err)
+		return err
+	}
+
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil {
+			log.Err("failed to rollback: ", err)
+		}
+	}()
+
 	cmd := NewPlan(command, msg, session.CloneConnection, msgSvc)
 	msgInitText, err := cmd.explainWithoutExecution(ctx)
 	if err != nil {
 		return errors.Wrap(err, "failed to run explain without execution")
 	}
 
-	// Explain analyze request and processing.
-	explainAnalyze, err := querier.DBQueryWithResponse(ctx, session.CloneConnection, queryExplainAnalyze+command.Query)
+	explainAnalyze, err := querier.DBQueryWithResponse(ctx, tx, queryExplainAnalyze+command.Query)
 	if err != nil {
 		return err
 	}
+
+	// Observe locks
+	observeConn, _, err := getConn(ctx, session.Pool)
+	if err != nil {
+		log.Err("failed to get connection: ", err)
+		return err
+	}
+
+	defer func() {
+		observeConn.Release()
+	}()
+
+	result, err := querier.ObserveLocks(ctx, observeConn, pid)
+	if err != nil {
+		log.Err("failed to observe locks: ", err)
+		return err
+	}
+
+	log.Dbg(result)
+
+	if err := observeConn.Conn().Close(ctx); err != nil {
+		log.Err("Failed to close connection: ", err)
+		return err
+	}
+
+	// Explain analyze request and processing.
+	// explainAnalyze, err := querier.DBQueryWithResponse(ctx, session.CloneConnection, queryExplainAnalyze+command.Query)
+	// if err != nil {
+	//   return err
+	// }
 
 	if err := serviceConn.Conn().Close(ctx); err != nil {
 		log.Err("Failed to close connection: ", err)
