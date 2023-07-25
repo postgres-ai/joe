@@ -42,7 +42,7 @@ const observeQuery = `SELECT l.relation::regclass,
            l.fastpath
     FROM pg_locks l
     LEFT JOIN pg_class c ON c.oid=l.relation
-    WHERE AND l.pid = $1
+    WHERE l.pid = $1
     ORDER BY l.relation ASC;
 
 `
