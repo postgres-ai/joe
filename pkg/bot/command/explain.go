@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgtype/pgxtype"
+	"github.com/jackc/pgx/v4"
 	"github.com/pkg/errors"
 
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/log"
@@ -30,6 +31,9 @@ const (
 	// Query Explain prefixes.
 	queryExplain        = "EXPLAIN (FORMAT TEXT) "
 	queryExplainAnalyze = "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) "
+
+	// Locks shows locks for a single query analyzed with EXPLAIN.
+	Locks = "*Query pg_locks:*\n"
 )
 
 // Explain runs an explain query.
@@ -49,17 +53,22 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 		serviceConn.Release()
 	}()
 
-	tx, err := serviceConn.Begin(ctx)
-
+	tx, err := serviceConn.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		log.Err("failed to get connection: ", err)
 		return err
 	}
 
+	var pidTx int
+	if err = tx.QueryRow(ctx, `select pg_backend_pid()`).Scan(&pidTx); err != nil {
+		log.Err("failed to get backend PID: ", err)
+		return err
+	}
+
 	defer func() {
-		if err := tx.Rollback(ctx); err != nil {
-			log.Err("failed to rollback: ", err)
-		}
+		// if err := tx.Rollback(ctx); err != nil {
+		//	log.Err("failed to rollback: ", err)
+		// }
 	}()
 
 	cmd := NewPlan(command, msg, session.CloneConnection, msgSvc)
@@ -84,7 +93,9 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 		observeConn.Release()
 	}()
 
-	result, err := querier.ObserveLocks(ctx, observeConn, pid)
+	log.Dbg(pid)
+
+	result, err := querier.ObserveLocks(ctx, observeConn, pidTx)
 	if err != nil {
 		log.Err("failed to observe locks: ", err)
 		return err
@@ -102,6 +113,10 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 	// if err != nil {
 	//   return err
 	// }
+
+	if err := tx.Rollback(ctx); err != nil {
+		log.Err("failed to rollback: ", err)
+	}
 
 	if err := serviceConn.Conn().Close(ctx); err != nil {
 		log.Err("Failed to close connection: ", err)
@@ -125,6 +140,12 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 
 	msg.SetText(msgInitText)
 	msg.AppendText(fmt.Sprintf("*Plan with execution:*\n```%s```", planExecPreview))
+
+	// Show Locks.
+	tableString := &strings.Builder{}
+	tableString.WriteString(Locks)
+	querier.RenderTable(tableString, result)
+	msg.AppendText(tableString.String())
 
 	if err = msgSvc.UpdateText(msg); err != nil {
 		log.Err("Show the plan with execution:", err)
