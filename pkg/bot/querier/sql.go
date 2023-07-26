@@ -54,6 +54,7 @@ const observeQuery = `with data as (
     c.relkind = 'i'
     and indexname = c.relname
     and schemaname = c.relnamespace::regnamespace::name
+  where l.pid = $1
 )
 select *
 from data
@@ -65,18 +66,14 @@ where
     'pg_catalog.pg_locks',
     'pg_catalog.pg_namespace',
     'pg_catalog.pg_tablespace'
-  ) l.pid = $1
+  )
 order by
   belongs_to_relation,
   case relkind when 'r' then 0 when 'v' then 1 when 'i' then 9 else 5 end;`
 
 // ObserveLocks selects locks details filtered by pid.
 func ObserveLocks(ctx context.Context, db pgxtype.Querier, pid int) ([][]string, error) {
-	res, err := runTableQuery(ctx, db, observeQuery, pid)
-
-	log.Dbg(res)
-
-	return res, err
+	return runTableQuery(ctx, db, observeQuery, pid)
 }
 
 func runQuery(ctx context.Context, db pgxtype.Querier, query string) (string, error) {
@@ -192,4 +189,15 @@ func clarifyQueryError(query []byte, err error) error {
 	}
 
 	return err
+}
+
+// GetBackendPID returns backend pid.
+func GetBackendPID(ctx context.Context, conn pgxtype.Querier) (int, error) {
+	var backendPID int
+
+	if err := conn.QueryRow(ctx, `select pg_backend_pid()`).Scan(&backendPID); err != nil {
+		return backendPID, err
+	}
+
+	return backendPID, nil
 }
