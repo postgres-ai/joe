@@ -34,18 +34,41 @@ func DBQueryWithResponse(ctx context.Context, db pgxtype.Querier, query string) 
 	return runQuery(ctx, db, query)
 }
 
-const observeQuery = `SELECT l.relation::regclass,
-           c.relkind,
-           l.locktype,
-           l.mode,
-           l.granted,
-           l.fastpath
-    FROM pg_locks l
-    LEFT JOIN pg_class c ON c.oid=l.relation
-    WHERE l.pid = $1
-    ORDER BY l.relation ASC;
-
-`
+const observeQuery = `with data as (
+  select
+    c.relkind,
+    c.relnamespace::regnamespace,
+    c.relname,
+    format(
+      '%s%s',
+      nullif(c.relnamespace::regnamespace::text, 'public') || '.',
+      coalesce(ind.tablename, relname)
+    ) as belongs_to_relation, -- todo: do the same for TOAST tables/indexes?
+    l.locktype,
+    l.mode,
+    l.granted::text,
+    l.fastpath::text
+  from pg_locks as l
+  join pg_class as c on c.oid = l.relation
+  left join pg_indexes as ind on
+    c.relkind = 'i'
+    and indexname = c.relname
+    and schemaname = c.relnamespace::regnamespace::name
+)
+select *
+from data
+where
+  belongs_to_relation not in ( -- not a perfect solution: <query> can also work with them
+    'pg_catalog.pg_class',
+    'pg_catalog.pg_indexes',
+    'pg_catalog.pg_index',
+    'pg_catalog.pg_locks',
+    'pg_catalog.pg_namespace',
+    'pg_catalog.pg_tablespace'
+  ) l.pid = $1
+order by
+  belongs_to_relation,
+  case relkind when 'r' then 0 when 'v' then 1 when 'i' then 9 else 5 end;`
 
 // ObserveLocks selects locks details filtered by pid.
 func ObserveLocks(ctx context.Context, db pgxtype.Querier, pid int) ([][]string, error) {
