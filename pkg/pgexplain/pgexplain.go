@@ -619,7 +619,9 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 		parallel = "Parallel "
 	}
 
-	outputFn("%s%v%s%s%s", parallel, nodeType, using, on, costsAndTiming)
+	details := formatDetails(plan)
+
+	_, _ = outputFn("%s%v%s%s%s%s", parallel, nodeType, details, using, on, costsAndTiming)
 }
 
 func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error), plan *Plan) {
@@ -740,4 +742,18 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 	if len(ioTiming) > 0 {
 		outputFn("I/O Timings:%s", ioTiming)
 	}
+}
+
+func formatDetails(plan *Plan) string {
+	var details []string
+
+	if plan.ScanDirection != "" && plan.ScanDirection != "Forward" {
+		details = append(details, plan.ScanDirection)
+	}
+
+	if len(details) > 0 {
+		return fmt.Sprintf(" %v", strings.Join(details, ", "))
+	}
+
+	return ""
 }

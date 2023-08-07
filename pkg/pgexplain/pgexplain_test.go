@@ -1309,7 +1309,7 @@ const InputJSON2 = `[
           "Node Type": "Index Only Scan",
           "Parent Relationship": "Outer",
           "Parallel Aware": false,
-          "Scan Direction": "Forward",
+          "Scan Direction": "Backward",
           "Index Name": "i_user_col",
           "Relation Name": "table_1",
           "Alias": "table_1",
@@ -1346,7 +1346,7 @@ const InputJSON2 = `[
 
 const ExpectedText2 = ` Limit  (cost=0.43..8.45 rows=1 width=22) (actual time=0.026..0.035 rows=1 loops=1)
    Buffers: shared hit=4
-   ->  Index Only Scan using i_user_col on table_1  (cost=0.43..8.45 rows=1 width=22) (actual time=0.021..0.026 rows=1 loops=1)
+   ->  Index Only Scan Backward using i_user_col on table_1  (cost=0.43..8.45 rows=1 width=22) (actual time=0.021..0.026 rows=1 loops=1)
          Index Cond: (col = 'xxxx'::text)
          Heap Fetches: 0
          Buffers: shared hit=4
