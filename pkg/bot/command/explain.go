@@ -34,7 +34,7 @@ const (
 	queryExplainAnalyze = "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) "
 
 	// locksTitle shows locks for a single query analyzed with EXPLAIN.
-	locksTitle = "*Query pg_locks:*\n"
+	locksTitle = "*Query heavy locks:*\n"
 )
 
 // Explain runs an explain query.
