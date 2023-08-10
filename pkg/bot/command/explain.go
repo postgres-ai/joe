@@ -113,12 +113,11 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 
 	// Show query locks.
 	tableString := &strings.Builder{}
-	tableString.WriteString(locksTitle)
 	querier.RenderTable(tableString, result)
 
 	queryLocks := tableString.String()
-	command.QueryLocks = queryLocks
-	msg.AppendText(queryLocks)
+	command.QueryLocks = strings.Trim(queryLocks, "`")
+	msg.AppendText(locksTitle + queryLocks)
 
 	if err = msgSvc.UpdateText(msg); err != nil {
 		log.Err("Show the plan with execution:", err)
