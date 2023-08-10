@@ -33,8 +33,8 @@ const (
 	queryExplain        = "EXPLAIN (FORMAT TEXT) "
 	queryExplainAnalyze = "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) "
 
-	// Locks shows locks for a single query analyzed with EXPLAIN.
-	Locks = "*Query pg_locks:*\n"
+	// locksTitle shows locks for a single query analyzed with EXPLAIN.
+	locksTitle = "*Query heavy locks:*\n"
 )
 
 // Explain runs an explain query.
@@ -113,9 +113,11 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 
 	// Show query locks.
 	tableString := &strings.Builder{}
-	tableString.WriteString(Locks)
 	querier.RenderTable(tableString, result)
-	msg.AppendText(tableString.String())
+
+	queryLocks := tableString.String()
+	command.QueryLocks = strings.Trim(queryLocks, "`")
+	msg.AppendText(locksTitle + queryLocks)
 
 	if err = msgSvc.UpdateText(msg); err != nil {
 		log.Err("Show the plan with execution:", err)
