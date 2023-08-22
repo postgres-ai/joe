@@ -43,6 +43,7 @@ type Command struct {
 	PlanExecJSON    string `json:"plan_execution_json"`
 	Recommendations string `json:"recommendations"`
 	Stats           string `json:"stats"`
+	QueryLocks      string `json:"query_locks"`
 
 	Error string `json:"error"`
 
