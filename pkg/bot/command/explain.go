@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/jackc/pgtype/pgxtype"
+	"github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/pkg/errors"
 
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/log"
@@ -30,6 +32,9 @@ const (
 	// Query Explain prefixes.
 	queryExplain        = "EXPLAIN (FORMAT TEXT) "
 	queryExplainAnalyze = "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) "
+
+	// locksTitle shows locks for a single query analyzed with EXPLAIN.
+	locksTitle = "*Query heavy locks:*\n"
 )
 
 // Explain runs an explain query.
@@ -41,13 +46,35 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 
 	serviceConn, err := getConn(ctx, session.Pool)
 	if err != nil {
-		log.Err("failed to get connection: ", err)
+		log.Err("failed to get connection:", err)
 		return err
 	}
 
 	defer func() {
+		if err := serviceConn.Conn().Close(ctx); err != nil {
+			log.Err("failed to close connection: ", err)
+		}
+
 		serviceConn.Release()
 	}()
+
+	tx, err := serviceConn.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		log.Err("failed to begin transaction:", err)
+		return err
+	}
+
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil {
+			log.Err("failed to rollback transaction:", err)
+		}
+	}()
+
+	txPID, err := querier.GetBackendPID(ctx, tx)
+	if err != nil {
+		log.Err("failed to get backend PID:", err)
+		return err
+	}
 
 	cmd := NewPlan(command, msg, session.CloneConnection, msgSvc)
 	msgInitText, err := cmd.explainWithoutExecution(ctx)
@@ -55,15 +82,15 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 		return errors.Wrap(err, "failed to run explain without execution")
 	}
 
-	// Explain analyze request and processing.
-	explainAnalyze, err := querier.DBQueryWithResponse(ctx, session.CloneConnection, queryExplainAnalyze+command.Query)
+	explainAnalyze, err := querier.DBQueryWithResponse(ctx, tx, queryExplainAnalyze+command.Query)
 	if err != nil {
 		return err
 	}
 
-	if err := serviceConn.Conn().Close(ctx); err != nil {
-		log.Err("Failed to close connection: ", err)
-		return err
+	// Observe query locks.
+	result, err := observeLocks(ctx, session.Pool, txPID)
+	if err != nil {
+		log.Err("failed to observe locks:", err)
 	}
 
 	command.PlanExecJSON = explainAnalyze
@@ -83,6 +110,14 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 
 	msg.SetText(msgInitText)
 	msg.AppendText(fmt.Sprintf("*Plan with execution:*\n```%s```", planExecPreview))
+
+	// Show query locks.
+	tableString := &strings.Builder{}
+	querier.RenderTable(tableString, result)
+
+	queryLocks := tableString.String()
+	command.QueryLocks = strings.Trim(queryLocks, "`")
+	msg.AppendText(locksTitle + queryLocks)
 
 	if err = msgSvc.UpdateText(msg); err != nil {
 		log.Err("Show the plan with execution:", err)
@@ -151,6 +186,23 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 	}
 
 	return nil
+}
+
+func observeLocks(ctx context.Context, db *pgxpool.Pool, txPID int) ([][]string, error) {
+	observeConn, err := getConn(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		if err := observeConn.Conn().Close(ctx); err != nil {
+			log.Err("failed to close observer connection:", err)
+		}
+
+		observeConn.Release()
+	}()
+
+	return querier.ObserveLocks(ctx, observeConn, txPID)
 }
 
 func listHypoIndexes(ctx context.Context, db pgxtype.Querier) ([]string, error) {

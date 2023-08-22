@@ -34,6 +34,48 @@ func DBQueryWithResponse(ctx context.Context, db pgxtype.Querier, query string) 
 	return runQuery(ctx, db, query)
 }
 
+const observeQuery = `with data as (
+  select
+    c.relkind,
+    c.relnamespace::regnamespace,
+    c.relname,
+    format(
+      '%s%s',
+      nullif(c.relnamespace::regnamespace::text, 'public') || '.',
+      coalesce(ind.tablename, relname)
+    ) as belongs_to_relation, -- todo: do the same for TOAST tables/indexes?
+    l.locktype,
+    l.mode,
+    l.granted::text,
+    l.fastpath::text
+  from pg_locks as l
+  join pg_class as c on c.oid = l.relation
+  left join pg_indexes as ind on
+    c.relkind = 'i'
+    and indexname = c.relname
+    and schemaname = c.relnamespace::regnamespace::name
+  where l.pid = $1
+)
+select *
+from data
+where
+  belongs_to_relation not in ( -- not a perfect solution: <query> can also work with them
+    'pg_catalog.pg_class',
+    'pg_catalog.pg_indexes',
+    'pg_catalog.pg_index',
+    'pg_catalog.pg_locks',
+    'pg_catalog.pg_namespace',
+    'pg_catalog.pg_tablespace'
+  )
+order by
+  belongs_to_relation,
+  case relkind when 'r' then 0 when 'v' then 1 when 'i' then 9 else 5 end;`
+
+// ObserveLocks selects locks details filtered by pid.
+func ObserveLocks(ctx context.Context, db pgxtype.Querier, pid int) ([][]string, error) {
+	return runTableQuery(ctx, db, observeQuery, pid)
+}
+
 func runQuery(ctx context.Context, db pgxtype.Querier, query string) (string, error) {
 	log.Dbg("DB query:", query)
 
@@ -147,4 +189,15 @@ func clarifyQueryError(query []byte, err error) error {
 	}
 
 	return err
+}
+
+// GetBackendPID returns backend pid.
+func GetBackendPID(ctx context.Context, conn pgxtype.Querier) (int, error) {
+	var backendPID int
+
+	if err := conn.QueryRow(ctx, `select pg_backend_pid()`).Scan(&backendPID); err != nil {
+		return backendPID, err
+	}
+
+	return backendPID, nil
 }
