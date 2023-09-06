@@ -33,6 +33,7 @@ build-binary:
       - bin
   script:
     - make build
+    - make build-ee
 
 .job_template: &build_image_definition
   image: docker:19
@@ -74,7 +75,8 @@ build-image-feature:
     REGISTRY_PASSWORD: "${CI_REGISTRY_PASSWORD}"
     REGISTRY: "${CI_REGISTRY}"
     DOCKER_NAME: "registry.gitlab.com/postgres-ai/joe"
-    TAGS: "${DOCKER_NAME}:${CI_COMMIT_REF_SLUG}"
+    DOCKER_FILE: "Dockerfile.ee"
+    TAGS: "${DOCKER_NAME}:${CI_COMMIT_REF_SLUG}-ee"
 
 build-image-master:
   <<: *build_image_definition
