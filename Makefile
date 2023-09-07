@@ -41,7 +41,7 @@ build:
 	${GOBUILD} -o bin/${BINARY} ./cmd/joe/main.go
 
 build-ee:
-	${GOBUILD} -tags ee -o bin/${BINARY} ./cmd/joe/main.go
+	${GOBUILD} -tags ee -o bin/${BINARY}-ee ./cmd/joe/main.go
 
 test:
 	go test ./pkg/...
