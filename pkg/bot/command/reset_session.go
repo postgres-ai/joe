@@ -59,8 +59,13 @@ func ResetSession(ctx context.Context, cmd *platform.Command, msg *models.Messag
 		session.CloneConnection = cloneConn.Conn()
 	}
 
+	sessionID := session.PlatformSessionID
+	if sessionID == "" {
+		sessionID = clone.ID
+	}
+
 	fwData := &foreword.Content{
-		SessionID:  clone.ID,
+		SessionID:  sessionID,
 		Duration:   time.Duration(clone.Metadata.MaxIdleMinutes) * time.Minute,
 		AppVersion: appVersion,
 		Edition:    edition,
