@@ -15,6 +15,7 @@ import (
 	"github.com/pkg/errors"
 
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/log"
+	"gitlab.com/postgres-ai/database-lab/v2/pkg/util"
 )
 
 // MsgSessionForewordTpl provides a template of session foreword message.
@@ -29,9 +30,6 @@ Database: %s
 Database size: %s
 Database state at: %s (%s ago)
 ` + "```"
-
-// TODO(akartasov): use const from the Database Lab repository.
-const dsaFormat = "2006-01-02 15:04:05 UTC"
 
 // Content defines data for a foreword message.
 type Content struct {
@@ -54,7 +52,7 @@ func (f *Content) EnrichForewordInfo(ctx context.Context, db *pgxpool.Pool) erro
 		return errors.Wrap(err, "failed to retrieve database meta info")
 	}
 
-	dsaTime, err := time.Parse(dsaFormat, f.DSA)
+	dsaTime, err := time.Parse(util.DataStateAtFormat, f.DSA)
 	if err != nil {
 		log.Err("failed to parse the 'data state at' timestamp of the database snapshot: ", err)
 		return nil
