@@ -50,6 +50,15 @@ func ResetSession(ctx context.Context, cmd *platform.Command, msg *models.Messag
 		idleConnection.Release()
 	}
 
+	cloneConn, err := session.Pool.Acquire(ctx)
+	if err != nil {
+		log.Err("failed to acquire database connection:", err)
+	}
+
+	if cloneConn != nil {
+		session.CloneConnection = cloneConn.Conn()
+	}
+
 	fwData := &foreword.Content{
 		SessionID:  clone.ID,
 		Duration:   time.Duration(clone.Metadata.MaxIdleMinutes) * time.Minute,
