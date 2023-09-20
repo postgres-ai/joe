@@ -57,7 +57,7 @@ func (c *ActivityCmd) Execute() error {
   coalesce((clock_timestamp() - query_start)::text, '') as query_duration,
   coalesce((clock_timestamp() - state_change)::text, '') as state_changed_ago
 from pg_stat_activity 
-where state in ('active', 'idle in transaction', 'disabled') and pid <> pg_backend_pid();`, truncateLength)
+where state <> 'idle' and pid <> pg_backend_pid();`, truncateLength)
 
 	tableString := &strings.Builder{}
 	tableString.WriteString(ActivityCaption)
