@@ -34,7 +34,7 @@ const (
 	queryExplainAnalyze = "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) "
 
 	// locksTitle shows locks for a single query analyzed with EXPLAIN.
-	locksTitle = "*Query heavy locks:*\n"
+	// locksTitle = "*Query heavy locks:*\n".
 )
 
 // Explain runs an explain query.
@@ -117,13 +117,16 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 
 	queryLocks := tableString.String()
 	command.QueryLocks = strings.Trim(queryLocks, "`")
-	msg.AppendText(locksTitle + queryLocks)
 
-	if err = msgSvc.UpdateText(msg); err != nil {
-		log.Err("Show the plan with execution:", err)
+	// TODO: Commented out because LISTEN/NOTIFY payload is limited to 8000 characters
+	//  Waiting for fixing: https://gitlab.com/postgres-ai/platform/-/merge_requests/255
+	// msg.AppendText(locksTitle + queryLocks)
 
-		return err
-	}
+	// if err = msgSvc.UpdateText(msg); err != nil {
+	//	log.Err("Show the plan with execution:", err)
+	//
+	//	return err
+	// }
 
 	if _, err := msgSvc.AddArtifact("plan-json", explainAnalyze, msg.ChannelID, msg.MessageID); err != nil {
 		log.Err("File upload failed:", err)
