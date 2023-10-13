@@ -36,7 +36,7 @@ func DBQueryWithResponse(ctx context.Context, db pgxtype.Querier, query string) 
 
 const observeQuery = `with data as (
   select
-	row_number() over()::text as "#",
+    row_number() over()::text as "#",
     c.relkind,
     c.relnamespace::regnamespace,
     c.relname,
