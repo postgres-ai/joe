@@ -32,22 +32,25 @@ Database state at: %s (%s ago)
 
 // Content defines data for a foreword message.
 type Content struct {
-	Duration   time.Duration
-	SessionID  string
-	AppVersion string
-	Edition    string
-	DBName     string
-	DSA        string
-	DSADiff    string
-	DBSize     string
-	DBVersion  string
+	Duration     time.Duration
+	SessionID    string
+	AppVersion   string
+	Edition      string
+	DBName       string
+	DSA          string
+	DSADiff      string
+	DBSize       string
+	DBVersion    string
+	DBVersionNum int
 }
 
 // EnrichForewordInfo adds database details to foreword data.
 func (f *Content) EnrichForewordInfo(ctx context.Context, db *pgxpool.Pool) error {
-	r := db.QueryRow(ctx, "select current_setting('server_version'), pg_size_pretty(pg_database_size($1))", f.DBName)
+	r := db.QueryRow(ctx,
+		"select current_setting('server_version'), current_setting('server_version_num'), pg_size_pretty(pg_database_size($1))",
+		f.DBName)
 
-	if err := r.Scan(&f.DBVersion, &f.DBSize); err != nil {
+	if err := r.Scan(&f.DBVersion, &f.DBVersionNum, &f.DBSize); err != nil {
 		return errors.Wrap(err, "failed to retrieve database meta info")
 	}
 
