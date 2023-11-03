@@ -184,6 +184,7 @@ func initConn(ctx context.Context, dblabClone models.Clone) (*pgxpool.Pool, *pgx
 
 	connectionConfig.MaxConnLifetime = maxConnLifetime
 	connectionConfig.MaxConnIdleTime = maxConnIdleTime
+	connectionConfig.ConnConfig.PreferSimpleProtocol = true
 
 	pool, err := pgxpool.ConnectConfig(context.Background(), connectionConfig)
 	if err != nil {
