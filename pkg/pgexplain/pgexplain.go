@@ -535,7 +535,7 @@ func (ex *Explain) writePlanText(writer io.Writer, plan *Plan, prefix string, de
 	}
 
 	if len(ex.Settings) > 0 {
-		outputFn("Settings: %s", printMap(ex.Settings))
+		_, _ = outputFn("Settings: %s", printMap(ex.Settings))
 	}
 
 	writePlanTextNodeDetails(outputFn, plan)
