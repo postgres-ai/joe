@@ -40,6 +40,7 @@ type UserSession struct {
 	ConnParams      models.Clone
 	Pool            *pgxpool.Pool `json:"-"`
 	CloneConnection *pgx.Conn     `json:"-"`
+	DBVersion       int           `json:"-"`
 }
 
 // Quota defines a user quota for requests.
