@@ -31,7 +31,11 @@ const (
 
 	// Query Explain prefixes.
 	queryExplain        = "EXPLAIN (FORMAT TEXT) "
-	queryExplainAnalyze = "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) "
+	queryExplainAnalyze = "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON %s) "
+	settingsExplain     = ", SETTINGS TRUE"
+
+	postgresNumDiv = 10000 // Divider to get version from server_version_num.
+	pgVersion12    = 12    // Explain Settings are available starting with Postgres 12.
 
 	// locksTitle shows locks for a single query analyzed with EXPLAIN.
 	// locksTitle = "*Query heavy locks:*\n".
@@ -82,7 +86,7 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 		return errors.Wrap(err, "failed to run explain without execution")
 	}
 
-	explainAnalyze, err := querier.DBQueryWithResponse(ctx, tx, queryExplainAnalyze+command.Query)
+	explainAnalyze, err := querier.DBQueryWithResponse(ctx, tx, analyzePrefix(session.DBVersion)+command.Query)
 	if err != nil {
 		return err
 	}
@@ -189,6 +193,16 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 	}
 
 	return nil
+}
+
+func analyzePrefix(dbVersionNum int) string {
+	settingsValue := ""
+
+	if (dbVersionNum / postgresNumDiv) >= pgVersion12 {
+		settingsValue = settingsExplain
+	}
+
+	return fmt.Sprintf(queryExplainAnalyze, settingsValue)
 }
 
 func observeLocks(ctx context.Context, db *pgxpool.Pool, txPID int) ([][]string, error) {
