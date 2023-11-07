@@ -52,8 +52,9 @@ type Explain struct {
 	Plan     Plan          `json:"Plan"`
 	Triggers []interface{} `json:"Triggers"`
 
-	PlanningTime  float64 `json:"Planning Time"`
-	ExecutionTime float64 `json:"Execution Time"`
+	Settings      map[string]string `json:"Settings"`
+	PlanningTime  float64           `json:"Planning Time"`
+	ExecutionTime float64           `json:"Execution Time"`
 	TotalTime     float64
 
 	TotalCost float64
@@ -533,6 +534,10 @@ func (ex *Explain) writePlanText(writer io.Writer, plan *Plan, prefix string, de
 		currentPrefix = prefix + subplanPrefix + "      "
 	}
 
+	if len(ex.Settings) > 0 {
+		_, _ = outputFn("Settings: %s", printMap(ex.Settings))
+	}
+
 	writePlanTextNodeDetails(outputFn, plan)
 
 	for index := range plan.Plans {
@@ -756,4 +761,14 @@ func formatDetails(plan *Plan) string {
 	}
 
 	return ""
+}
+
+func printMap(items map[string]string) string {
+	list := []string{}
+
+	for key, value := range items {
+		list = append(list, fmt.Sprintf("%s = '%v'", key, value))
+	}
+
+	return strings.Join(list, ", ")
 }
