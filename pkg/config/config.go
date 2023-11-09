@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"gitlab.com/postgres-ai/joe/features/definition"
-	"gitlab.com/postgres-ai/joe/pkg/pgexplain"
 )
 
 const (
@@ -32,7 +31,6 @@ type Config struct {
 	Platform       Platform                     `yaml:"platform"`
 	Registration   Registration                 `yaml:"registration"`
 	ChannelMapping *ChannelMapping              `yaml:"channelMapping"`
-	Explain        pgexplain.ExplainConfig      `yaml:"-"`
 	Enterprise     definition.EnterpriseOptions `yaml:"-"`
 }
 

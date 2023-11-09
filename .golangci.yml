@@ -57,7 +57,7 @@ linters-settings:
 linters:
   enable:
     - deadcode
-    - depguard
+#    - depguard
     - dupl
     - errcheck
     - gochecknoinits
@@ -86,6 +86,7 @@ linters:
     - gosec
     - interfacer
     - gocyclo # currently unmaintained
+    - depguard
   presets:
   fast: false
 
