@@ -151,7 +151,6 @@ func (a *Assistant) buildMessageProcessor(channelID string, dbLabInstance *dblab
 	processingCfg := msgproc.ProcessingConfig{
 		App:      a.appCfg.App,
 		Platform: a.appCfg.Platform,
-		Explain:  a.appCfg.Explain,
 		DBLab:    dbLabInstance.Config(),
 		EntOpts:  a.appCfg.Enterprise,
 		Project:  a.appCfg.Platform.Project,
@@ -247,7 +246,7 @@ func (a *Assistant) verificationHandler(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-func (a *Assistant) channelsHandler(w http.ResponseWriter, r *http.Request) {
+func (a *Assistant) channelsHandler(w http.ResponseWriter, _ *http.Request) {
 	channels := []config.Channel{}
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

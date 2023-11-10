@@ -142,7 +142,6 @@ func (a *Assistant) buildMessageProcessor(channelID string, dbLabInstance *dblab
 	processingCfg := msgproc.ProcessingConfig{
 		App:      a.appCfg.App,
 		Platform: a.appCfg.Platform,
-		Explain:  a.appCfg.Explain,
 		DBLab:    dbLabInstance.Config(),
 		EntOpts:  a.appCfg.Enterprise,
 		Project:  a.appCfg.Platform.Project,

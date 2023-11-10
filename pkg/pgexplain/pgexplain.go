@@ -80,11 +80,6 @@ type Explain struct {
 	MaxCost         float64
 	MaxDuration     float64
 	ContainsSeqScan bool
-
-	IndexIneffHighFiltered bool
-	VacuumAnalyzeNeeded    bool
-
-	Config ExplainConfig `json:"-"`
 }
 
 type Plan struct {
@@ -164,20 +159,6 @@ type Plan struct {
 	Slowest                     bool
 }
 
-const (
-	TIP_SEQSCAN_USED                    = "SEQSCAN_USED"
-	TIP_TOO_MUCH_DATA                   = "TOO_MUCH_DATA"
-	TIP_ADD_LIMIT                       = "ADD_LIMIT"
-	TIP_TEMP_BUF_WRITTEN                = "TEMP_BUF_WRITTEN"
-	TIP_INDEX_INEFFICIENT_HIGH_FILTERED = "INDEX_INEFFICIENT_HIGH_FILTERED"
-	TIP_VACUUM_ANALYZE_NEEDED           = "VACUUM_ANALYZE_NEEDED"
-)
-
-type ExplainConfig struct {
-	Tips   []Tip        `yaml:"tips"`
-	Params ParamsConfig `yaml:"params"`
-}
-
 type Tip struct {
 	Code        string `yaml:"code"`
 	Name        string `yaml:"name"`
@@ -185,33 +166,11 @@ type Tip struct {
 	DetailsUrl  string `yaml:"detailsUrl"`
 }
 
-// TODO(anatoly): Refactor names.
-type ParamsConfig struct {
-	// T1 SEQSCAN_USED.
-	BuffersHitReadSeqScan uint64 `yaml:"buffersHitReadSeqScan"`
-
-	// T2 TOO_MUCH_DATA.
-	BuffersReadBigMax uint64 `yaml:"buffersReadBigMax"`
-	BuffersHitBigMax  uint64 `yaml:"buffersHitBigMax"`
-
-	// T3 ADD_LIMIT.
-	AddLimitMinRows uint64 `yaml:"addLimitMinRows"`
-
-	// T4 TEMP_BUF_WRITTEN.
-	TempWrittenBlocksMin uint64 `yaml:"tempWrittenBlocksMin"`
-
-	// T5 INDEX_INEFFICIENT_HIGH_FILTERED.
-	IndexIneffHighFilteredMin uint64 `yaml:"indexIneffHighFilteredMin"`
-
-	// T6 VACUUM_ANALYZE_NEEDED.
-	VacuumAnalyzeNeededFetchesMin uint64 `yaml:"vacuumAnalyzeNeededFetchesMin"`
-}
-
 // Explain Processing.
-func NewExplain(explainJson string, config ExplainConfig) (*Explain, error) {
+func NewExplain(explainJSON string) (*Explain, error) {
 	var explains []Explain
 
-	err := json.NewDecoder(strings.NewReader(explainJson)).Decode(&explains)
+	err := json.NewDecoder(strings.NewReader(explainJSON)).Decode(&explains)
 
 	if err != nil {
 		return nil, err
@@ -224,8 +183,6 @@ func NewExplain(explainJson string, config ExplainConfig) (*Explain, error) {
 	// TODO(anatoly): Is it possible to have more than one explain?
 	var ex = &explains[0]
 	ex.processExplain()
-
-	ex.Config = config
 
 	return ex, nil
 }
@@ -240,71 +197,6 @@ func (ex *Explain) RenderStats() string {
 	buf := new(bytes.Buffer)
 	ex.writeStatsText(buf)
 	return buf.String()
-}
-
-func (ex *Explain) GetTips() ([]Tip, error) {
-	c := ex.Config
-	p := c.Params
-
-	var tips []Tip
-
-	// T1: SeqScan used.
-	hitReadBlocks := ex.SharedReadBlocks + ex.SharedHitBlocks
-	if ex.ContainsSeqScan && hitReadBlocks > p.BuffersHitReadSeqScan {
-		tip, err := c.getTipByCode(TIP_SEQSCAN_USED)
-		if err != nil {
-			return make([]Tip, 0), err
-		}
-		tips = append(tips, tip)
-	}
-
-	// T2: Buffers read too big.
-	if ex.SharedReadBlocks > p.BuffersReadBigMax ||
-		ex.SharedHitBlocks > p.BuffersHitBigMax {
-		tip, err := c.getTipByCode(TIP_TOO_MUCH_DATA)
-		if err != nil {
-			return make([]Tip, 0), err
-		}
-		tips = append(tips, tip)
-	}
-
-	// T3: Add limit.
-	if ex.ActualRows > p.AddLimitMinRows && ex.Plan.NodeType != Limit {
-		tip, err := c.getTipByCode(TIP_ADD_LIMIT)
-		if err != nil {
-			return make([]Tip, 0), err
-		}
-		tips = append(tips, tip)
-	}
-
-	// T4: Temp buffers written.
-	if ex.TempWrittenBlocks > p.TempWrittenBlocksMin {
-		tip, err := c.getTipByCode(TIP_TEMP_BUF_WRITTEN)
-		if err != nil {
-			return make([]Tip, 0), err
-		}
-		tips = append(tips, tip)
-	}
-
-	// T5: Index inefficient high filtered.
-	if ex.IndexIneffHighFiltered {
-		tip, err := c.getTipByCode(TIP_INDEX_INEFFICIENT_HIGH_FILTERED)
-		if err != nil {
-			return make([]Tip, 0), err
-		}
-		tips = append(tips, tip)
-	}
-
-	// T6: Vacuum analyze needed.
-	if ex.VacuumAnalyzeNeeded {
-		tip, err := c.getTipByCode(TIP_VACUUM_ANALYZE_NEEDED)
-		if err != nil {
-			return make([]Tip, 0), err
-		}
-		tips = append(tips, tip)
-	}
-
-	return tips, nil
 }
 
 func (ex *Explain) processExplain() {
@@ -404,34 +296,13 @@ func (ex *Explain) calculateMaximums(plan *Plan) {
 }
 
 func (ex *Explain) calculateOutlierNodes(plan *Plan) {
-	p := ex.Config.Params
-
 	plan.Costliest = plan.ActualCost == ex.MaxCost
 	plan.Largest = plan.ActualRows == ex.MaxRows
 	plan.Slowest = plan.ActualDuration == ex.MaxDuration
 
-	if plan.NodeType == IndexScan && plan.RowsRemovedByFilter > p.IndexIneffHighFilteredMin {
-		ex.IndexIneffHighFiltered = true
-	}
-
-	if plan.NodeType == IndexOnlyScan && plan.HeapFetches > p.VacuumAnalyzeNeededFetchesMin {
-		ex.VacuumAnalyzeNeeded = true
-	}
-
 	for index := range plan.Plans {
 		ex.calculateOutlierNodes(&plan.Plans[index])
 	}
-}
-
-func (config *ExplainConfig) getTipByCode(code string) (Tip, error) {
-	tips := config.Tips
-	for _, tip := range tips {
-		if tip.Code == code {
-			return tip, nil
-		}
-	}
-
-	return Tip{}, errors.New("Tip not found, check your explain config")
 }
 
 func (ex *Explain) writeExplainText(writer io.Writer) {

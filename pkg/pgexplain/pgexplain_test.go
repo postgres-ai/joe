@@ -8,8 +8,6 @@ import (
 	"bytes"
 	"testing"
 
-	"gitlab.com/postgres-ai/joe/pkg/util"
-
 	"github.com/AlekSi/pointer"
 	"github.com/sergi/go-diff/diffmatchpatch"
 	"github.com/stretchr/testify/assert"
@@ -45,9 +43,8 @@ func TestVisualize(t *testing.T) {
 	for i, test := range tests {
 		inputJson := test.inputJson
 		expected := test.expected
-		explainConfig := ExplainConfig{}
 
-		explain, err := NewExplain(inputJson, explainConfig)
+		explain, err := NewExplain(inputJson)
 		if err != nil {
 			t.Errorf("(%d) explain parsing failed: %v", i, err)
 			t.FailNow()
@@ -85,9 +82,7 @@ func TestVisualizeWithoutCosts(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		explainConfig := ExplainConfig{}
-
-		explain, err := NewExplain(testCase.inputJson, explainConfig)
+		explain, err := NewExplain(testCase.inputJson)
 		if err != nil {
 			t.Errorf("(%s) explain parsing failed: %v", testCase.name, err)
 			t.FailNow()
@@ -101,197 +96,6 @@ func TestVisualizeWithoutCosts(t *testing.T) {
 			t.Errorf("(%s) got different than expected: \n%s\n", testCase.name, diff(testCase.expected, actual))
 		}
 	}
-}
-
-func TestTips(t *testing.T) {
-	explainConfig := ExplainConfig{
-		Params: ParamsConfig{
-			BuffersHitReadSeqScan:         50,
-			BuffersReadBigMax:             100,
-			BuffersHitBigMax:              1000,
-			AddLimitMinRows:               10000,
-			TempWrittenBlocksMin:          0,
-			IndexIneffHighFilteredMin:     100,
-			VacuumAnalyzeNeededFetchesMin: 0,
-		},
-		Tips: []Tip{
-			{
-				Code: "SEQSCAN_USED",
-			},
-			{
-				Code: "TOO_MUCH_DATA",
-			},
-			{
-				Code: "ADD_LIMIT",
-			},
-			{
-				Code: "TEMP_BUF_WRITTEN",
-			},
-			{
-				Code: "INDEX_INEFFICIENT_HIGH_FILTERED",
-			},
-			{
-				Code: "VACUUM_ANALYZE_NEEDED",
-			},
-		},
-	}
-
-	tests := []struct {
-		inputJson     string
-		expectedCodes []string
-	}{
-		// SEQSCAN_USED.
-		{
-			inputJson: `[
-				{
-					"Plan": {
-						"Node Type": "Seq Scan",
-						"Relation Name": "table_1",
-						"Shared Hit Blocks": 0,
-						"Shared Read Blocks": 0
-					}
-				}
-			]`,
-			expectedCodes: []string{},
-		},
-		{
-			inputJson: `[
-				{
-					"Plan": {
-						"Node Type": "Seq Scan",
-						"Relation Name": "table_1",
-						"Shared Hit Blocks": 40,
-						"Shared Read Blocks": 20
-					}
-				}
-			]`,
-			expectedCodes: []string{"SEQSCAN_USED"},
-		},
-		// TOO_MUCH_DATA.
-		{
-			inputJson: `[
-				{
-					"Plan": {
-						"Node Type": "Index Scan",
-						"Relation Name": "table_1",
-						"Shared Hit Blocks": 100000,
-						"Shared Read Blocks": 100000
-					}
-				}
-			]`,
-			expectedCodes: []string{"TOO_MUCH_DATA"},
-		},
-		// ADD_LIMIT.
-		{
-			inputJson: `[
-				{
-					"Plan": {
-						"Node Type": "Index Scan",
-						"Relation Name": "table_1",
-						"Actual Rows": 1000
-					}
-				}
-			]`,
-			expectedCodes: []string{},
-		},
-		{
-			inputJson: `[
-				{
-					"Plan": {
-						"Node Type": "Limit",
-						"Relation Name": "table_1",
-						"Actual Rows": 100000
-					}
-				}
-			]`,
-			expectedCodes: []string{},
-		},
-		{
-			inputJson: `[
-				{
-					"Plan": {
-						"Node Type": "Index Scan",
-						"Relation Name": "table_1",
-						"Actual Rows": 100000
-					}
-				}
-			]`,
-			expectedCodes: []string{"ADD_LIMIT"},
-		},
-		// TEMP_BUF_WRITTEN.
-		{
-			inputJson: `[
-				{
-					"Plan": {
-						"Node Type": "Index Scan",
-						"Temp Written Blocks": 100
-					}
-				}
-			]`,
-			expectedCodes: []string{"TEMP_BUF_WRITTEN"},
-		},
-		// INDEX_INEFFICIENT_HIGH_FILTERED.
-		{
-			inputJson: `[
-				{
-					"Plan": {
-						"Node Type": "Index Scan",
-						"Rows Removed by Filter": 101
-					}
-				}
-			]`,
-			expectedCodes: []string{"INDEX_INEFFICIENT_HIGH_FILTERED"},
-		},
-		// VACUUM_ANALYZE_NEEDED.
-		{
-			inputJson: `[
-				{
-					"Plan": {
-						"Node Type": "Index Only Scan",
-						"Heap Fetches": 1
-					}
-				}
-			]`,
-			expectedCodes: []string{"VACUUM_ANALYZE_NEEDED"},
-		},
-	}
-
-	for i, test := range tests {
-		inputJson := test.inputJson
-		expectedCodes := test.expectedCodes
-
-		explain, err := NewExplain(inputJson, explainConfig)
-		if err != nil {
-			t.Errorf("(%d) explain parsing failed: %v", i, err)
-			t.FailNow()
-		}
-
-		actualTips, err := explain.GetTips()
-		if err != nil {
-			t.Errorf("(%d) tips discover failed: %v", i, err)
-			t.FailNow()
-		}
-
-		actualCodes := getCodes(actualTips)
-
-		if !util.EqualStringSlicesUnordered(actualCodes, expectedCodes) {
-			t.Errorf("(%d) got different than expected: \nActual: %s\nExpected: %s\n",
-				i, actualCodes, expectedCodes)
-		}
-	}
-}
-
-func getCodes(tips []Tip) []string {
-	if len(tips) == 0 {
-		return make([]string, 0)
-	}
-
-	codes := make([]string, len(tips))
-	for i, tip := range tips {
-		codes[i] = tip.Code
-	}
-
-	return codes
 }
 
 func diff(a string, b string) string {
