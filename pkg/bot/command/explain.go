@@ -43,7 +43,7 @@ const (
 
 // Explain runs an explain query.
 func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform.Command, msg *models.Message,
-	explainConfig pgexplain.ExplainConfig, session usermanager.UserSession) error {
+	session usermanager.UserSession) error {
 	if command.Query == "" {
 		return errors.New(MsgExplainOptionReq)
 	}
@@ -100,7 +100,7 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 	command.PlanExecJSON = explainAnalyze
 
 	// Visualization.
-	explain, err := pgexplain.NewExplain(explainAnalyze, explainConfig)
+	explain, err := pgexplain.NewExplain(explainAnalyze)
 	if err != nil {
 		log.Err("Explain parsing: ", err)
 
@@ -153,32 +153,6 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 
 	if err = msgSvc.UpdateText(msg); err != nil {
 		log.Err("File: ", err)
-		return err
-	}
-
-	// Recommendations.
-	tips, err := explain.GetTips()
-	if err != nil {
-		log.Err("Recommendations: ", err)
-		return err
-	}
-
-	recommends := ""
-	if len(tips) == 0 {
-		recommends += ":white_check_mark: Looks good"
-	} else {
-		for _, tip := range tips {
-			recommends += fmt.Sprintf(
-				":exclamation: %s – %s <%s|Show details>\n", tip.Name,
-				tip.Description, tip.DetailsUrl)
-		}
-	}
-
-	command.Recommendations = recommends
-
-	msg.AppendText("*Recommendations:*\n" + recommends)
-	if err = msgSvc.UpdateText(msg); err != nil {
-		log.Err("Show recommendations: ", err)
 		return err
 	}
 

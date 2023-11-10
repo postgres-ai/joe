@@ -103,14 +103,6 @@ func loadAppConfig() (*config.Config, error) {
 
 	botCfg.Enterprise = enterpriseOptions
 
-	// Load and validate an explain configuration file.
-	explainConfig, err := config.LoadExplainConfig()
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to load an explain config")
-	}
-
-	botCfg.Explain = explainConfig
-
 	return &botCfg, nil
 }
 

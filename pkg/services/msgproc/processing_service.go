@@ -26,7 +26,6 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/config"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/models"
-	"gitlab.com/postgres-ai/joe/pkg/pgexplain"
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"
 	"gitlab.com/postgres-ai/joe/pkg/transmission/pgtransmission"
@@ -116,7 +115,6 @@ type ProcessingService struct {
 type ProcessingConfig struct {
 	App      config.App
 	Platform config.Platform
-	Explain  pgexplain.ExplainConfig
 	DBLab    config.DBLabParams
 	EntOpts  definition.EnterpriseOptions
 	Project  string
@@ -291,7 +289,7 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 
 	switch {
 	case receivedCommand == CommandExplain:
-		err = command.Explain(ctx, s.messenger, platformCmd, msg, s.config.Explain, user.Session)
+		err = command.Explain(ctx, s.messenger, platformCmd, msg, user.Session)
 
 	case receivedCommand == CommandPlan:
 		planCmd := command.NewPlan(platformCmd, msg, user.Session.CloneConnection, s.messenger)

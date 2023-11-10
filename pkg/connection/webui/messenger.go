@@ -99,6 +99,6 @@ func (m Messenger) AddArtifact(title, content, _, messageID string) (artifactLin
 }
 
 // DownloadArtifact downloads snippets from a communication channel.
-func (m Messenger) DownloadArtifact(artifactURL string) (response []byte, err error) {
+func (m Messenger) DownloadArtifact(_ string) (response []byte, err error) {
 	panic("artifact downloading is not supported")
 }
