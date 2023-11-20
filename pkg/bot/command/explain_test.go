@@ -24,8 +24,12 @@ func TestAnalyzePrefix(t *testing.T) {
 			expectedOutput: "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON , SETTINGS TRUE) ",
 		},
 		{
+			input:          130000,
+			expectedOutput: "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON , SETTINGS TRUE, WAL) ",
+		},
+		{
 			input:          160000,
-			expectedOutput: "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON , SETTINGS TRUE) ",
+			expectedOutput: "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON , SETTINGS TRUE, WAL) ",
 		},
 	}
 
