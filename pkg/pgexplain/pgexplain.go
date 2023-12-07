@@ -113,6 +113,11 @@ type Plan struct {
 	StartupCost float64 `json:"Startup Cost"`
 	TotalCost   float64 `json:"Total Cost"`
 
+	// WAL.
+	WALRecords uint64 `json:"WAL Records,omitempty"`
+	WALFPI     uint64 `json:"WAL FPI,omitempty"`
+	WALBytes   uint64 `json:"WAL Bytes,omitempty"`
+
 	// General.
 	Alias                     string   `json:"Alias"`
 	CteName                   string   `json:"CTE Name"`
@@ -604,6 +609,10 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 
 	if buffers != "" {
 		outputFn("Buffers: %s", buffers)
+	}
+
+	if plan.WALRecords != 0 || plan.WALFPI != 0 || plan.WALBytes != 0 {
+		_, _ = outputFn(fmt.Sprintf("WAL: records=%d fpi=%d bytes=%d", plan.WALRecords, plan.WALFPI, plan.WALBytes))
 	}
 
 	ioTiming := ""

@@ -33,9 +33,11 @@ const (
 	queryExplain        = "EXPLAIN (FORMAT TEXT) "
 	queryExplainAnalyze = "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON %s) "
 	settingsExplain     = ", SETTINGS TRUE"
+	walExplain          = ", WAL"
 
 	postgresNumDiv = 10000 // Divider to get version from server_version_num.
 	pgVersion12    = 12    // Explain Settings are available starting with Postgres 12.
+	pgVersion13    = 13    // Explain WAL are available starting with Postgres 13.
 
 	// locksTitle shows locks for a single query analyzed with EXPLAIN.
 	// locksTitle = "*Query heavy locks:*\n".
@@ -174,6 +176,10 @@ func analyzePrefix(dbVersionNum int) string {
 
 	if (dbVersionNum / postgresNumDiv) >= pgVersion12 {
 		settingsValue = settingsExplain
+	}
+
+	if (dbVersionNum / postgresNumDiv) >= pgVersion13 {
+		settingsValue += walExplain
 	}
 
 	return fmt.Sprintf(queryExplainAnalyze, settingsValue)
