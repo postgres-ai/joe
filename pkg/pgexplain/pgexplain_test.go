@@ -1143,6 +1143,27 @@ const InputJSON2 = `[
     },
     "Planning Time": 0.110,
     "Triggers": [
+      {
+        "Trigger Name": "ConstraintTrigger_a_1645468",
+        "Constraint Name": "fk_636678b3bd",
+        "Relation": "users",
+        "Time": 12.443,
+        "Calls": 100
+      },
+      {
+        "Trigger Name": "ConstraintTrigger_a_12751",
+        "Constraint Name": "fk_0c0f730375",
+        "Relation": "users",
+        "Time": 0.990,
+        "Calls": 100
+      },
+      {
+        "Trigger Name": "ConstraintTrigger_a_21567",
+        "Constraint Name": "fk_1fa7a5f4da",
+        "Relation": "users",
+        "Time": 131.407,
+        "Calls": 100
+      }
     ],
     "Execution Time": 0.199
   }
@@ -1154,6 +1175,9 @@ const ExpectedText2 = ` Limit  (cost=0.43..8.45 rows=1 width=22) (actual time=0.
          Index Cond: (col = 'xxxx'::text)
          Heap Fetches: 0
          Buffers: shared hit=4
+Trigger ConstraintTrigger_a_1645468 for constraint fk_636678b3bd: time=12.443 calls=100
+Trigger ConstraintTrigger_a_12751 for constraint fk_0c0f730375: time=0.990 calls=100
+Trigger ConstraintTrigger_a_21567 for constraint fk_1fa7a5f4da: time=131.407 calls=100
 `
 
 const InputJSON3 = `[
