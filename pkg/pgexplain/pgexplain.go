@@ -49,8 +49,8 @@ const (
 )
 
 type Explain struct {
-	Plan     Plan          `json:"Plan"`
-	Triggers []interface{} `json:"Triggers"`
+	Plan     Plan      `json:"Plan"`
+	Triggers []Trigger `json:"Triggers"`
 
 	Settings      map[string]string `json:"Settings"`
 	PlanningTime  float64           `json:"Planning Time"`
@@ -80,6 +80,15 @@ type Explain struct {
 	MaxCost         float64
 	MaxDuration     float64
 	ContainsSeqScan bool
+}
+
+// Trigger describes triggers in the explain output.
+type Trigger struct {
+	Name           string  `json:"Trigger Name"`
+	ConstraintName string  `json:"Constraint Name"`
+	Relation       string  `json:"Relation"`
+	Time           float64 `json:"Time"`
+	Calls          uint64  `json:"Calls"`
 }
 
 type Plan struct {
@@ -312,10 +321,26 @@ func (ex *Explain) calculateOutlierNodes(plan *Plan) {
 
 func (ex *Explain) writeExplainText(writer io.Writer) {
 	ex.writePlanText(writer, &ex.Plan, " ", 0, true)
+
+	if len(ex.Triggers) > 0 {
+		_, _ = fmt.Fprint(writer, printTriggers(ex.Triggers))
+	}
+
+	if len(ex.Settings) > 0 {
+		_, _ = fmt.Fprintf(writer, "Settings: %s\n", printMap(ex.Settings))
+	}
 }
 
 func (ex *Explain) writeExplainTextWithoutCosts(writer io.Writer) {
 	ex.writePlanText(writer, &ex.Plan, " ", 0, false)
+
+	if len(ex.Triggers) > 0 {
+		_, _ = fmt.Fprint(writer, printTriggers(ex.Triggers))
+	}
+
+	if len(ex.Settings) > 0 {
+		_, _ = fmt.Fprintf(writer, "Settings: %s\n", printMap(ex.Settings))
+	}
 }
 
 func (ex *Explain) writeStatsText(writer io.Writer) {
@@ -408,10 +433,6 @@ func (ex *Explain) writePlanText(writer io.Writer, plan *Plan, prefix string, de
 	currentPrefix = prefix + "  "
 	if depth != 0 {
 		currentPrefix = prefix + subplanPrefix + "      "
-	}
-
-	if len(ex.Settings) > 0 {
-		_, _ = outputFn("Settings: %s", printMap(ex.Settings))
 	}
 
 	writePlanTextNodeDetails(outputFn, plan)
@@ -651,4 +672,15 @@ func printMap(items map[string]string) string {
 	}
 
 	return strings.Join(list, ", ")
+}
+
+func printTriggers(triggers []Trigger) string {
+	sb := strings.Builder{}
+
+	for _, trigger := range triggers {
+		sb.WriteString(fmt.Sprintf("Trigger %s for constraint %s: time=%.3f calls=%d\n",
+			trigger.Name, trigger.ConstraintName, trigger.Time, trigger.Calls))
+	}
+
+	return sb.String()
 }
