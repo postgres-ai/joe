@@ -210,6 +210,7 @@ func (m *Messenger) uploadFile(title string, content string, channel string, ts 
 	params := slack.UploadFileV2Parameters{
 		Title:           title,
 		Filename:        filename,
+		FileSize:        len(content),
 		Content:         content,
 		Channel:         channel,
 		ThreadTimestamp: ts,
