@@ -11,12 +11,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pkg/errors"
-	"github.com/slack-go/slack"
-
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/log"
 
 	"gitlab.com/postgres-ai/joe/pkg/models"
+
+	"github.com/pkg/errors"
+	"github.com/slack-go/slack"
 )
 
 const errorNotPublished = "Message not published yet"
@@ -207,18 +207,23 @@ func (m *Messenger) uploadFile(title string, content string, channel string, ts 
 	name := strings.ToLower(strings.ReplaceAll(title, " ", "-"))
 	filename := fmt.Sprintf("%s.%s", name, fileType)
 
-	params := slack.FileUploadParameters{
+	params := slack.UploadFileV2Parameters{
 		Title:           title,
-		Filetype:        "text",
 		Filename:        filename,
+		FileSize:        len(content),
 		Content:         content,
-		Channels:        []string{channel},
+		Channel:         channel,
 		ThreadTimestamp: ts,
 	}
 
-	file, err := m.rtm.UploadFile(params)
+	fileSummary, err := m.rtm.UploadFileV2(params)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to upload a file")
+	}
+
+	file, _, _, err := m.rtm.GetFileInfo(fileSummary.ID, 0, 0)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get an uploaded file info")
 	}
 
 	return file, nil

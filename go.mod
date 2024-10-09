@@ -16,10 +16,9 @@ require (
 	github.com/rs/xid v1.2.1
 	github.com/sergi/go-diff v1.1.0
 	github.com/sethvargo/go-password v0.2.0
-	github.com/slack-go/slack v0.9.2
+	github.com/slack-go/slack v0.14.0
 	github.com/stretchr/testify v1.7.0
 	gitlab.com/postgres-ai/database-lab/v2 v2.4.0
-	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (
@@ -37,7 +36,7 @@ require (
 	github.com/go-ole/go-ole v1.2.4 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.4.3 // indirect
-	github.com/gorilla/websocket v1.4.2 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/jackc/chunkreader/v2 v2.0.1 // indirect
 	github.com/jackc/pgio v1.0.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -62,6 +61,7 @@ require (
 	google.golang.org/genproto v0.0.0-20201110150050-8816d57aaa9a // indirect
 	google.golang.org/grpc v1.38.0 // indirect
 	google.golang.org/protobuf v1.25.0 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c // indirect
 	olympos.io/encoding/edn v0.0.0-20200308123125-93e3b8dd0e24 // indirect
 )
