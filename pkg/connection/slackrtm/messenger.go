@@ -11,11 +11,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pkg/errors"
-	"github.com/slack-go/slack"
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/log"
 
 	"gitlab.com/postgres-ai/joe/pkg/models"
+
+	"github.com/pkg/errors"
+	"github.com/slack-go/slack"
 )
 
 const errorNotPublished = "Message not published yet"
