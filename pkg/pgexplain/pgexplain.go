@@ -52,10 +52,11 @@ type Explain struct {
 	Plan     Plan      `json:"Plan"`
 	Triggers []Trigger `json:"Triggers"`
 
-	Settings      map[string]string `json:"Settings"`
-	PlanningTime  float64           `json:"Planning Time"`
-	ExecutionTime float64           `json:"Execution Time"`
-	TotalTime     float64
+	QueryIdentifier uint64            `json:"Query Identifier"`
+	Settings        map[string]string `json:"Settings"`
+	PlanningTime    float64           `json:"Planning Time"`
+	ExecutionTime   float64           `json:"Execution Time"`
+	TotalTime       float64
 
 	TotalCost float64
 
@@ -328,6 +329,10 @@ func (ex *Explain) writeExplainText(writer io.Writer) {
 
 	if len(ex.Settings) > 0 {
 		_, _ = fmt.Fprintf(writer, "Settings: %s\n", printMap(ex.Settings))
+	}
+
+	if ex.QueryIdentifier != 0 {
+		_, _ = fmt.Fprintf(writer, "Query ID: %d\n", ex.QueryIdentifier)
 	}
 }
 

@@ -1165,6 +1165,7 @@ const InputJSON2 = `[
         "Calls": 100
       }
     ],
+    "Query Identifier": 1203128915683675161,
     "Execution Time": 0.199
   }
 ]`
@@ -1178,6 +1179,7 @@ const ExpectedText2 = ` Limit  (cost=0.43..8.45 rows=1 width=22) (actual time=0.
 Trigger ConstraintTrigger_a_1645468 for constraint fk_636678b3bd: time=12.443 calls=100
 Trigger ConstraintTrigger_a_12751 for constraint fk_0c0f730375: time=0.990 calls=100
 Trigger ConstraintTrigger_a_21567 for constraint fk_1fa7a5f4da: time=131.407 calls=100
+Query ID: 1203128915683675161
 `
 
 const InputJSON3 = `[
