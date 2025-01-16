@@ -84,10 +84,14 @@ func (a *App) RunServer(ctx context.Context) error {
 
 	a.assistants = assistants
 
-	http.HandleFunc("/", a.healthCheck)
+	mux := http.NewServeMux()
 
-	log.Msg(fmt.Sprintf("Server start listening on %s:%d", a.Config.App.Host, a.Config.App.Port))
-	a.httpSrv = &http.Server{Addr: fmt.Sprintf("%s:%d", a.Config.App.Host, a.Config.App.Port)}
+	mux.HandleFunc("GET /", a.healthCheck)
+
+	addr := fmt.Sprintf("%s:%d", a.Config.App.Host, a.Config.App.Port)
+
+	log.Msg(fmt.Sprintf("Server start listening on %s", addr))
+	a.httpSrv = &http.Server{Addr: addr, Handler: mux}
 
 	return a.httpSrv.ListenAndServe()
 }
