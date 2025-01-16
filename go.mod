@@ -1,6 +1,6 @@
 module gitlab.com/postgres-ai/joe
 
-go 1.19
+go 1.22
 
 require (
 	github.com/AlekSi/pointer v1.1.0

@@ -18,6 +18,7 @@ import (
 
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/client/dblabapi"
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/log"
+	"gitlab.com/postgres-ai/database-lab/v2/pkg/srv/api"
 
 	"gitlab.com/postgres-ai/joe/features"
 	"gitlab.com/postgres-ai/joe/pkg/config"
@@ -26,6 +27,7 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/connection/slackrtm"
 	"gitlab.com/postgres-ai/joe/pkg/connection/slacksm"
 	"gitlab.com/postgres-ai/joe/pkg/connection/webui"
+	"gitlab.com/postgres-ai/joe/pkg/models"
 	"gitlab.com/postgres-ai/joe/pkg/services/dblab"
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 	"gitlab.com/postgres-ai/joe/pkg/services/storage"
@@ -84,10 +86,17 @@ func (a *App) RunServer(ctx context.Context) error {
 
 	a.assistants = assistants
 
-	http.HandleFunc("/", a.healthCheck)
+	mux := http.NewServeMux()
 
-	log.Msg(fmt.Sprintf("Server start listening on %s:%d", a.Config.App.Host, a.Config.App.Port))
-	a.httpSrv = &http.Server{Addr: fmt.Sprintf("%s:%d", a.Config.App.Host, a.Config.App.Port)}
+	mux.HandleFunc("POST /run-in-clone", a.runInClone)
+	mux.HandleFunc("GET /session-results", a.sessionResults)
+
+	mux.HandleFunc("GET /", a.healthCheck)
+
+	addr := fmt.Sprintf("%s:%d", a.Config.App.Host, a.Config.App.Port)
+
+	log.Msg(fmt.Sprintf("Server start listening on %s", addr))
+	a.httpSrv = &http.Server{Addr: addr, Handler: mux}
 
 	return a.httpSrv.ListenAndServe()
 }
@@ -276,6 +285,46 @@ func (a *App) healthCheck(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
 	if err := json.NewEncoder(w).Encode(healthResponse); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Err(err)
+
+		return
+	}
+}
+
+func (a *App) runInClone(w http.ResponseWriter, r *http.Request) {
+	if r.Body == http.NoBody {
+		api.SendBadRequestError(w, r, "request body cannot be empty")
+		return
+	}
+
+	var runRequest models.RunRequest
+	if err := api.ReadJSON(r, &runRequest); err != nil {
+		api.SendBadRequestError(w, r, err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+
+	if err := json.NewEncoder(w).Encode(models.RunResponse{}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Err(err)
+
+		return
+	}
+}
+
+func (a *App) sessionResults(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.URL.Query().Get("session_id")
+
+	if sessionID == "" {
+		api.SendBadRequestError(w, r, "session_id must not be empty")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+
+	if err := json.NewEncoder(w).Encode(models.CommandResult{}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		log.Err(err)
 
