@@ -116,7 +116,7 @@ func (s *ProcessingService) RestoreSessions(ctx context.Context) error {
 			continue
 		}
 
-		pool, userConn, err := initConn(ctx, user.Session.ConnParams)
+		pool, userConn, err := InitConn(ctx, user.Session.ConnParams)
 		if err != nil {
 			log.Err("failed to init database connection, stop session: ", err)
 			s.stopSession(ctx, user)

@@ -5,6 +5,7 @@ type RunRequest struct {
 	Port      int    `json:"port"`
 	User      string `json:"user"`
 	Password  string `json:"password"`
+	DBName    string `json:"db_name"`
 	Command   string `json:"command"`
 	Query     string `json:"query"`
 	SessionID string `json:"session_id"`
