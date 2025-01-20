@@ -5,6 +5,7 @@ type RunRequest struct {
 	Port      int    `json:"port"`
 	User      string `json:"user"`
 	Password  string `json:"password"`
+	DBName    string `json:"db_name"`
 	Command   string `json:"command"`
 	Query     string `json:"query"`
 	SessionID string `json:"session_id"`
@@ -27,7 +28,7 @@ type CommandResult struct {
 	Error             string `json:"error"`
 	CreatedAt         string `json:"created_at"`
 	Response          string `json:"response"`
-	PlanJson          string `json:"plan_json"`
-	PlanExecutionJson string `json:"plan_execution_json"`
+	PlanJSON          string `json:"plan_json"`
+	PlanExecutionJSON string `json:"plan_execution_json"`
 	QueryLocks        string `json:"query_locks"`
 }

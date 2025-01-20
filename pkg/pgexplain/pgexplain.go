@@ -343,6 +343,7 @@ func (ex *Explain) writeExplainTextWithoutCosts(writer io.Writer) {
 	}
 }
 
+// nolint
 func (ex *Explain) writeStatsText(writer io.Writer) {
 	fmt.Fprintf(writer, "\nTime: %s\n", util.MillisecondsToString(ex.TotalTime))
 	fmt.Fprintf(writer, "  - planning: %s\n", util.MillisecondsToString(ex.PlanningTime))

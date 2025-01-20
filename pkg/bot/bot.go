@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"html"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/connection/webui"
 	"gitlab.com/postgres-ai/joe/pkg/models"
 	"gitlab.com/postgres-ai/joe/pkg/services/dblab"
+	"gitlab.com/postgres-ai/joe/pkg/services/msgproc"
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 	"gitlab.com/postgres-ai/joe/pkg/services/storage"
 	"gitlab.com/postgres-ai/joe/pkg/util"
@@ -303,6 +305,22 @@ func (a *App) runInClone(w http.ResponseWriter, r *http.Request) {
 		api.SendBadRequestError(w, r, err.Error())
 		return
 	}
+
+	_, pgxConn, err := msgproc.InitConn(context.Background(), models.Clone{
+		Name:     runRequest.DBName,
+		Host:     "127.0.0.1", // TODO: DBLabClient.URL("").Hostname()
+		Port:     strconv.Itoa(runRequest.Port),
+		Username: runRequest.User,
+		Password: runRequest.Password,
+		SSLMode:  "", // TODO: get from config
+	})
+
+	if err != nil {
+		api.SendBadRequestError(w, r, err.Error())
+		return
+	}
+
+	_ = pgxConn // use for explain
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 

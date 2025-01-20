@@ -129,7 +129,7 @@ func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.Us
 
 	dblabClone := s.buildDBLabCloneConn(clone.DB)
 
-	db, userConn, err := initConn(ctx, dblabClone)
+	db, userConn, err := InitConn(ctx, dblabClone)
 	if err != nil {
 		return errors.Wrap(err, "failed to init database connection")
 	}
@@ -176,7 +176,8 @@ func (s *ProcessingService) buildDBLabCloneConn(dbParams dblabmodels.Database) m
 	}
 }
 
-func initConn(ctx context.Context, dblabClone models.Clone) (*pgxpool.Pool, *pgx.Conn, error) {
+// InitConn initializes a new connection to clone.
+func InitConn(ctx context.Context, dblabClone models.Clone) (*pgxpool.Pool, *pgx.Conn, error) {
 	connectionConfig, err := pgxpool.ParseConfig(dblabClone.ConnectionString())
 	if err != nil {
 		log.Err("Failed to parse connection config:", err)
