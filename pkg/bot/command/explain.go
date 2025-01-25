@@ -46,11 +46,17 @@ const (
 // Explain runs an explain query.
 func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform.Command, msg *models.Message,
 	session usermanager.UserSession) error {
+	return ExplainWithoutSession(ctx, msgSvc, command, msg, session.Pool, session.CloneConnection, session.DBVersion)
+}
+
+// ExplainWithoutSession runs an explain query without user session.
+func ExplainWithoutSession(ctx context.Context, msgSvc connection.Messenger, command *platform.Command, msg *models.Message,
+	pool *pgxpool.Pool, conn *pgx.Conn, dbVersion int) error {
 	if command.Query == "" {
 		return errors.New(MsgExplainOptionReq)
 	}
 
-	serviceConn, err := getConn(ctx, session.Pool)
+	serviceConn, err := getConn(ctx, pool)
 	if err != nil {
 		log.Err("failed to get connection:", err)
 		return err
@@ -82,19 +88,19 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 		return err
 	}
 
-	cmd := NewPlan(command, msg, session.CloneConnection, msgSvc)
+	cmd := NewPlan(command, msg, conn, msgSvc)
 	msgInitText, err := cmd.explainWithoutExecution(ctx)
 	if err != nil {
 		return errors.Wrap(err, "failed to run explain without execution")
 	}
 
-	explainAnalyze, err := querier.DBQueryWithResponse(ctx, tx, analyzePrefix(session.DBVersion)+command.Query)
+	explainAnalyze, err := querier.DBQueryWithResponse(ctx, tx, analyzePrefix(dbVersion)+command.Query)
 	if err != nil {
 		return err
 	}
 
 	// Observe query locks.
-	result, err := observeLocks(ctx, session.Pool, txPID)
+	result, err := observeLocks(ctx, pool, txPID)
 	if err != nil {
 		log.Err("failed to observe locks:", err)
 	}

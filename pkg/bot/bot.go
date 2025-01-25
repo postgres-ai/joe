@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"html"
 	"net/http"
+	"net/url"
 	"strconv"
 	"sync"
 	"time"
@@ -22,6 +23,7 @@ import (
 	"gitlab.com/postgres-ai/database-lab/v2/pkg/srv/api"
 
 	"gitlab.com/postgres-ai/joe/features"
+	"gitlab.com/postgres-ai/joe/pkg/bot/command"
 	"gitlab.com/postgres-ai/joe/pkg/config"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/connection/slack"
@@ -306,21 +308,54 @@ func (a *App) runInClone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, pgxConn, err := msgproc.InitConn(context.Background(), models.Clone{
-		Name:     runRequest.DBName,
-		Host:     "127.0.0.1", // TODO: DBLabClient.URL("").Hostname()
-		Port:     strconv.Itoa(runRequest.Port),
-		Username: runRequest.User,
-		Password: runRequest.Password,
-		SSLMode:  "", // TODO: get from config
-	})
+	if runRequest.Command != msgproc.CommandExplain {
+		api.SendBadRequestError(w, r, fmt.Sprintf("Not allowed command given: %q. Allowed commands: %s",
+			runRequest.Command, []string{msgproc.CommandExplain}))
+		return
+	}
 
+	dbLabInstance, ok := a.Config.ChannelMapping.DBLabInstances[runRequest.DBLabServer]
+	if !ok {
+		api.SendBadRequestError(w, r, fmt.Sprintf("DBLabServer %q not found", runRequest.DBLabServer))
+		return
+	}
+
+	parsedURL, err := url.Parse(dbLabInstance.URL)
 	if err != nil {
 		api.SendBadRequestError(w, r, err.Error())
 		return
 	}
 
-	_ = pgxConn // use for explain
+	pgxPool, pgxConn, err := msgproc.InitConn(context.Background(), models.Clone{
+		Host:     parsedURL.Hostname(),
+		Port:     strconv.Itoa(runRequest.Port),
+		Name:     runRequest.DBName,
+		Username: runRequest.User,
+		Password: runRequest.Password,
+		SSLMode:  runRequest.SSLMode,
+	})
+	if err != nil {
+		api.SendBadRequestError(w, r, err.Error())
+		return
+	}
+
+	// TODO: initialize
+	var (
+		msgSvc    connection.Messenger
+		msg       *models.Message
+		dbVersion int
+	)
+
+	platformCmd, err := buildPlatformCmd(r.Context(), a.platformClient, runRequest)
+	if err != nil {
+		api.SendBadRequestError(w, r, err.Error())
+		return
+	}
+
+	if err := command.ExplainWithoutSession(r.Context(), msgSvc, platformCmd, msg, pgxPool, pgxConn, dbVersion); err != nil {
+		api.SendBadRequestError(w, r, err.Error())
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
@@ -330,6 +365,37 @@ func (a *App) runInClone(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+}
+
+func buildPlatformCmd(ctx context.Context, platformClient *platform.Client, runRequest models.RunRequest) (*platform.Command, error) {
+	var (
+		err       error
+		sessionID = runRequest.SessionID
+	)
+
+	if sessionID == "" {
+		platformSession := platform.Session{
+			//UserID:      user.UserInfo.ID,
+			Username: runRequest.User,
+			//ChannelID:   channelID,
+			ProjectName: runRequest.Project,
+		}
+
+		sessionID, err = platformClient.CreatePlatformSession(ctx, platformSession)
+		if err != nil {
+			log.Err("API: Create artificial platform session:", err)
+
+			return nil, fmt.Errorf("failed to create a platform session: %w", err)
+		}
+	}
+
+	platformCmd := &platform.Command{
+		SessionID: sessionID,
+		Command:   runRequest.Command,
+		Query:     runRequest.Query,
+	}
+
+	return platformCmd, nil
 }
 
 func (a *App) sessionResults(w http.ResponseWriter, r *http.Request) {
