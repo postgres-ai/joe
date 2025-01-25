@@ -2,13 +2,16 @@ package models
 
 // RunRequest represents run requests.
 type RunRequest struct {
-	Port      int    `json:"port"`
-	User      string `json:"user"`
-	Password  string `json:"password"`
-	DBName    string `json:"db_name"`
-	Command   string `json:"command"`
-	Query     string `json:"query"`
-	SessionID string `json:"session_id"`
+	DBLabServer string `json:"dblab_server"`
+	Port        int    `json:"port"`
+	User        string `json:"user"`
+	Password    string `json:"password"`
+	SSLMode     string `json:"ssl_mode"`
+	DBName      string `json:"db_name"`
+	Project     string `json:"project"`
+	Command     string `json:"command"`
+	Query       string `json:"query"`
+	SessionID   string `json:"session_id"`
 }
 
 // RunResponse represents run response.
