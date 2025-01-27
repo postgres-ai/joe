@@ -36,10 +36,14 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 	"gitlab.com/postgres-ai/joe/pkg/services/storage"
 	"gitlab.com/postgres-ai/joe/pkg/util"
+	"gitlab.com/postgres-ai/joe/pkg/util/db"
 )
 
 // InactiveCloneCheckInterval defines an interval for check of idleness sessions.
 const InactiveCloneCheckInterval = time.Minute
+
+// HeaderAccessToken defines the header name of the Platform Access Token.
+const HeaderAccessToken = "Platform-Access-Token"
 
 // App defines a application struct.
 type App struct {
@@ -308,6 +312,17 @@ func (a *App) runInClone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	plAccessToken := r.Header.Get(HeaderAccessToken)
+	if plAccessToken != "" {
+		api.SendUnauthorizedError(w, r)
+		return
+	}
+
+	if _, err := a.platformClient.CheckPlatformToken(r.Context(), platform.TokenCheckRequest{Token: plAccessToken}); err != nil {
+		api.SendUnauthorizedError(w, r)
+		return
+	}
+
 	if runRequest.Command != msgproc.CommandExplain {
 		api.SendBadRequestError(w, r, fmt.Sprintf("Not allowed command given: %q. Allowed commands: %s",
 			runRequest.Command, []string{msgproc.CommandExplain}))
@@ -339,14 +354,25 @@ func (a *App) runInClone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: initialize
-	var (
-		msgSvc    connection.Messenger
-		msg       *models.Message
-		dbVersion int
-	)
+	platformClient, err := getUserPlatformClient(a.Config.Platform, plAccessToken)
+	if err != nil {
+		api.SendBadRequestError(w, r, err.Error())
+		return
+	}
 
-	platformCmd, err := buildPlatformCmd(r.Context(), a.platformClient, runRequest)
+	msgSvc := webui.NewMessenger(platformClient)
+
+	platformCmd, err := buildPlatformCmd(r.Context(), platformClient, runRequest, a.Config.Platform.Project)
+	if err != nil {
+		api.SendBadRequestError(w, r, err.Error())
+		return
+	}
+
+	msg := &models.Message{
+		CreatedAt: time.Now(),
+	}
+
+	dbVersion, err := db.GetMajorVersion(context.Background(), pgxConn)
 	if err != nil {
 		api.SendBadRequestError(w, r, err.Error())
 		return
@@ -367,7 +393,15 @@ func (a *App) runInClone(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func buildPlatformCmd(ctx context.Context, platformClient *platform.Client, runRequest models.RunRequest) (*platform.Command, error) {
+func getUserPlatformClient(platformCfg config.Platform, plAccessToken string) (*platform.Client, error) {
+	platformCfg.Token = plAccessToken
+	platformCfg.HistoryEnabled = true
+
+	return platform.NewClient(platformCfg)
+}
+
+func buildPlatformCmd(ctx context.Context, plClient *platform.Client, runRequest models.RunRequest,
+	project string) (*platform.Command, error) {
 	var (
 		err       error
 		sessionID = runRequest.SessionID
@@ -378,10 +412,10 @@ func buildPlatformCmd(ctx context.Context, platformClient *platform.Client, runR
 			//UserID:      user.UserInfo.ID,
 			Username: runRequest.User,
 			//ChannelID:   channelID,
-			ProjectName: runRequest.Project,
+			ProjectName: project,
 		}
 
-		sessionID, err = platformClient.CreatePlatformSession(ctx, platformSession)
+		sessionID, err = plClient.CreatePlatformSession(ctx, platformSession)
 		if err != nil {
 			log.Err("API: Create artificial platform session:", err)
 
