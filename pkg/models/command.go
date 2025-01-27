@@ -8,7 +8,6 @@ type RunRequest struct {
 	Password    string `json:"password"`
 	SSLMode     string `json:"ssl_mode"`
 	DBName      string `json:"db_name"`
-	Project     string `json:"project"`
 	Command     string `json:"command"`
 	Query       string `json:"query"`
 	SessionID   string `json:"session_id"`
