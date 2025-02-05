@@ -6,7 +6,7 @@
 package operator
 
 import (
-	"gitlab.com/postgres-ai/database-lab/v2/pkg/util"
+	"slices"
 )
 
 var (
@@ -16,10 +16,10 @@ var (
 
 // IsDML checks if the query is related to data manipulation.
 func IsDML(command string) bool {
-	return util.Contains(hintExplainDmlWords, command)
+	return slices.Contains(hintExplainDmlWords, command)
 }
 
 // IsDDL checks if the query is related to data definition.
 func IsDDL(command string) bool {
-	return util.Contains(hintExecDdlWords, command)
+	return slices.Contains(hintExecDdlWords, command)
 }

@@ -2,10 +2,9 @@ run:
   timeout: 90s
   issues-exit-code: 1
   tests: true
-  skip-dirs:
-    - vendor
 output:
-  format: colored-line-number
+  formats:
+    - format: colored-line-number
   print-issued-lines: true
   print-linter-name: true
 
@@ -13,28 +12,39 @@ linters-settings:
   errcheck:
     check-type-assertions: false
     check-blank: false
-    exclude: ./errcheck_excludes.txt
-
+    exclude-functions:
+      - (*os.File).Close
+  errorlint:
+    errorf: true
+    asserts: true
+    comparison: true
   gofmt:
     simplify: true
+  gofumpt:
+    extra-rules: false
+  gosimple:
+    checks: [ "all" ]
   goimports:
-    local-prefixes: gitlab.com/postgres-ai/database-lab
+    local-prefixes: gitlab.com/postgres-ai/database-lab,gitlab.com/postgres-ai/joe
   dupl:
     threshold: 120
   goconst:
     min-len: 3
     min-occurrences: 5
-  gomnd:
-    settings:
-      mnd:
-        ignored-functions: strconv.Format*,os.*,strconv.Parse*,strings.SplitN,bytes.SplitN
   lll:
     line-length: 140
     tab-width: 1
+  mnd:
+    ignored-functions:
+      - strconv.Format*
+      - os.*
+      - strconv.Parse*
+      - strings.SplitN
+      - bytes.SplitN
   revive:
-    min-confidence: 0.8
+    confidence: 0.8
   unused:
-    check-exported: false
+    exported-fields-are-used: false
   unparam:
     check-exported: false
   nakedret:
@@ -51,42 +61,37 @@ linters-settings:
       - hugeParam
     enabled-tags:
       - performance
-  godot:
-    scope: declarations
+    disabled-tags:
+      - experimental
 
 linters:
   enable:
-    - deadcode
-    - depguard
     - dupl
     - errcheck
     - gochecknoinits
     - goconst
     - gocritic
     - goimports
-    - gomnd
     - gosimple
     - govet
     - ineffassign
     - lll
-    - megacheck
     - misspell
+    - mnd
     - prealloc
     - revive
-    - structcheck
+    - staticcheck
     - stylecheck
     - unconvert
-    - varcheck
     - unused
     - unparam
     - wsl
-    - godot
   enable-all: false
   disable:
+    - depguard
     - gosec
-    - interfacer
     - gocyclo # currently unmaintained
-  presets:
+  #presets:
   fast: false
 
 issues:
@@ -98,10 +103,13 @@ issues:
         - lll
         - errcheck
         - wsl
-        - gomnd
+        - mnd
+  exclude-dirs:
+    - vendor
 
   exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
+
 
   new-from-rev: 33432c82a0a8d26108421b9be0a6aef4a8dbc1af
