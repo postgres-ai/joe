@@ -1,4 +1,4 @@
-image: golang:1.19
+image: golang:1.23
 
 include:
   - template: Security/SAST.gitlab-ci.yml
@@ -36,7 +36,7 @@ build-binary:
     - make build-ee
 
 .job_template: &build_image_definition
-  image: docker:19
+  image: docker:20
   stage: build-image
   artifacts:
     paths:

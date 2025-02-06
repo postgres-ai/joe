@@ -9,16 +9,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/pkg/errors"
+	"gitlab.com/postgres-ai/database-lab/v3/pkg/runners"
 
-	"gitlab.com/postgres-ai/database-lab/v2/pkg/client/dblabapi"
-	"gitlab.com/postgres-ai/database-lab/v2/pkg/log"
-	"gitlab.com/postgres-ai/database-lab/v2/pkg/services/provision/runners"
-	"gitlab.com/postgres-ai/database-lab/v2/pkg/util"
+	"gitlab.com/postgres-ai/database-lab/v3/pkg/client/dblabapi"
+	"gitlab.com/postgres-ai/database-lab/v3/pkg/log"
 
 	"gitlab.com/postgres-ai/joe/features"
 	"gitlab.com/postgres-ai/joe/features/definition"
@@ -194,7 +194,7 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 
 	s.showBotHints(incomingMessage, receivedCommand, query)
 
-	if !util.Contains(supportedCommands, receivedCommand) {
+	if !slices.Contains(supportedCommands, receivedCommand) {
 		log.Dbg("Message filtered: Not a command")
 		return
 	}
@@ -328,7 +328,7 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 		terminateCmd := command.NewTerminateCmd(platformCmd, msg, user.Session.Pool, s.messenger)
 		err = terminateCmd.Execute()
 
-	case util.Contains(allowedPsqlCommands, receivedCommand):
+	case slices.Contains(allowedPsqlCommands, receivedCommand):
 		runner := pgtransmission.NewPgTransmitter(user.Session.ConnParams, pgtransmission.LogsEnabledDefault)
 		err = command.Transmit(platformCmd, msg, s.messenger, runner)
 	}
