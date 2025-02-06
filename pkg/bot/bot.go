@@ -10,8 +10,6 @@ import (
 	"fmt"
 	"html"
 	"net/http"
-	"net/url"
-	"strconv"
 	"sync"
 	"time"
 
@@ -22,7 +20,6 @@ import (
 	"gitlab.com/postgres-ai/database-lab/v3/pkg/log"
 
 	"gitlab.com/postgres-ai/joe/features"
-	"gitlab.com/postgres-ai/joe/pkg/bot/command"
 	"gitlab.com/postgres-ai/joe/pkg/config"
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/connection/slack"
@@ -30,18 +27,13 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/connection/slacksm"
 	"gitlab.com/postgres-ai/joe/pkg/connection/webui"
 	"gitlab.com/postgres-ai/joe/pkg/services/dblab"
-	"gitlab.com/postgres-ai/joe/pkg/services/msgproc"
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 	"gitlab.com/postgres-ai/joe/pkg/services/storage"
 	"gitlab.com/postgres-ai/joe/pkg/util"
-	"gitlab.com/postgres-ai/joe/pkg/util/db"
 )
 
 // InactiveCloneCheckInterval defines an interval for check of idleness sessions.
 const InactiveCloneCheckInterval = time.Minute
-
-// HeaderAccessToken defines the header name of the Platform Access Token.
-const HeaderAccessToken = "Platform-Access-Token"
 
 // App defines a application struct.
 type App struct {
