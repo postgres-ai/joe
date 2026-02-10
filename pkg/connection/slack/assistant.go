@@ -320,7 +320,10 @@ func MessageEventToIncomingMessage(event *slackevents.MessageEvent) models.Incom
 		inputEvent.UserID = ""
 	}
 
-	files := event.Files
+	var files []slack.File
+	if event.Message != nil && len(event.Message.Files) > 0 {
+		files = event.Message.Files // In slack-go/slack v0.17+, Files moved from event to event.Message
+	}
 	if len(files) > 0 {
 		inputEvent.SnippetURL = files[0].URLPrivate
 	}

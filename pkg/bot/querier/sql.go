@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgtype/pgxtype"
 	"github.com/olekukonko/tablewriter"
+	"github.com/olekukonko/tablewriter/tw"
 	"github.com/pkg/errors"
 	"gitlab.com/postgres-ai/database-lab/v3/pkg/log"
 )
@@ -162,11 +163,21 @@ func RenderTable(tableString *strings.Builder, res [][]string) {
 		return
 	}
 
-	table := tablewriter.NewWriter(tableString)
-	table.SetBorder(false)
-	table.SetAlignment(tablewriter.ALIGN_LEFT)
-	table.SetHeader(res[0])
-	table.AppendBulk(res[1:])
+	table := tablewriter.NewTable(tableString,
+		tablewriter.WithRendition(tw.Rendition{Borders: tw.BorderNone}),
+		tablewriter.WithRowAlignment(tw.AlignLeft),
+	)
+
+	header := make([]interface{}, len(res[0]))
+	for i, v := range res[0] {
+		header[i] = v
+	}
+
+	table.Header(header...)
+	if err := table.Bulk(res[1:]); err != nil {
+		log.Err("table bulk render", err)
+		return
+	}
 	table.Render()
 }
 
