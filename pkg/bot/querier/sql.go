@@ -178,7 +178,6 @@ func RenderTable(tableString *strings.Builder, res [][]string) {
 		log.Err("table bulk render", err)
 		return
 	}
-
 	if err := table.Render(); err != nil {
 		log.Err("table render", err)
 	}
