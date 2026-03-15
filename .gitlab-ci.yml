@@ -19,8 +19,9 @@ test:
 
 lint:
   stage: test
+  image: golangci/golangci-lint:v1.64.0
   script:
-    - make lint
+    - golangci-lint run
 
 build-binary:
   stage: build-binary
