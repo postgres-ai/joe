@@ -174,10 +174,12 @@ func RenderTable(tableString *strings.Builder, res [][]string) {
 	}
 
 	table.Header(header...)
+
 	if err := table.Bulk(res[1:]); err != nil {
 		log.Err("table bulk render", err)
 		return
 	}
+
 	if err := table.Render(); err != nil {
 		log.Err("table render", err)
 	}
