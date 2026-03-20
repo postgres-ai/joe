@@ -320,12 +320,12 @@ func MessageEventToIncomingMessage(event *slackevents.MessageEvent) models.Incom
 		inputEvent.UserID = ""
 	}
 
-	var files []slack.File
+	// In slack-go v0.17+, Files live on event.Message (a *slack.Msg).
+	// The custom UnmarshalJSON on MessageEvent guarantees event.Message
+	// is populated even for primary (non-threaded) messages, but we
+	// guard against nil defensively for programmatic / test callers.
 	if event.Message != nil && len(event.Message.Files) > 0 {
-		files = event.Message.Files // In slack-go/slack v0.17+, Files moved from event to event.Message
-	}
-	if len(files) > 0 {
-		inputEvent.SnippetURL = files[0].URLPrivate
+		inputEvent.SnippetURL = event.Message.Files[0].URLPrivate
 	}
 
 	return inputEvent
