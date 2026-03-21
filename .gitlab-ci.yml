@@ -1,4 +1,4 @@
-image: golang:1.23
+image: golang:1.24
 
 include:
   - template: Security/SAST.gitlab-ci.yml
@@ -21,8 +21,9 @@ test:
 
 lint:
   stage: test
+  image: golangci/golangci-lint:v1.64
   script:
-    - make lint
+    - golangci-lint run
 
 build-binary:
   stage: build-binary
