@@ -91,12 +91,18 @@ func loadAppConfig() (*config.Config, error) {
 		configPath = path.Join(config.ConfigsPath, config.AppFilename)
 	)
 
-	if err := cleanenv.ReadConfig(configPath, &botCfg); err != nil {
+	expandedConfigPath, cleanup, err := config.ExpandFileToTemp(configPath)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to prepare a config file")
+	}
+	defer cleanup()
+
+	if err := cleanenv.ReadConfig(expandedConfigPath, &botCfg); err != nil {
 		return nil, errors.Wrap(err, "failed to read a config file")
 	}
 
 	// Load and validate an enterprise options.
-	enterpriseOptions, err := features.GetOptionProvider().GetEnterpriseOptions(configPath)
+	enterpriseOptions, err := features.GetOptionProvider().GetEnterpriseOptions(expandedConfigPath)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get enterprise options")
 	}
