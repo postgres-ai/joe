@@ -111,6 +111,14 @@ type Plan struct {
 	IOReadTime  *float64 `json:"I/O Read Time,omitempty"`  // ms
 	IOWriteTime *float64 `json:"I/O Write Time,omitempty"` // ms
 
+	// PostgreSQL 17+ reports I/O timings split by buffer type.
+	SharedIOReadTime  *float64 `json:"Shared I/O Read Time,omitempty"`  // ms
+	SharedIOWriteTime *float64 `json:"Shared I/O Write Time,omitempty"` // ms
+	LocalIOReadTime   *float64 `json:"Local I/O Read Time,omitempty"`   // ms
+	LocalIOWriteTime  *float64 `json:"Local I/O Write Time,omitempty"`  // ms
+	TempIOReadTime    *float64 `json:"Temp I/O Read Time,omitempty"`    // ms
+	TempIOWriteTime   *float64 `json:"Temp I/O Write Time,omitempty"`   // ms
+
 	// Actual.
 	ActualLoops       uint64  `json:"Actual Loops"`
 	ActualRows        uint64  `json:"Actual Rows"`
@@ -215,10 +223,45 @@ func (ex *Explain) RenderStats() string {
 }
 
 func (ex *Explain) processExplain() {
+	ex.Plan.normalizeIOTiming()
 	ex.calculateParams()
 
 	ex.processPlan(&ex.Plan)
 	ex.calculateOutlierNodes(&ex.Plan)
+}
+
+func (plan *Plan) normalizeIOTiming() {
+	if plan.IOReadTime == nil {
+		plan.IOReadTime = sumFloat64Pointers(plan.SharedIOReadTime, plan.LocalIOReadTime, plan.TempIOReadTime)
+	}
+
+	if plan.IOWriteTime == nil {
+		plan.IOWriteTime = sumFloat64Pointers(plan.SharedIOWriteTime, plan.LocalIOWriteTime, plan.TempIOWriteTime)
+	}
+
+	for index := range plan.Plans {
+		plan.Plans[index].normalizeIOTiming()
+	}
+}
+
+func sumFloat64Pointers(values ...*float64) *float64 {
+	var total float64
+	found := false
+
+	for _, value := range values {
+		if value == nil {
+			continue
+		}
+
+		total += *value
+		found = true
+	}
+
+	if !found {
+		return nil
+	}
+
+	return &total
 }
 
 func (ex *Explain) calculateParams() {
