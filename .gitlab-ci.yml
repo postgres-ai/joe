@@ -8,6 +8,16 @@ include:
 variables:
   DOCKER_FILE: "Dockerfile"
 
+# Run a single pipeline per change: MR pipeline when an MR is open, branch
+# pipeline otherwise. Tags always trigger their own pipeline.
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_COMMIT_TAG
+
 stages:
   - test
   - build-binary
@@ -15,6 +25,10 @@ stages:
 
 test:
   stage: test
+  only:
+    - branches
+    - tags
+    - merge_requests
   script:
     - make vet
     - make test
@@ -22,6 +36,10 @@ test:
 lint:
   stage: test
   image: golangci/golangci-lint:v1.64
+  only:
+    - branches
+    - tags
+    - merge_requests
   script:
     - golangci-lint run
 
@@ -31,6 +49,7 @@ build-binary:
     refs:
       - branches
       - tags
+      - merge_requests
   artifacts:
     paths:
       - bin
@@ -66,6 +85,10 @@ build-binary:
 
 .only_var_template: &only_feature
   only:
+    refs:
+      - branches
+      - tags
+      - merge_requests
     variables:
       - $CI_COMMIT_TAG == null
       - $CI_COMMIT_REF_SLUG != "master"
