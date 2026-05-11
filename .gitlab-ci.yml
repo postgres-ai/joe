@@ -12,11 +12,16 @@ variables:
 # pipeline otherwise. Tags always trigger their own pipeline.
 workflow:
   rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_PROJECT_ID != "11828313"
+      when: never
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: always
     - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
       when: never
     - if: $CI_COMMIT_BRANCH
+      when: always
     - if: $CI_COMMIT_TAG
+      when: always
 
 stages:
   - test
@@ -95,7 +100,15 @@ build-binary:
 
 build-image-feature:
   <<: *build_image_definition
-  <<: *only_feature
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: never
+    - if: $CI_COMMIT_REF_SLUG == "master"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_PROJECT_ID == "11828313"
+      when: on_success
+    - if: $CI_COMMIT_BRANCH
+      when: on_success
   variables:
     REGISTRY_USER: "${CI_REGISTRY_USER}"
     REGISTRY_PASSWORD: "${CI_REGISTRY_PASSWORD}"
