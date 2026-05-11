@@ -30,7 +30,7 @@ all: clean vet build
 
 # Install the linter to $GOPATH/bin which is expected to be in $PATH
 install-lint:
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(shell go env GOPATH)/bin v1.64.0
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(shell go env GOPATH)/bin v2.11.4
 
 run-lint:
 	golangci-lint run

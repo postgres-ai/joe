@@ -175,9 +175,11 @@ func (a *Assistant) RestoreSessions(ctx context.Context) error {
 // CheckIdleSessions check the running user sessions for idleness.
 func (a *Assistant) CheckIdleSessions(ctx context.Context) {
 	a.procMu.RLock()
+
 	for _, proc := range a.msgProcessors {
 		proc.CheckIdleSessions(ctx)
 	}
+
 	a.procMu.RUnlock()
 }
 
