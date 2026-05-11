@@ -247,8 +247,10 @@ func (plan *Plan) normalizeIOTiming() {
 }
 
 func sumFloat64Pointers(values ...*float64) *float64 {
-	var total float64
-	found := false
+	var (
+		total float64
+		found bool
+	)
 
 	for _, value := range values {
 		if value == nil {
