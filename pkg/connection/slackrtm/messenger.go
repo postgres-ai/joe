@@ -247,8 +247,8 @@ func (m *Messenger) DownloadArtifact(privateURL string) ([]byte, error) {
 	req.Header.Set(HeaderAuthorization, fmt.Sprintf("Bearer %s", m.config.AccessToken))
 
 	client := http.Client{}
-	resp, err := client.Do(req)
 
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot download snippet")
 	}
