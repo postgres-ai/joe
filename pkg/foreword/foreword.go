@@ -68,6 +68,7 @@ func (f *Content) EnrichForewordInfo(ctx context.Context, db *pgxpool.Pool) erro
 // GetForeword returns a foreword message.
 func (f *Content) GetForeword() string {
 	duration := durafmt.Parse(f.Duration.Round(time.Minute))
+
 	return fmt.Sprintf(MsgSessionForewordTpl, f.SessionID, duration, f.DBVersion, f.AppVersion, f.Edition,
 		f.DBName, f.DBSize, f.DSA, f.DSADiff)
 }

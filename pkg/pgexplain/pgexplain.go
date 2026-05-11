@@ -718,7 +718,7 @@ func formatDetails(plan *Plan) string {
 }
 
 func printMap(items map[string]string) string {
-	list := []string{}
+	list := make([]string, 0, len(items))
 
 	for key, value := range items {
 		list = append(list, fmt.Sprintf("%s = '%v'", key, value))
@@ -731,8 +731,8 @@ func printTriggers(triggers []Trigger) string {
 	sb := strings.Builder{}
 
 	for _, trigger := range triggers {
-		sb.WriteString(fmt.Sprintf("Trigger %s for constraint %s: time=%.3f calls=%d\n",
-			trigger.Name, trigger.ConstraintName, trigger.Time, trigger.Calls))
+		fmt.Fprintf(&sb, "Trigger %s for constraint %s: time=%.3f calls=%d\n",
+			trigger.Name, trigger.ConstraintName, trigger.Time, trigger.Calls)
 	}
 
 	return sb.String()

@@ -147,7 +147,7 @@ func (a *Assistant) handleRTMEvents(ctx context.Context, incomingEvents chan sla
 		case *slack.MessageEvent:
 			log.Dbg("Event type: Message")
 
-			if ev.Msg.SubType != "" {
+			if ev.SubType != "" {
 				// Handle only normal messages.
 				continue
 			}
@@ -229,9 +229,11 @@ func (a *Assistant) RestoreSessions(ctx context.Context) error {
 // CheckIdleSessions check the running user sessions for idleness.
 func (a *Assistant) CheckIdleSessions(ctx context.Context) {
 	a.procMu.RLock()
+
 	for _, proc := range a.msgProcessors {
 		proc.CheckIdleSessions(ctx)
 	}
+
 	a.procMu.RUnlock()
 }
 
