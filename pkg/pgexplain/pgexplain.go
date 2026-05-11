@@ -107,11 +107,10 @@ type Plan struct {
 	TempReadBlocks      uint64 `json:"Temp Read Blocks"`
 	TempWrittenBlocks   uint64 `json:"Temp Written Blocks"`
 
-	// IO timing.
-	IOReadTime  *float64 `json:"I/O Read Time,omitempty"`  // ms
-	IOWriteTime *float64 `json:"I/O Write Time,omitempty"` // ms
-
-	// PostgreSQL 17+ reports I/O timings split by buffer type.
+	// IO timing. PostgreSQL 17+ replaces the aggregate fields with per-buffer-type splits;
+	// normalizeIOTiming folds the splits back into IOReadTime/IOWriteTime when those are nil.
+	IOReadTime        *float64 `json:"I/O Read Time,omitempty"`         // ms
+	IOWriteTime       *float64 `json:"I/O Write Time,omitempty"`        // ms
 	SharedIOReadTime  *float64 `json:"Shared I/O Read Time,omitempty"`  // ms
 	SharedIOWriteTime *float64 `json:"Shared I/O Write Time,omitempty"` // ms
 	LocalIOReadTime   *float64 `json:"Local I/O Read Time,omitempty"`   // ms
@@ -230,6 +229,9 @@ func (ex *Explain) processExplain() {
 	ex.calculateOutlierNodes(&ex.Plan)
 }
 
+// normalizeIOTiming folds PostgreSQL 17+ per-buffer-type I/O timings
+// (Shared/Local/Temp) into the legacy IOReadTime/IOWriteTime fields when those
+// are absent, so downstream rendering stays version-agnostic.
 func (plan *Plan) normalizeIOTiming() {
 	if plan.IOReadTime == nil {
 		plan.IOReadTime = sumFloat64Pointers(plan.SharedIOReadTime, plan.LocalIOReadTime, plan.TempIOReadTime)
