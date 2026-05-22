@@ -197,6 +197,7 @@ func initConn(ctx context.Context, dblabClone models.Clone) (*pgxpool.Pool, *pgx
 	if err != nil {
 		log.Err("Failed to acquire user connection:", err)
 		pool.Close()
+
 		return nil, nil, err
 	}
 
