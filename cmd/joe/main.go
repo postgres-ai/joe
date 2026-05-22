@@ -17,7 +17,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/pkg/errors"
 
 	"gitlab.com/postgres-ai/database-lab/v3/pkg/log"
@@ -39,7 +38,7 @@ var buildTime, version string
 func main() {
 	version := formatBotVersion()
 
-	botCfg, err := loadAppConfig()
+	botCfg, err := loadAppConfig(path.Join(config.ConfigsPath, config.AppFilename))
 	if err != nil {
 		log.Fatal("failed to load config: ", err)
 	}
@@ -85,25 +84,49 @@ func main() {
 	}
 }
 
-func loadAppConfig() (*config.Config, error) {
-	var (
-		botCfg     config.Config
-		configPath = path.Join(config.ConfigsPath, config.AppFilename)
-	)
+func loadAppConfig(configPath string) (*config.Config, error) {
+	var botCfg config.Config
 
-	if err := cleanenv.ReadConfig(configPath, &botCfg); err != nil {
+	expanded, err := config.LoadFile(configPath, &botCfg)
+	if err != nil {
 		return nil, errors.Wrap(err, "failed to read a config file")
 	}
 
-	// Load and validate an enterprise options.
-	enterpriseOptions, err := features.GetOptionProvider().GetEnterpriseOptions(configPath)
+	enterpriseOptions, err := features.GetOptionProvider().GetEnterpriseOptions(expanded)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get enterprise options")
 	}
 
 	botCfg.Enterprise = enterpriseOptions
 
+	if err := validateConfig(&botCfg); err != nil {
+		return nil, errors.Wrap(err, "config validation failed")
+	}
+
 	return &botCfg, nil
+}
+
+// validateConfig enforces required-field invariants that only make sense once
+// the full configuration is assembled. Platform credentials are only required
+// when the deployment opts into Platform integration (history reporting or
+// app registration) — Slack-only / on-prem deployments still start without a
+// token.
+func validateConfig(cfg *config.Config) error {
+	if cfg.Platform.HistoryEnabled && cfg.Platform.Token == "" {
+		return errors.New("platform.token (env JOE_PLATFORM_TOKEN) is required when platform.historyEnabled is true")
+	}
+
+	if cfg.Registration.Enable {
+		if cfg.Platform.Token == "" {
+			return errors.New("platform.token (env JOE_PLATFORM_TOKEN) is required when registration.enable is true")
+		}
+
+		if cfg.Platform.Project == "" {
+			return errors.New("platform.project (env JOE_PLATFORM_PROJECT) is required when registration.enable is true")
+		}
+	}
+
+	return nil
 }
 
 func formatBotVersion() string {

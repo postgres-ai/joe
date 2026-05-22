@@ -6,8 +6,10 @@
 package definition
 
 // OptionProvider defines an interface to receive values of Enterprise application options.
+// The data argument carries the env-expanded YAML produced by config.LoadFile so providers
+// can decode without re-reading the filesystem.
 type OptionProvider interface {
-	GetEnterpriseOptions(file string) (EnterpriseOptions, error)
+	GetEnterpriseOptions(data []byte) (EnterpriseOptions, error)
 }
 
 // EnterpriseOptions describes Enterprise options of the application.
