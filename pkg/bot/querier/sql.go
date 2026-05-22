@@ -25,9 +25,9 @@ const (
 	SystemPQErrorCodeUndefinedFile = "58P01"
 )
 
-// Querier is the minimal pgx interface used by the querier package. Both
-// *pgxpool.Pool, *pgxpool.Conn, *pgx.Conn, and pgx.Tx satisfy it. Replaces
-// pgtype/pgxtype.Querier, which no longer exists in pgx v5.
+// Querier is the minimal pgx interface used by the querier package.
+// *pgxpool.Pool, *pgxpool.Conn, *pgx.Conn, and pgx.Tx all satisfy it.
+// Replaces pgtype/pgxtype.Querier, which no longer exists in pgx v5.
 type Querier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
