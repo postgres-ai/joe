@@ -8,9 +8,8 @@
 package options
 
 import (
-	"github.com/ilyakaznacheev/cleanenv"
-
 	"gitlab.com/postgres-ai/joe/features/definition"
+	"gitlab.com/postgres-ai/joe/pkg/config"
 )
 
 // EnterpriseContainer provides a wrapper for Enterprise configuration options.
@@ -50,10 +49,10 @@ type Provider struct{}
 var _ definition.OptionProvider = (*Provider)(nil)
 
 // GetEnterpriseOptions provides enterprise options.
-func (e *Provider) GetEnterpriseOptions(file string) (definition.EnterpriseOptions, error) {
+func (e *Provider) GetEnterpriseOptions(data []byte) (definition.EnterpriseOptions, error) {
 	container := EnterpriseContainer{}
 
-	if err := cleanenv.ReadConfig(file, &container); err != nil {
+	if err := config.ParseYAML(data, &container); err != nil {
 		return definition.EnterpriseOptions{}, err
 	}
 

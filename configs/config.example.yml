@@ -1,5 +1,11 @@
 # Joe Bot configuration.
 # Copy this file to: ~/.dblab/joe/configs/joe.yml
+#
+# Secrets in this file can be sourced from the environment using the strict
+# ${VAR} placeholder syntax (bare $VAR is treated as a literal). Joe refuses
+# to start when a referenced variable is unset or when its value contains a
+# double quote, a backslash, or a control byte, so place placeholders inside
+# double-quoted YAML scalars (see examples below).
 
 app:
   # HTTP server IP address or host.
@@ -71,7 +77,7 @@ channelMapping:
         credentials:
           # Web UI signing secret. This secret verifies each request to ensure
           # that it came from one of configured Web UI instances.
-          signingSecret: ${WEBUI_SIGNING_SECRET}
+          signingSecret: "${WEBUI_SIGNING_SECRET}"
 
         channels:
           # Web UI channel ID. Feel free to choose any name, it is just an alias.
@@ -100,11 +106,11 @@ channelMapping:
         credentials:
           # Bot User OAuth Access.
           # See https://api.slack.com/authentication/token-types
-          accessToken: ${SLACK_ACCESS_TOKEN}
+          accessToken: "${SLACK_ACCESS_TOKEN}"
 
           # Slack App Signing Secret.
           # See https://api.slack.com/authentication/verifying-requests-from-slack
-          signingSecret: ${SLACK_SIGNING_SECRET}
+          signingSecret: "${SLACK_SIGNING_SECRET}"
 
         channels:
           # Slack channel ID. In Slack app, right-click on the channel name,
@@ -134,7 +140,7 @@ channelMapping:
         credentials:
           # Bot User OAuth Access.
           # See https://api.slack.com/authentication/token-types
-          accessToken: ${SLACK_RTM_ACCESS_TOKEN}
+          accessToken: "${SLACK_RTM_ACCESS_TOKEN}"
 
         channels:
           # Slack channel ID. In Slack app, right-click on the channel name,
@@ -165,9 +171,9 @@ channelMapping:
         # See https://api.slack.com/authentication/token-types
         credentials:
           # Bot User OAuth Access.
-          accessToken: ${SLACK_SOCKET_ACCESS_TOKEN}
+          accessToken: "${SLACK_SOCKET_ACCESS_TOKEN}"
           # AppLevel token is required for connections:write scope
-          appLevelToken: ${SLACK_APP_LEVEL_TOKEN}
+          appLevelToken: "${SLACK_APP_LEVEL_TOKEN}"
 
         channels:
           # Slack channel ID. In Slack app, right-click on the channel name,

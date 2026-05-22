@@ -28,7 +28,7 @@ type Extra struct {
 var _ definition.OptionProvider = (*Extra)(nil)
 
 // GetEnterpriseOptions returns the EnterpriseOptions struct with default options.
-func (e *Extra) GetEnterpriseOptions(_ string) (definition.EnterpriseOptions, error) {
+func (e *Extra) GetEnterpriseOptions(_ []byte) (definition.EnterpriseOptions, error) {
 	return definition.EnterpriseOptions{
 		Quota: definition.Quota{
 			Limit:    defaultQuotaLimit,
