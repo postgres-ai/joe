@@ -1,11 +1,14 @@
 # Joe Bot configuration.
 # Copy this file to: ~/.dblab/joe/configs/joe.yml
 #
-# Secrets in this file can be sourced from the environment using the strict
-# ${VAR} placeholder syntax (bare $VAR is treated as a literal). Joe refuses
-# to start when a referenced variable is unset or when its value contains a
-# double quote, a backslash, or a control byte, so place placeholders inside
-# double-quoted YAML scalars (see examples below).
+# Values in this file may reference environment variables using ${VAR} or
+# bare $VAR shorthand; both forms are expanded at startup. To embed a literal
+# `$`, write `$$`. Joe refuses to start when a referenced variable is unset
+# or when a ${...} placeholder is malformed (unterminated, empty, or names
+# an invalid identifier). Expansion happens at the YAML-scalar layer, so
+# resolved values may safely contain any characters (quotes, backslashes,
+# colons, newlines); placeholders are typically written inside double-quoted
+# scalars for readability.
 
 app:
   # HTTP server IP address or host.

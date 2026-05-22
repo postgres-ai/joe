@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/ilyakaznacheev/cleanenv"
@@ -75,7 +76,9 @@ func expandNodes(n *yaml.Node) error {
 			if v, ok := os.LookupEnv(name); ok {
 				return v
 			}
-			missing = appendUnique(missing, name)
+			if !slices.Contains(missing, name) {
+				missing = append(missing, name)
+			}
 			return ""
 		})
 		if len(missing) > 0 {
@@ -136,11 +139,3 @@ func checkEnvName(name string) error {
 	return nil
 }
 
-func appendUnique(items []string, item string) []string {
-	for _, existing := range items {
-		if existing == item {
-			return items
-		}
-	}
-	return append(items, item)
-}
