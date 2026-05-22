@@ -155,7 +155,6 @@ func (a *App) initDBLabInstances() error {
 			VerificationToken: dbLab.Token,
 			RequestTimeout:    dbLab.RequestTimeout,
 		})
-
 		if err != nil {
 			return errors.Wrap(err, "failed to create a Database Lab client")
 		}

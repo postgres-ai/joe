@@ -83,6 +83,7 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 	}
 
 	cmd := NewPlan(command, msg, session.CloneConnection, msgSvc)
+
 	msgInitText, err := cmd.explainWithoutExecution(ctx)
 	if err != nil {
 		return errors.Wrap(err, "failed to run explain without execution")

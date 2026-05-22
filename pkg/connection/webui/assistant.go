@@ -202,9 +202,11 @@ func (a *Assistant) RestoreSessions(ctx context.Context) error {
 // CheckIdleSessions check the running user sessions for idleness.
 func (a *Assistant) CheckIdleSessions(ctx context.Context) {
 	a.procMu.RLock()
+
 	for _, proc := range a.msgProcessors {
 		proc.CheckIdleSessions(ctx)
 	}
+
 	a.procMu.RUnlock()
 }
 
@@ -247,8 +249,6 @@ func (a *Assistant) verificationHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 func (a *Assistant) channelsHandler(w http.ResponseWriter, _ *http.Request) {
-	channels := []config.Channel{}
-
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
 	work, ok := a.appCfg.ChannelMapping.CommunicationTypes[CommunicationType]
@@ -259,6 +259,7 @@ func (a *Assistant) channelsHandler(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
+	channels := make([]config.Channel, 0, len(work[0].Channels))
 	channels = append(channels, work[0].Channels...)
 
 	if err := json.NewEncoder(w).Encode(channels); err != nil {
