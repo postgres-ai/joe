@@ -187,7 +187,7 @@ func initConn(ctx context.Context, dblabClone models.Clone) (*pgxpool.Pool, *pgx
 	connectionConfig.MaxConnIdleTime = maxConnIdleTime
 	connectionConfig.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
 
-	pool, err := pgxpool.NewWithConfig(context.Background(), connectionConfig)
+	pool, err := pgxpool.NewWithConfig(ctx, connectionConfig)
 	if err != nil {
 		log.Err("Failed to init connection:", err)
 		return nil, nil, err
