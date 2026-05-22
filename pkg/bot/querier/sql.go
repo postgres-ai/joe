@@ -9,8 +9,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/jackc/pgconn"
-	"github.com/jackc/pgtype/pgxtype"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/olekukonko/tablewriter"
 	"github.com/olekukonko/tablewriter/tw"
 	"github.com/pkg/errors"
@@ -25,13 +25,21 @@ const (
 	SystemPQErrorCodeUndefinedFile = "58P01"
 )
 
+// Querier is the minimal pgx interface used by the querier package. Both
+// *pgxpool.Pool, *pgxpool.Conn, *pgx.Conn, and pgx.Tx satisfy it. Replaces
+// pgtype/pgxtype.Querier, which no longer exists in pgx v5.
+type Querier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
 // DBQuery runs query and returns table results.
-func DBQuery(ctx context.Context, db pgxtype.Querier, query string, args ...interface{}) ([][]string, error) {
+func DBQuery(ctx context.Context, db Querier, query string, args ...interface{}) ([][]string, error) {
 	return runTableQuery(ctx, db, query, args...)
 }
 
 // DBQueryWithResponse runs query with returning results.
-func DBQueryWithResponse(ctx context.Context, db pgxtype.Querier, query string) (string, error) {
+func DBQueryWithResponse(ctx context.Context, db Querier, query string) (string, error) {
 	return runQuery(ctx, db, query)
 }
 
@@ -74,11 +82,11 @@ order by
   case relkind when 'r' then 0 when 'v' then 1 when 'i' then 9 else 5 end;`
 
 // ObserveLocks selects locks details filtered by pid.
-func ObserveLocks(ctx context.Context, db pgxtype.Querier, pid int) ([][]string, error) {
+func ObserveLocks(ctx context.Context, db Querier, pid int) ([][]string, error) {
 	return runTableQuery(ctx, db, observeQuery, pid)
 }
 
-func runQuery(ctx context.Context, db pgxtype.Querier, query string) (string, error) {
+func runQuery(ctx context.Context, db Querier, query string) (string, error) {
 	log.Dbg("DB query:", query)
 
 	// TODO(anatoly): Retry mechanic.
@@ -110,7 +118,7 @@ func runQuery(ctx context.Context, db pgxtype.Querier, query string) (string, er
 }
 
 // runTableQuery runs query and returns results in the table view.
-func runTableQuery(ctx context.Context, db pgxtype.Querier, query string, args ...interface{}) ([][]string, error) {
+func runTableQuery(ctx context.Context, db Querier, query string, args ...interface{}) ([][]string, error) {
 	log.Dbg("DB table query:", query)
 
 	rows, err := db.Query(ctx, query, args...)
@@ -129,7 +137,7 @@ func runTableQuery(ctx context.Context, db pgxtype.Querier, query string, args .
 			// We have to get the descriptions of fields after rows.Next only https://github.com/jackc/pgx/issues/459
 			fieldDescriptions := rows.FieldDescriptions()
 			for _, column := range fieldDescriptions {
-				head = append(head, string(column.Name))
+				head = append(head, column.Name)
 			}
 
 			resultTable = append(resultTable, head)
@@ -208,7 +216,7 @@ func clarifyQueryError(query []byte, err error) error {
 }
 
 // GetBackendPID returns backend pid.
-func GetBackendPID(ctx context.Context, conn pgxtype.Querier) (int, error) {
+func GetBackendPID(ctx context.Context, conn Querier) (int, error) {
 	var backendPID int
 
 	if err := conn.QueryRow(ctx, `select pg_backend_pid()`).Scan(&backendPID); err != nil {

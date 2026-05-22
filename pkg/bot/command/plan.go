@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v5"
 	"github.com/pkg/errors"
 	"gitlab.com/postgres-ai/database-lab/v3/pkg/log"
 

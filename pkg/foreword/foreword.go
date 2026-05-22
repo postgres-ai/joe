@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/hako/durafmt"
-	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pkg/errors"
 
 	"gitlab.com/postgres-ai/database-lab/v3/pkg/log"

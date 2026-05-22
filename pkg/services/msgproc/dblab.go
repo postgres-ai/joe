@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v4"
-	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pkg/errors"
 	"github.com/rs/xid"
 	"github.com/sethvargo/go-password/password"
@@ -185,9 +185,9 @@ func initConn(ctx context.Context, dblabClone models.Clone) (*pgxpool.Pool, *pgx
 
 	connectionConfig.MaxConnLifetime = maxConnLifetime
 	connectionConfig.MaxConnIdleTime = maxConnIdleTime
-	connectionConfig.ConnConfig.PreferSimpleProtocol = true
+	connectionConfig.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
 
-	pool, err := pgxpool.ConnectConfig(context.Background(), connectionConfig)
+	pool, err := pgxpool.NewWithConfig(context.Background(), connectionConfig)
 	if err != nil {
 		log.Err("Failed to init connection:", err)
 		return nil, nil, err
