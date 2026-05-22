@@ -57,9 +57,11 @@ type Client struct {
 	client      *http.Client
 }
 
-// NewClient creates a new Platform API client.
+// NewClient creates a new Platform API client. Callers are expected to enforce
+// any required-field invariants (e.g. non-empty token when history reporting
+// or registration is enabled) before constructing the client; this function
+// only validates URL parsability.
 func NewClient(platformCfg config.Platform) (*Client, error) {
-	// TODO (akartasov): validate configuration on the app start.
 	u, err := url.Parse(platformCfg.URL)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse a platform host")
