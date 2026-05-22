@@ -30,6 +30,7 @@ func LoadFile(path string, cfg interface{}) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if len(data) == 0 {
 		return nil, fmt.Errorf("config file %q is empty", path)
 	}
@@ -38,12 +39,15 @@ func LoadFile(path string, cfg interface{}) ([]byte, error) {
 	if err := yaml.Unmarshal(data, &root); err != nil {
 		return nil, fmt.Errorf("parse YAML: %w", err)
 	}
+
 	if err := expandNodes(&root); err != nil {
 		return nil, err
 	}
+
 	if err := root.Decode(cfg); err != nil {
 		return nil, fmt.Errorf("decode YAML: %w", err)
 	}
+
 	if err := cleanenv.ReadEnv(cfg); err != nil {
 		return nil, fmt.Errorf("apply env overrides: %w", err)
 	}
@@ -57,9 +61,11 @@ func ParseYAML(data []byte, cfg interface{}) error {
 	if err := cleanenv.ParseYAML(bytes.NewReader(data), cfg); err != nil {
 		return fmt.Errorf("parse YAML: %w", err)
 	}
+
 	if err := cleanenv.ReadEnv(cfg); err != nil {
 		return fmt.Errorf("apply env overrides: %w", err)
 	}
+
 	return nil
 }
 
@@ -68,17 +74,22 @@ func expandNodes(n *yaml.Node) error {
 		if err := validatePlaceholders(n.Value); err != nil {
 			return fmt.Errorf("at line %d:%d: %w", n.Line, n.Column, err)
 		}
+
 		var missing []string
+
 		n.Value = os.Expand(n.Value, func(name string) string {
 			if name == "$" {
 				return "$"
 			}
+
 			if v, ok := os.LookupEnv(name); ok {
 				return v
 			}
+
 			if !slices.Contains(missing, name) {
 				missing = append(missing, name)
 			}
+
 			return ""
 		})
 		if len(missing) > 0 {
@@ -91,10 +102,13 @@ func expandNodes(n *yaml.Node) error {
 			return err
 		}
 	}
+
 	return nil
 }
 
 func isStringTag(tag string) bool { return tag == "" || tag == "!!str" }
+
+const placeholderOpen = "${"
 
 // validatePlaceholders rejects malformed ${...} occurrences so they surface
 // as clear errors instead of being silently swallowed by os.Expand. Bare
@@ -104,22 +118,31 @@ func validatePlaceholders(s string) error {
 		if s[i] != '$' {
 			continue
 		}
+
 		if i+1 < len(s) && s[i+1] == '$' {
 			i++
 			continue
 		}
-		if i+1 >= len(s) || s[i+1] != '{' {
+
+		if !strings.HasPrefix(s[i:], placeholderOpen) {
 			continue
 		}
-		end := strings.IndexByte(s[i+2:], '}')
+
+		nameStart := i + len(placeholderOpen)
+
+		end := strings.IndexByte(s[nameStart:], '}')
 		if end < 0 {
 			return fmt.Errorf("unterminated ${...} placeholder")
 		}
-		if err := checkEnvName(s[i+2 : i+2+end]); err != nil {
+
+		nameEnd := nameStart + end
+		if err := checkEnvName(s[nameStart:nameEnd]); err != nil {
 			return err
 		}
-		i += 2 + end
+
+		i = nameEnd
 	}
+
 	return nil
 }
 
@@ -127,6 +150,7 @@ func checkEnvName(name string) error {
 	if name == "" {
 		return fmt.Errorf("empty ${} placeholder")
 	}
+
 	for i, c := range name {
 		ok := c == '_' ||
 			(c >= 'A' && c <= 'Z') ||
@@ -136,6 +160,6 @@ func checkEnvName(name string) error {
 			return fmt.Errorf("invalid placeholder name %q", name)
 		}
 	}
+
 	return nil
 }
-

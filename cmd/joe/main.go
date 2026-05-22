@@ -120,6 +120,7 @@ func validateConfig(cfg *config.Config) error {
 		if cfg.Platform.Token == "" {
 			return errors.New("platform.token (env JOE_PLATFORM_TOKEN) is required when registration.enable is true")
 		}
+
 		if cfg.Platform.Project == "" {
 			return errors.New("platform.project (env JOE_PLATFORM_PROJECT) is required when registration.enable is true")
 		}
