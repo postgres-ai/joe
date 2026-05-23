@@ -9,9 +9,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jackc/pgtype/pgxtype"
-	"github.com/jackc/pgx/v4"
-	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pkg/errors"
 
 	"gitlab.com/postgres-ai/database-lab/v3/pkg/log"
@@ -203,7 +202,7 @@ func observeLocks(ctx context.Context, db *pgxpool.Pool, txPID int) ([][]string,
 	return querier.ObserveLocks(ctx, observeConn, txPID)
 }
 
-func listHypoIndexes(ctx context.Context, db pgxtype.Querier) ([]string, error) {
+func listHypoIndexes(ctx context.Context, db querier.Querier) ([]string, error) {
 	rows, err := db.Query(ctx, "SELECT indexname FROM hypopg_list_indexes()")
 	if err != nil {
 		return nil, err

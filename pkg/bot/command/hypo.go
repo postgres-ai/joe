@@ -8,8 +8,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/jackc/pgconn"
-	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pkg/errors"
 
 	"gitlab.com/postgres-ai/joe/pkg/bot/querier"
