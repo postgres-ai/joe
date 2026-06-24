@@ -1,0 +1,19 @@
+ Seq Scan on joecap.t_items  (cost=0.00..9.25 rows=200 width=8) (actual time=0.005..0.019 rows=200 loops=1)
+   Filter: (t_items.val > 5)
+   Rows Removed by Filter: 300
+   Buffers: shared hit=3
+Settings: search_path = 'joecap'
+
+--- stats ---
+
+Time: 0.136 ms
+  - planning: 0.091 ms
+  - execution: 0.045 ms
+    - I/O read: N/A
+    - I/O write: N/A
+
+Shared buffers:
+  - hits: 3 (~24.00 KiB) from the buffer pool
+  - reads: 0 from the OS file cache, including disk I/O
+  - dirtied: 0
+  - writes: 0
