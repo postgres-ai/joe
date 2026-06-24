@@ -133,9 +133,18 @@ type Plan struct {
 	TotalCost   float64 `json:"Total Cost"`
 
 	// WAL.
-	WALRecords uint64 `json:"WAL Records,omitempty"`
-	WALFPI     uint64 `json:"WAL FPI,omitempty"`
-	WALBytes   uint64 `json:"WAL Bytes,omitempty"`
+	WALRecords     uint64 `json:"WAL Records,omitempty"`
+	WALFPI         uint64 `json:"WAL FPI,omitempty"`
+	WALBytes       uint64 `json:"WAL Bytes,omitempty"`
+	WALBuffersFull uint64 `json:"WAL Buffers Full,omitempty"` // PostgreSQL 18+
+
+	// PostgreSQL 18+ per-node fields. All are absent on older servers, so the
+	// renderers below only emit them when present (true / non-zero / non-empty),
+	// which keeps pre-18 output unchanged.
+	Disabled       bool   `json:"Disabled,omitempty"`        // cost-based node disablement (was disable_cost)
+	IndexSearches  uint64 `json:"Index Searches,omitempty"`  // Index/Index-Only/Bitmap-Index Scan
+	Storage        string `json:"Storage,omitempty"`         // Material/WindowAgg/CTE, e.g. "Memory"
+	MaximumStorage uint64 `json:"Maximum Storage,omitempty"` // kB
 
 	// General.
 	Alias                     string   `json:"Alias"`
@@ -595,6 +604,11 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 }
 
 func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error), plan *Plan) {
+	// PostgreSQL 18+ marks planner-disabled nodes (enable_* = off) explicitly.
+	if plan.Disabled {
+		outputFn("Disabled: true")
+	}
+
 	if len(plan.SortKey) > 0 {
 		keys := ""
 		for _, key := range plan.SortKey {
@@ -645,6 +659,16 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 
 	if plan.NodeType == IndexOnlyScan {
 		outputFn("Heap Fetches: %d", plan.HeapFetches)
+	}
+
+	// PostgreSQL 18+: number of index descents on Index/Index-Only/Bitmap-Index Scans.
+	if plan.IndexSearches > 0 {
+		outputFn("Index Searches: %d", plan.IndexSearches)
+	}
+
+	// PostgreSQL 18+: tuplestore storage on Materialize/WindowAgg/CTE nodes.
+	if plan.Storage != "" {
+		outputFn("Storage: %s  Maximum Storage: %dkB", plan.Storage, plan.MaximumStorage)
 	}
 
 	if plan.HashCondition != "" {
@@ -700,8 +724,13 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 		outputFn("Buffers: %s", buffers)
 	}
 
-	if plan.WALRecords != 0 || plan.WALFPI != 0 || plan.WALBytes != 0 {
-		_, _ = outputFn(fmt.Sprintf("WAL: records=%d fpi=%d bytes=%d", plan.WALRecords, plan.WALFPI, plan.WALBytes))
+	if plan.WALRecords != 0 || plan.WALFPI != 0 || plan.WALBytes != 0 || plan.WALBuffersFull != 0 {
+		walLine := fmt.Sprintf("WAL: records=%d fpi=%d bytes=%d", plan.WALRecords, plan.WALFPI, plan.WALBytes)
+		if plan.WALBuffersFull != 0 { // PostgreSQL 18+
+			walLine += fmt.Sprintf(" buffers-full=%d", plan.WALBuffersFull)
+		}
+
+		_, _ = outputFn(walLine)
 	}
 
 	ioTiming := ""
