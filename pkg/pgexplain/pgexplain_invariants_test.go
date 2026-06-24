@@ -167,8 +167,8 @@ func TestUnknownKeysAndNodeTypeDoNotPanic(t *testing.T) {
 	input := `[{
 		"Plan": {
 			"Node Type": "Quantum Scan",
-			"Actual Rows": 3,
-			"Actual Loops": 1,
+			"Actual Rows": 3.50,
+			"Actual Loops": 2,
 			"Plan Rows": 5,
 			"Plan Width": 8,
 			"Startup Cost": 0.00,
@@ -200,6 +200,7 @@ func TestUnknownKeysAndNodeTypeDoNotPanic(t *testing.T) {
 	require.True(t, strings.Contains(planText, "Quantum Scan"),
 		"expected 'Quantum Scan' in plan text, got:\n%s", planText)
 
-	require.True(t, strings.Contains(planText, "rows=3"),
-		"expected 'rows=3' in plan text, got:\n%s", planText)
+	// A fractional Actual Rows (PG18) on an unknown node type must render too.
+	require.True(t, strings.Contains(planText, "rows=3.50"),
+		"expected 'rows=3.50' in plan text, got:\n%s", planText)
 }
