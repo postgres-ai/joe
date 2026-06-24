@@ -12,6 +12,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"strconv"
 	"strings"
 
 	"gitlab.com/postgres-ai/joe/pkg/util"
@@ -76,8 +78,8 @@ type Explain struct {
 	IOReadTime  *float64
 	IOWriteTime *float64
 
-	ActualRows      uint64
-	MaxRows         uint64
+	ActualRows      float64
+	MaxRows         float64
 	MaxCost         float64
 	MaxDuration     float64
 	ContainsSeqScan bool
@@ -120,7 +122,7 @@ type Plan struct {
 
 	// Actual.
 	ActualLoops       uint64  `json:"Actual Loops"`
-	ActualRows        uint64  `json:"Actual Rows"`
+	ActualRows        float64 `json:"Actual Rows"` // PostgreSQL 18+ reports this as a fraction (rows averaged over loops).
 	ActualStartupTime float64 `json:"Actual Startup Time"`
 	ActualTotalTime   float64 `json:"Actual Total Time"`
 
@@ -307,20 +309,20 @@ func (ex *Explain) checkSeqScan(plan *Plan) {
 func (ex *Explain) calculatePlannerEstimate(plan *Plan) {
 	plan.PlannerRowEstimateFactor = 0
 
-	if plan.PlanRows == plan.ActualRows {
+	if float64(plan.PlanRows) == plan.ActualRows {
 		return
 	}
 
 	plan.PlannerRowEstimateDirection = Under
 	if plan.PlanRows != 0 {
-		plan.PlannerRowEstimateFactor = float64(plan.ActualRows) / float64(plan.PlanRows)
+		plan.PlannerRowEstimateFactor = plan.ActualRows / float64(plan.PlanRows)
 	}
 
 	if plan.PlannerRowEstimateFactor < 1.0 {
 		plan.PlannerRowEstimateFactor = 0
 		plan.PlannerRowEstimateDirection = Over
 		if plan.ActualRows != 0 {
-			plan.PlannerRowEstimateFactor = float64(plan.PlanRows) / float64(plan.ActualRows)
+			plan.PlannerRowEstimateFactor = float64(plan.PlanRows) / plan.ActualRows
 		}
 	}
 }
@@ -501,9 +503,22 @@ func writeSubplanTextNodeCaption(outputFn func(string, ...interface{}) (int, err
 
 func planCostsAndTiming(plan *Plan) string {
 	costs := fmt.Sprintf("(cost=%.2f..%.2f rows=%d width=%d)", plan.StartupCost, plan.TotalCost, plan.PlanRows, plan.PlanWidth)
-	timing := fmt.Sprintf("(actual time=%.3f..%.3f rows=%d loops=%d)", plan.ActualStartupTime, plan.ActualTotalTime, plan.ActualRows, plan.ActualLoops)
+	timing := fmt.Sprintf("(actual time=%.3f..%.3f rows=%s loops=%d)",
+		plan.ActualStartupTime, plan.ActualTotalTime, formatActualRows(plan.ActualRows), plan.ActualLoops)
 
 	return fmt.Sprintf("  %s %s", costs, timing)
+}
+
+// formatActualRows renders an actual-row count. PostgreSQL 18+ reports fractional
+// row counts (averaged over loops), so the value is a float: print it as an integer
+// when whole — matching pre-18 output and joe's historical rendering — and with two
+// decimals when fractional, matching PostgreSQL 18's text format.
+func formatActualRows(rows float64) string {
+	if rows == math.Trunc(rows) {
+		return strconv.FormatInt(int64(rows), 10)
+	}
+
+	return strconv.FormatFloat(rows, 'f', 2, 64)
 }
 
 func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error), plan *Plan, withCostsAndTiming bool) {
