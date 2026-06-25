@@ -223,6 +223,42 @@ type Plan struct {
 	WorkersLaunched           uint     `json:"Workers Launched"`
 	WorkersPlanned            uint     `json:"Workers Planned"`
 
+	// Diagnostic fields PostgreSQL emits for specific node types that joe used to
+	// drop. Each is rendered only when present (non-empty / non-nil / >0), so a
+	// plan without the corresponding node keeps its previous output byte-for-byte.
+
+	// Memoize cache statistics (PostgreSQL 14+). The hit/miss counters reuse the
+	// PeakMemoryUsage field above for "Memory Usage".
+	CacheKey       string `json:"Cache Key"`
+	CacheMode      string `json:"Cache Mode"` // "logical" or "binary"
+	CacheHits      uint64 `json:"Cache Hits"`
+	CacheMisses    uint64 `json:"Cache Misses"`
+	CacheEvictions uint64 `json:"Cache Evictions"`
+	CacheOverflows uint64 `json:"Cache Overflows"`
+
+	// Join-node qual evaluated at the join (not pushed down to a child).
+	JoinFilter              string `json:"Join Filter"`
+	RowsRemovedByJoinFilter uint64 `json:"Rows Removed by Join Filter"`
+
+	// Incremental Sort. PresortedKey is the prefix already ordered by the input;
+	// the group stats are emitted only under EXPLAIN ANALYZE (hence pointers).
+	PresortedKey    []string    `json:"Presorted Key"`
+	FullSortGroups  *SortGroups `json:"Full-sort Groups"`
+	PresortedGroups *SortGroups `json:"Pre-sorted Groups"`
+
+	// Bitmap Heap Scan recheck of lossy pages against the original index qual.
+	RecheckCond string `json:"Recheck Cond"`
+
+	// Hashed/Mixed Aggregate memory and on-disk spill stats (PostgreSQL 13+).
+	// "Memory Usage" reuses PeakMemoryUsage above.
+	PlannedPartitions uint64 `json:"Planned Partitions"`
+	HashAggBatches    uint64 `json:"HashAgg Batches"`
+	DiskUsage         uint64 `json:"Disk Usage"` // kB
+
+	// WindowAgg run condition: a scalar string (possibly several clauses joined
+	// by AND), NOT an array — typing it as []string would fail the whole decode.
+	RunCondition string `json:"Run Condition"`
+
 	// Calculated params.
 	ActualCost                  float64
 	ActualDuration              float64
@@ -231,6 +267,23 @@ type Plan struct {
 	PlannerRowEstimateDirection EstimateDirection
 	PlannerRowEstimateFactor    float64
 	Slowest                     bool
+}
+
+// SortGroups holds the per-group statistics PostgreSQL reports for an Incremental
+// Sort node under EXPLAIN ANALYZE, for both the "Full-sort Groups" and the
+// "Pre-sorted Groups". A group sorts either in memory or on disk, so at most one
+// of SortSpaceMemory / SortSpaceDisk is present.
+type SortGroups struct {
+	GroupCount      uint64          `json:"Group Count"`
+	SortMethodsUsed []string        `json:"Sort Methods Used"`
+	SortSpaceMemory *SortSpaceUsage `json:"Sort Space Memory"`
+	SortSpaceDisk   *SortSpaceUsage `json:"Sort Space Disk"`
+}
+
+// SortSpaceUsage is the average/peak sort space (kB) for a group of sorts.
+type SortSpaceUsage struct {
+	AverageSortSpaceUsed uint64 `json:"Average Sort Space Used"` // kB
+	PeakSortSpaceUsed    uint64 `json:"Peak Sort Space Used"`    // kB
 }
 
 type Tip struct {
@@ -661,6 +714,15 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 		outputFn("Sort Key: %s", keys)
 	}
 
+	// Incremental Sort: the prefix of the sort key the input is already ordered by.
+	if len(plan.PresortedKey) > 0 {
+		outputFn("Presorted Key: %s", strings.Join(plan.PresortedKey, ", "))
+	}
+
+	// Incremental Sort per-group sort statistics (EXPLAIN ANALYZE).
+	writeSortGroups(outputFn, "Full-sort", plan.FullSortGroups)
+	writeSortGroups(outputFn, "Pre-sorted", plan.PresortedGroups)
+
 	if plan.SortMethod != "" || plan.SortSpaceType != "" {
 		details := ""
 		if plan.SortMethod != "" {
@@ -686,8 +748,39 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 		outputFn("Group Key: %s", keys)
 	}
 
+	// Hashed/Mixed Aggregate memory + spill stats (PostgreSQL 13+). Only hashed
+	// aggregation reports "HashAgg Batches"; the planned-partition prefix and the
+	// disk-usage suffix appear only once the aggregation has spilled to disk.
+	if plan.HashAggBatches > 0 {
+		info := ""
+		if plan.PlannedPartitions > 0 {
+			info += fmt.Sprintf("Planned Partitions: %d  ", plan.PlannedPartitions)
+		}
+		info += fmt.Sprintf("Batches: %d  Memory Usage: %dkB", plan.HashAggBatches, plan.PeakMemoryUsage)
+		if plan.DiskUsage > 0 {
+			info += fmt.Sprintf("  Disk Usage: %dkB", plan.DiskUsage)
+		}
+		outputFn("%s", info)
+	}
+
 	if plan.HashBuckets != 0 {
 		outputFn("Buckets: %d  Batches: %d  Memory Usage: %dkB", plan.HashBuckets, plan.HashBatches, plan.PeakMemoryUsage)
+	}
+
+	// Memoize cache statistics (PostgreSQL 14+). PostgreSQL prints the cache key
+	// and mode unconditionally and the hit/miss line under EXPLAIN ANALYZE, once
+	// the cache has actually been probed (i.e. there was at least one miss).
+	if plan.NodeType == Memoize {
+		if plan.CacheKey != "" {
+			outputFn("Cache Key: %s", plan.CacheKey)
+		}
+		if plan.CacheMode != "" {
+			outputFn("Cache Mode: %s", plan.CacheMode)
+		}
+		if plan.CacheMisses > 0 {
+			outputFn("Hits: %d  Misses: %d  Evictions: %d  Overflows: %d  Memory Usage: %dkB",
+				plan.CacheHits, plan.CacheMisses, plan.CacheEvictions, plan.CacheOverflows, plan.PeakMemoryUsage)
+		}
 	}
 
 	if plan.IndexCondition != "" {
@@ -716,9 +809,31 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 		outputFn("Hash Cond: %v", plan.HashCondition)
 	}
 
+	// Bitmap Heap Scan: the recheck of the original index qual, and the rows that
+	// recheck discarded on lossy pages (the count appears only under ANALYZE and
+	// only when lossy pages forced a recheck, hence the >0 guard).
+	if plan.RecheckCond != "" {
+		outputFn("Recheck Cond: %v", plan.RecheckCond)
+	}
+	if plan.RowsRemovedByIndexRecheck > 0 {
+		outputFn("Rows Removed by Index Recheck: %d", plan.RowsRemovedByIndexRecheck)
+	}
+
 	if plan.Filter != "" {
 		outputFn("Filter: %v", plan.Filter)
 		outputFn("Rows Removed by Filter: %d", plan.RowsRemovedByFilter)
+	}
+
+	// Join-node qual evaluated at the join (Nested Loop / Merge Join / Hash Join).
+	if plan.JoinFilter != "" {
+		outputFn("Join Filter: %v", plan.JoinFilter)
+		outputFn("Rows Removed by Join Filter: %d", plan.RowsRemovedByJoinFilter)
+	}
+
+	// WindowAgg run condition: the qual that lets the window scan stop early
+	// (PostgreSQL 15+). A single scalar expression string.
+	if plan.RunCondition != "" {
+		outputFn("Run Condition: %v", plan.RunCondition)
 	}
 
 	if plan.WorkersPlanned > 0 {
@@ -786,6 +901,35 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 	if len(ioTiming) > 0 {
 		outputFn("I/O Timings:%s", ioTiming)
 	}
+}
+
+// writeSortGroups renders one Incremental Sort group-statistics line, matching
+// PostgreSQL's FORMAT TEXT, e.g.
+//
+//	Full-sort Groups: 2  Sort Method: quicksort  Average Memory: 25kB  Peak Memory: 25kB
+//
+// A group sorts either in memory or on disk, so at most one of the memory/disk
+// suffixes is emitted. It is a no-op when the group info is absent (pre-ANALYZE
+// or a non-incremental sort).
+func writeSortGroups(outputFn func(string, ...interface{}) (int, error), label string, groups *SortGroups) {
+	if groups == nil {
+		return
+	}
+
+	line := fmt.Sprintf("%s Groups: %d  Sort Method: %s",
+		label, groups.GroupCount, strings.Join(groups.SortMethodsUsed, ", "))
+
+	if groups.SortSpaceMemory != nil {
+		line += fmt.Sprintf("  Average Memory: %dkB  Peak Memory: %dkB",
+			groups.SortSpaceMemory.AverageSortSpaceUsed, groups.SortSpaceMemory.PeakSortSpaceUsed)
+	}
+
+	if groups.SortSpaceDisk != nil {
+		line += fmt.Sprintf("  Average Disk: %dkB  Peak Disk: %dkB",
+			groups.SortSpaceDisk.AverageSortSpaceUsed, groups.SortSpaceDisk.PeakSortSpaceUsed)
+	}
+
+	_, _ = outputFn("%s", line)
 }
 
 func formatDetails(plan *Plan) string {
