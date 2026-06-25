@@ -6,6 +6,7 @@ package pgexplain
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -50,6 +51,29 @@ func TestDroppedFieldJoinFilter(t *testing.T) {
 	require.Contains(t, out, "Rows Removed by Join Filter: 50")
 }
 
+// TestDroppedFieldJoinFilterZeroRemoved (B2) guards the >0 suppression: PostgreSQL
+// omits the "Rows Removed by Join Filter" line when nothing was removed, so joe
+// must render the Join Filter but not a "Rows Removed by Join Filter: 0" line.
+func TestDroppedFieldJoinFilterZeroRemoved(t *testing.T) {
+	const j = `[{
+		"Plan": {
+			"Node Type": "Nested Loop", "Parallel Aware": false, "Join Type": "Inner",
+			"Startup Cost": 0.0, "Total Cost": 1.0, "Plan Rows": 1, "Plan Width": 0,
+			"Actual Startup Time": 0.0, "Actual Total Time": 0.1, "Actual Rows": 1.00, "Actual Loops": 1,
+			"Join Filter": "(a.x < b.y)", "Rows Removed by Join Filter": 0
+		},
+		"Planning Time": 0.1, "Triggers": [], "Execution Time": 0.1
+	}]`
+
+	explain, err := NewExplain(j)
+	require.NoError(t, err)
+
+	out := explain.RenderPlanText()
+	require.Contains(t, out, "Join Filter: (a.x < b.y)")
+	require.NotContains(t, out, "Rows Removed by Join Filter",
+		"zero removed-row count must be suppressed, matching PostgreSQL")
+}
+
 // TestDroppedFieldPresortedKey (B3) checks the Incremental Sort "Presorted Key"
 // line, which PostgreSQL prints right after "Sort Key".
 func TestDroppedFieldPresortedKey(t *testing.T) {
@@ -68,13 +92,14 @@ func TestDroppedFieldSortGroups(t *testing.T) {
 	require.Contains(t, out, "Pre-sorted Groups: 1  Sort Method: top-N heapsort  Average Memory: 28kB  Peak Memory: 28kB")
 }
 
-// TestDroppedFieldBitmapRecheck (B5/B6) checks the Bitmap Heap Scan "Recheck Cond"
-// and the lossy-page "Rows Removed by Index Recheck" count.
+// TestDroppedFieldBitmapRecheck (B5/B6) checks the Bitmap Heap Scan "Recheck Cond",
+// the lossy-page "Rows Removed by Index Recheck" count, and the "Heap Blocks" line.
 func TestDroppedFieldBitmapRecheck(t *testing.T) {
 	out := renderFixture(t, "testdata/pg17/bitmap_heap_recheck.json")
 
 	require.Contains(t, out, "Recheck Cond: ((recheck_t.v >= 1) AND (recheck_t.v <= 200000))")
 	require.Contains(t, out, "Rows Removed by Index Recheck: 1982")
+	require.Contains(t, out, "Heap Blocks: exact=582 lossy=8268")
 }
 
 // TestDroppedFieldHashAggSpill (B7) checks that a hashed aggregate that spilled to
@@ -83,6 +108,24 @@ func TestDroppedFieldHashAggSpill(t *testing.T) {
 	out := renderFixture(t, "testdata/pg17/hashagg_spill.json")
 
 	require.Contains(t, out, "Planned Partitions: 4  Batches: 85  Memory Usage: 137kB  Disk Usage: 1880kB")
+}
+
+// TestDroppedFieldHashAggHavingOrder (B7) pins PostgreSQL's line ordering for a
+// hashed aggregate with a HAVING qual: Group Key, then Filter, then the HashAgg
+// memory line, then Rows Removed by Filter. joe used to emit the memory line
+// before the Filter block, which mis-ordered a HashAggregate with HAVING.
+func TestDroppedFieldHashAggHavingOrder(t *testing.T) {
+	out := renderFixture(t, "testdata/pg17/hashagg_having.json")
+
+	require.Contains(t, out, "Filter: (count(*) > 100)")
+	require.Contains(t, out, "Batches: 1  Memory Usage: 53kB")
+	require.Contains(t, out, "Rows Removed by Filter: 100")
+
+	iFilter := strings.Index(out, "Filter: (count(*) > 100)")
+	iInfo := strings.Index(out, "Batches: 1  Memory Usage: 53kB")
+	iRemoved := strings.Index(out, "Rows Removed by Filter: 100")
+	require.Less(t, iFilter, iInfo, "Filter must precede the HashAgg memory line")
+	require.Less(t, iInfo, iRemoved, "HashAgg memory line must precede Rows Removed by Filter")
 }
 
 // TestDroppedFieldRunCondition (B8) checks the WindowAgg "Run Condition". The
@@ -125,11 +168,11 @@ func TestDroppedFieldsDecodeSafety(t *testing.T) {
 		"testdata/pg17/incremental_sort.json",
 		"testdata/pg17/bitmap_heap_recheck.json",
 		"testdata/pg17/hashagg_spill.json",
+		"testdata/pg17/hashagg_having.json",
 		"testdata/pg17/window_run_condition.json",
 	}
 
 	for _, f := range fixtures {
-		f := f
 		t.Run(f, func(t *testing.T) {
 			raw, err := os.ReadFile(f)
 			require.NoError(t, err)
@@ -138,4 +181,19 @@ func TestDroppedFieldsDecodeSafety(t *testing.T) {
 			require.NoError(t, err, "fixture %s must decode without error", f)
 		})
 	}
+}
+
+// TestDroppedFieldsNoRegression surfaces the no-regression guarantee directly in
+// this file: a fixture with none of the affected node types must render
+// byte-identical to its committed golden. (TestGolden covers the full set; this
+// makes the "unaffected plans are untouched" contract explicit.)
+func TestDroppedFieldsNoRegression(t *testing.T) {
+	const fixture = "testdata/pg17/seq_scan.json"
+
+	got := goldenRender(t, fixture)
+
+	want, err := os.ReadFile(goldenPathFor(fixture))
+	require.NoError(t, err)
+	require.Equal(t, string(want), got,
+		"a fixture without any dropped-field node type must render byte-identical to its golden")
 }

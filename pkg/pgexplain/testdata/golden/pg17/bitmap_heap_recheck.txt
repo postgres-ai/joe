@@ -1,6 +1,7 @@
  Bitmap Heap Scan on public.recheck_t  (cost=27632.30..66480.59 rows=1998036 width=8) (actual time=24.150..169.866 rows=1998000 loops=1)
    Recheck Cond: ((recheck_t.v >= 1) AND (recheck_t.v <= 200000))
    Rows Removed by Index Recheck: 1982
+   Heap Blocks: exact=582 lossy=8268
    Buffers: shared hit=10629
    ->  Bitmap Index Scan using recheck_t_v_idx  (cost=0.00..27132.79 rows=1998036 width=0) (actual time=24.085..24.085 rows=1998000 loops=1)
          Index Cond: ((recheck_t.v >= 1) AND (recheck_t.v <= 200000))

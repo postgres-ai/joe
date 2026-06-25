@@ -240,14 +240,19 @@ type Plan struct {
 	JoinFilter              string `json:"Join Filter"`
 	RowsRemovedByJoinFilter uint64 `json:"Rows Removed by Join Filter"`
 
-	// Incremental Sort. PresortedKey is the prefix already ordered by the input;
-	// the group stats are emitted only under EXPLAIN ANALYZE (hence pointers).
+	// Incremental Sort. PresortedKey is the prefix the input is already ordered by;
+	// it is present in every EXPLAIN form. FullSortGroups/PresortedGroups carry the
+	// per-group sort statistics and are emitted only under EXPLAIN ANALYZE (hence
+	// pointers — nil means "not an ANALYZE plan / no such group").
 	PresortedKey    []string    `json:"Presorted Key"`
 	FullSortGroups  *SortGroups `json:"Full-sort Groups"`
 	PresortedGroups *SortGroups `json:"Pre-sorted Groups"`
 
-	// Bitmap Heap Scan recheck of lossy pages against the original index qual.
-	RecheckCond string `json:"Recheck Cond"`
+	// Bitmap Heap Scan recheck of lossy pages against the original index qual,
+	// plus the exact/lossy heap-page counts behind the "Heap Blocks" line.
+	RecheckCond     string `json:"Recheck Cond"`
+	ExactHeapBlocks uint64 `json:"Exact Heap Blocks"`
+	LossyHeapBlocks uint64 `json:"Lossy Heap Blocks"`
 
 	// Hashed/Mixed Aggregate memory and on-disk spill stats (PostgreSQL 13+).
 	// "Memory Usage" reuses PeakMemoryUsage above.
@@ -255,8 +260,9 @@ type Plan struct {
 	HashAggBatches    uint64 `json:"HashAgg Batches"`
 	DiskUsage         uint64 `json:"Disk Usage"` // kB
 
-	// WindowAgg run condition: a scalar string (possibly several clauses joined
-	// by AND), NOT an array — typing it as []string would fail the whole decode.
+	// WindowAgg run condition (PostgreSQL 15+): a scalar string (possibly several
+	// clauses joined by AND), NOT an array — typing it as []string would fail the
+	// whole decode.
 	RunCondition string `json:"Run Condition"`
 
 	// Calculated params.
@@ -271,11 +277,15 @@ type Plan struct {
 
 // SortGroups holds the per-group statistics PostgreSQL reports for an Incremental
 // Sort node under EXPLAIN ANALYZE, for both the "Full-sort Groups" and the
-// "Pre-sorted Groups". A group sorts either in memory or on disk, so at most one
-// of SortSpaceMemory / SortSpaceDisk is present.
+// "Pre-sorted Groups".
 type SortGroups struct {
-	GroupCount      uint64          `json:"Group Count"`
-	SortMethodsUsed []string        `json:"Sort Methods Used"`
+	GroupCount uint64 `json:"Group Count"`
+	// SortMethodsUsed are PostgreSQL's sort-method names, e.g. "quicksort",
+	// "top-N heapsort" or "external merge" (the last for a sort that spilled).
+	SortMethodsUsed []string `json:"Sort Methods Used"`
+	// A group sorts either in memory or on disk, so at most one of these is set:
+	// SortSpaceMemory for an in-memory sort, SortSpaceDisk for an external-merge
+	// spill to disk.
 	SortSpaceMemory *SortSpaceUsage `json:"Sort Space Memory"`
 	SortSpaceDisk   *SortSpaceUsage `json:"Sort Space Disk"`
 }
@@ -748,23 +758,6 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 		outputFn("Group Key: %s", keys)
 	}
 
-	// Hashed/Mixed Aggregate memory + spill stats (PostgreSQL 13+). Only hashed
-	// aggregation reports "HashAgg Batches"; the planned-partition prefix and the
-	// disk-usage suffix appear only once the aggregation has spilled to disk.
-	if plan.HashAggBatches > 0 {
-		info := ""
-		if plan.PlannedPartitions > 0 {
-			info += fmt.Sprintf("Planned Partitions: %d  ", plan.PlannedPartitions)
-		}
-
-		info += fmt.Sprintf("Batches: %d  Memory Usage: %dkB", plan.HashAggBatches, plan.PeakMemoryUsage)
-		if plan.DiskUsage > 0 {
-			info += fmt.Sprintf("  Disk Usage: %dkB", plan.DiskUsage)
-		}
-
-		_, _ = outputFn("%s", info)
-	}
-
 	if plan.HashBuckets != 0 {
 		outputFn("Buckets: %d  Batches: %d  Memory Usage: %dkB", plan.HashBuckets, plan.HashBatches, plan.PeakMemoryUsage)
 	}
@@ -824,15 +817,41 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 		_, _ = outputFn("Rows Removed by Index Recheck: %d", plan.RowsRemovedByIndexRecheck)
 	}
 
+	// Filter (a scan's residual qual, or an Aggregate's HAVING). For a hashed
+	// Aggregate, PostgreSQL prints the memory/spill line between the Filter and its
+	// removed-row count, so the order is Filter -> HashAgg info -> Rows Removed.
 	if plan.Filter != "" {
-		outputFn("Filter: %v", plan.Filter)
-		outputFn("Rows Removed by Filter: %d", plan.RowsRemovedByFilter)
+		_, _ = outputFn("Filter: %v", plan.Filter)
+		writeHashAggInfo(outputFn, plan)
+		_, _ = outputFn("Rows Removed by Filter: %d", plan.RowsRemovedByFilter)
+	} else {
+		// A hashed/mixed Aggregate without a HAVING qual still reports its memory.
+		writeHashAggInfo(outputFn, plan)
+	}
+
+	// Bitmap Heap Scan: exact/lossy heap pages visited. PostgreSQL prints this
+	// after the Filter block and before Buffers, and omits a zero-valued side.
+	if plan.ExactHeapBlocks > 0 || plan.LossyHeapBlocks > 0 {
+		line := "Heap Blocks:"
+		if plan.ExactHeapBlocks > 0 {
+			line += fmt.Sprintf(" exact=%d", plan.ExactHeapBlocks)
+		}
+
+		if plan.LossyHeapBlocks > 0 {
+			line += fmt.Sprintf(" lossy=%d", plan.LossyHeapBlocks)
+		}
+
+		_, _ = outputFn("%s", line)
 	}
 
 	// Join-node qual evaluated at the join (Nested Loop / Merge Join / Hash Join).
+	// PostgreSQL suppresses the zero-valued "Rows Removed" line, so guard on > 0.
 	if plan.JoinFilter != "" {
 		_, _ = outputFn("Join Filter: %v", plan.JoinFilter)
-		_, _ = outputFn("Rows Removed by Join Filter: %d", plan.RowsRemovedByJoinFilter)
+
+		if plan.RowsRemovedByJoinFilter > 0 {
+			_, _ = outputFn("Rows Removed by Join Filter: %d", plan.RowsRemovedByJoinFilter)
+		}
 	}
 
 	// WindowAgg run condition: the qual that lets the window scan stop early
@@ -935,6 +954,32 @@ func writeSortGroups(outputFn func(string, ...interface{}) (int, error), label s
 	}
 
 	_, _ = outputFn("%s", line)
+}
+
+// writeHashAggInfo renders the hashed/mixed Aggregate memory + spill line
+// (PostgreSQL 13+), e.g.
+//
+//	Planned Partitions: 4  Batches: 85  Memory Usage: 137kB  Disk Usage: 1880kB
+//
+// The planned-partition prefix and the disk-usage suffix appear only once the
+// aggregation has spilled to disk. It is a no-op unless the node is a hashed or
+// mixed Aggregate — only those report "HashAgg Batches".
+func writeHashAggInfo(outputFn func(string, ...interface{}) (int, error), plan *Plan) {
+	if plan.HashAggBatches == 0 {
+		return
+	}
+
+	info := ""
+	if plan.PlannedPartitions > 0 {
+		info += fmt.Sprintf("Planned Partitions: %d  ", plan.PlannedPartitions)
+	}
+
+	info += fmt.Sprintf("Batches: %d  Memory Usage: %dkB", plan.HashAggBatches, plan.PeakMemoryUsage)
+	if plan.DiskUsage > 0 {
+		info += fmt.Sprintf("  Disk Usage: %dkB", plan.DiskUsage)
+	}
+
+	_, _ = outputFn("%s", info)
 }
 
 func formatDetails(plan *Plan) string {
