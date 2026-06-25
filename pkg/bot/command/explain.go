@@ -202,11 +202,17 @@ func observeLocks(ctx context.Context, db *pgxpool.Pool, txPID int) ([][]string,
 	return querier.ObserveLocks(ctx, observeConn, txPID)
 }
 
+// listHypoIndexNamesQuery returns the names of the current backend's hypothetical indexes.
+// It uses the hypopg() function directly because hypopg_list_indexes became a view in
+// HypoPG 1.2.0 (see listHypoIndexesQuery in hypo.go); hypopg() is stable across versions.
+const listHypoIndexNamesQuery = "select indexname from hypopg()"
+
 func listHypoIndexes(ctx context.Context, db querier.Querier) ([]string, error) {
-	rows, err := db.Query(ctx, "SELECT indexname FROM hypopg_list_indexes()")
+	rows, err := db.Query(ctx, listHypoIndexNamesQuery)
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 
 	hypoIndexes := []string{}
 	for rows.Next() {
@@ -216,6 +222,10 @@ func listHypoIndexes(ctx context.Context, db querier.Querier) ([]string, error) 
 		}
 
 		hypoIndexes = append(hypoIndexes, indexName)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return hypoIndexes, nil
