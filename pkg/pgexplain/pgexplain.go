@@ -633,7 +633,7 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error), plan *Plan) {
 	// PostgreSQL 18+ marks planner-disabled nodes (enable_* = off) explicitly.
 	if plan.Disabled {
-		outputFn("Disabled: true")
+		_, _ = outputFn("Disabled: true")
 	}
 
 	if len(plan.SortKey) > 0 {
@@ -690,12 +690,12 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 
 	// PostgreSQL 18+: number of index descents on Index/Index-Only/Bitmap-Index Scans.
 	if plan.IndexSearches > 0 {
-		outputFn("Index Searches: %d", plan.IndexSearches)
+		_, _ = outputFn("Index Searches: %d", plan.IndexSearches)
 	}
 
 	// PostgreSQL 18+: tuplestore storage on Materialize/WindowAgg/CTE nodes.
 	if plan.Storage != "" {
-		outputFn("Storage: %s  Maximum Storage: %dkB", plan.Storage, plan.MaximumStorage)
+		_, _ = outputFn("Storage: %s  Maximum Storage: %dkB", plan.Storage, plan.MaximumStorage)
 	}
 
 	if plan.HashCondition != "" {
