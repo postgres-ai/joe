@@ -43,6 +43,9 @@ build:
 build-ee:
 	${GOBUILD} -tags ee -o bin/${BINARY}-ee ./cmd/joe/main.go
 
+build-explainrender:
+	${GOBUILD} -o bin/explainrender ./cmd/explainrender
+
 test:
 	go test ./pkg/...
 
