@@ -1,0 +1,25 @@
+ HashAggregate  (cost=9959.55..11930.56 rows=50157 width=18) (actual time=8.413..18.597 rows=50000 loops=1)
+   Group Key: items.descr
+   Planned Partitions: 4  Batches: 85  Memory Usage: 137kB  Disk Usage: 1880kB
+   Buffers: shared hit=320
+   ->  Seq Scan on public.items  (cost=0.00..821.57 rows=50157 width=10) (actual time=0.017..1.824 rows=50000 loops=1)
+         Buffers: shared hit=320
+Settings: enable_sort = 'off', work_mem = '64kB'
+
+--- stats ---
+
+Time: 20.029 ms
+  - planning: 0.192 ms
+  - execution: 19.837 ms
+    - I/O read: N/A
+    - I/O write: N/A
+
+Shared buffers:
+  - hits: 320 (~2.50 MiB) from the buffer pool
+  - reads: 0 from the OS file cache, including disk I/O
+  - dirtied: 0
+  - writes: 0
+
+Temp buffers:
+  - reads: 530 (~4.10 MiB)
+  - writes: 707 (~5.50 MiB)

@@ -1,0 +1,25 @@
+ Limit  (cost=37.66..46.31 rows=100 width=8) (actual time=2.758..2.764 rows=100 loops=1)
+   Buffers: shared hit=232
+   ->  Incremental Sort  (cost=37.66..4364.16 rows=50000 width=8) (actual time=2.757..2.759 rows=100 loops=1)
+         Sort Key: isort_t.a, isort_t.b
+         Presorted Key: isort_t.a
+         Full-sort Groups: 1  Sort Method: quicksort  Average Memory: 27kB  Peak Memory: 27kB
+         Pre-sorted Groups: 1  Sort Method: top-N heapsort  Average Memory: 28kB  Peak Memory: 28kB
+         Buffers: shared hit=232
+         ->  Index Scan using isort_t_a_idx on public.isort_t  (cost=0.29..1826.20 rows=50000 width=8) (actual time=0.036..2.698 rows=501 loops=1)
+               Buffers: shared hit=225
+Settings: enable_seqscan = 'off'
+
+--- stats ---
+
+Time: 3.003 ms
+  - planning: 0.230 ms
+  - execution: 2.773 ms
+    - I/O read: N/A
+    - I/O write: N/A
+
+Shared buffers:
+  - hits: 232 (~1.80 MiB) from the buffer pool
+  - reads: 0 from the OS file cache, including disk I/O
+  - dirtied: 0
+  - writes: 0
