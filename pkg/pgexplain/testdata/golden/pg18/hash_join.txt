@@ -1,0 +1,25 @@
+ Hash Join  (cost=14.25..304.75 rows=25000 width=16) (actual time=0.098..1.074 rows=25000 loops=1)
+   Hash Cond: (a.val = b.val)
+   Buffers: shared hit=6
+   ->  Seq Scan on joecap.t_items a  (cost=0.00..8.00 rows=500 width=8) (actual time=0.011..0.029 rows=500 loops=1)
+         Buffers: shared hit=3
+   ->  Hash  (cost=8.00..8.00 rows=500 width=8) (actual time=0.067..0.067 rows=500 loops=1)
+         Buckets: 1024  Batches: 1  Memory Usage: 28kB
+         Buffers: shared hit=3
+         ->  Seq Scan on joecap.t_items b  (cost=0.00..8.00 rows=500 width=8) (actual time=0.002..0.027 rows=500 loops=1)
+               Buffers: shared hit=3
+Settings: search_path = 'joecap'
+
+--- stats ---
+
+Time: 1.976 ms
+  - planning: 0.361 ms
+  - execution: 1.615 ms
+    - I/O read: N/A
+    - I/O write: N/A
+
+Shared buffers:
+  - hits: 6 (~48.00 KiB) from the buffer pool
+  - reads: 0 from the OS file cache, including disk I/O
+  - dirtied: 0
+  - writes: 0

@@ -12,6 +12,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"strconv"
 	"strings"
 
 	"gitlab.com/postgres-ai/joe/pkg/util"
@@ -24,35 +26,76 @@ const (
 	Under                   = "Under"
 )
 
+// The EXPLAIN request form and the JSON fields parsed below are two halves of one
+// contract (which options joe asks for determines which fields appear), so they
+// live together here. Callers (pkg/bot/command) own the policy of which
+// version-gated options to include for a given server version.
+const (
+	// ExplainAnalyzeQuery is the EXPLAIN form joe issues; the %s carries the
+	// version-gated options (SETTINGS, WAL).
+	ExplainAnalyzeQuery = "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON %s) "
+	// ExplainSettingsOption enables SETTINGS output (PostgreSQL 12+).
+	ExplainSettingsOption = ", SETTINGS TRUE"
+	// ExplainWALOption enables WAL output (PostgreSQL 13+).
+	ExplainWALOption = ", WAL"
+)
+
 type NodeType string
 
+// Node types as they appear in EXPLAIN's "Node Type" field. The values must match
+// PostgreSQL verbatim (e.g. "ModifyTable" has no space, "Seq Scan" does). Types
+// without a special case fall through to the generic renderer, which prints the
+// raw node-type string.
 const (
 	Limit           NodeType = "Limit"
-	Append                   = "Append"
-	Sort                     = "Sort"
-	NestedLoop               = "Nested Loop"
-	MergeJoin                = "Merge Join"
-	Hash                     = "Hash"
-	HashJoin                 = "Hash Join"
-	Aggregate                = "Aggregate"
-	Hashaggregate            = "Hashaggregate"
-	SequenceScan             = "Seq Scan"
-	IndexScan                = "Index Scan"
-	IndexOnlyScan            = "Index Only Scan"
-	BitmapHeapScan           = "Bitmap Heap Scan"
-	BitmapIndexScan          = "Bitmap Index Scan"
-	CTEScan                  = "CTE Scan"
-	FunctionScan             = "Function Scan"
-	SubqueryScan             = "Subquery Scan"
-	ValuesScan               = "Values Scan"
-	ModifyTable              = "Modify Table"
+	Append          NodeType = "Append"
+	MergeAppend     NodeType = "Merge Append"
+	RecursiveUnion  NodeType = "Recursive Union"
+	Sort            NodeType = "Sort"
+	IncrementalSort NodeType = "Incremental Sort"
+	NestedLoop      NodeType = "Nested Loop"
+	MergeJoin       NodeType = "Merge Join"
+	Hash            NodeType = "Hash"
+	HashJoin        NodeType = "Hash Join"
+	Aggregate       NodeType = "Aggregate"
+	GroupAggregate  NodeType = "Group"
+	WindowAgg       NodeType = "WindowAgg"
+	Unique          NodeType = "Unique"
+	SetOp           NodeType = "SetOp"
+	Gather          NodeType = "Gather"
+	GatherMerge     NodeType = "Gather Merge"
+	Memoize         NodeType = "Memoize"
+	Materialize     NodeType = "Materialize"
+	Result          NodeType = "Result"
+	ProjectSet      NodeType = "ProjectSet"
+	LockRows        NodeType = "LockRows"
+	BitmapAnd       NodeType = "BitmapAnd"
+	BitmapOr        NodeType = "BitmapOr"
+	SequenceScan    NodeType = "Seq Scan"
+	SampleScan      NodeType = "Sample Scan"
+	IndexScan       NodeType = "Index Scan"
+	IndexOnlyScan   NodeType = "Index Only Scan"
+	BitmapHeapScan  NodeType = "Bitmap Heap Scan"
+	BitmapIndexScan NodeType = "Bitmap Index Scan"
+	TidScan         NodeType = "Tid Scan"
+	TidRangeScan    NodeType = "Tid Range Scan"
+	CTEScan         NodeType = "CTE Scan"
+	NamedTuplestore NodeType = "Named Tuplestore Scan"
+	WorkTableScan   NodeType = "WorkTable Scan"
+	FunctionScan    NodeType = "Function Scan"
+	TableFuncScan   NodeType = "Table Function Scan"
+	SubqueryScan    NodeType = "Subquery Scan"
+	ValuesScan      NodeType = "Values Scan"
+	ForeignScan     NodeType = "Foreign Scan"
+	CustomScan      NodeType = "Custom Scan"
+	ModifyTable     NodeType = "ModifyTable"
 )
 
 type Explain struct {
 	Plan     Plan      `json:"Plan"`
 	Triggers []Trigger `json:"Triggers"`
 
-	QueryIdentifier uint64            `json:"Query Identifier"`
+	QueryIdentifier int64             `json:"Query Identifier"` // PostgreSQL queryid is a signed 64-bit value and is frequently negative.
 	Settings        map[string]string `json:"Settings"`
 	PlanningTime    float64           `json:"Planning Time"`
 	ExecutionTime   float64           `json:"Execution Time"`
@@ -76,8 +119,8 @@ type Explain struct {
 	IOReadTime  *float64
 	IOWriteTime *float64
 
-	ActualRows      uint64
-	MaxRows         uint64
+	ActualRows      float64
+	MaxRows         float64
 	MaxCost         float64
 	MaxDuration     float64
 	ContainsSeqScan bool
@@ -120,7 +163,7 @@ type Plan struct {
 
 	// Actual.
 	ActualLoops       uint64  `json:"Actual Loops"`
-	ActualRows        uint64  `json:"Actual Rows"`
+	ActualRows        float64 `json:"Actual Rows"` // PostgreSQL 18+ reports this as a fraction (rows averaged over loops).
 	ActualStartupTime float64 `json:"Actual Startup Time"`
 	ActualTotalTime   float64 `json:"Actual Total Time"`
 
@@ -131,9 +174,18 @@ type Plan struct {
 	TotalCost   float64 `json:"Total Cost"`
 
 	// WAL.
-	WALRecords uint64 `json:"WAL Records,omitempty"`
-	WALFPI     uint64 `json:"WAL FPI,omitempty"`
-	WALBytes   uint64 `json:"WAL Bytes,omitempty"`
+	WALRecords     uint64 `json:"WAL Records,omitempty"`
+	WALFPI         uint64 `json:"WAL FPI,omitempty"`
+	WALBytes       uint64 `json:"WAL Bytes,omitempty"`
+	WALBuffersFull uint64 `json:"WAL Buffers Full,omitempty"` // PostgreSQL 18+
+
+	// PostgreSQL 18+ per-node fields. All are absent on older servers, so the
+	// renderers below only emit them when present (true / non-zero / non-empty),
+	// which keeps pre-18 output unchanged.
+	Disabled       bool   `json:"Disabled,omitempty"`        // cost-based node disablement (was disable_cost)
+	IndexSearches  uint64 `json:"Index Searches,omitempty"`  // Index/Index-Only/Bitmap-Index Scan
+	Storage        string `json:"Storage,omitempty"`         // Material/WindowAgg/CTE, e.g. "Memory"
+	MaximumStorage uint64 `json:"Maximum Storage,omitempty"` // kB
 
 	// General.
 	Alias                     string   `json:"Alias"`
@@ -307,20 +359,20 @@ func (ex *Explain) checkSeqScan(plan *Plan) {
 func (ex *Explain) calculatePlannerEstimate(plan *Plan) {
 	plan.PlannerRowEstimateFactor = 0
 
-	if plan.PlanRows == plan.ActualRows {
+	if float64(plan.PlanRows) == plan.ActualRows {
 		return
 	}
 
 	plan.PlannerRowEstimateDirection = Under
 	if plan.PlanRows != 0 {
-		plan.PlannerRowEstimateFactor = float64(plan.ActualRows) / float64(plan.PlanRows)
+		plan.PlannerRowEstimateFactor = plan.ActualRows / float64(plan.PlanRows)
 	}
 
 	if plan.PlannerRowEstimateFactor < 1.0 {
 		plan.PlannerRowEstimateFactor = 0
 		plan.PlannerRowEstimateDirection = Over
 		if plan.ActualRows != 0 {
-			plan.PlannerRowEstimateFactor = float64(plan.PlanRows) / float64(plan.ActualRows)
+			plan.PlannerRowEstimateFactor = float64(plan.PlanRows) / plan.ActualRows
 		}
 	}
 }
@@ -501,9 +553,22 @@ func writeSubplanTextNodeCaption(outputFn func(string, ...interface{}) (int, err
 
 func planCostsAndTiming(plan *Plan) string {
 	costs := fmt.Sprintf("(cost=%.2f..%.2f rows=%d width=%d)", plan.StartupCost, plan.TotalCost, plan.PlanRows, plan.PlanWidth)
-	timing := fmt.Sprintf("(actual time=%.3f..%.3f rows=%d loops=%d)", plan.ActualStartupTime, plan.ActualTotalTime, plan.ActualRows, plan.ActualLoops)
+	timing := fmt.Sprintf("(actual time=%.3f..%.3f rows=%s loops=%d)",
+		plan.ActualStartupTime, plan.ActualTotalTime, formatActualRows(plan.ActualRows), plan.ActualLoops)
 
 	return fmt.Sprintf("  %s %s", costs, timing)
+}
+
+// formatActualRows renders an actual-row count. PostgreSQL 18+ reports fractional
+// row counts (averaged over loops), so the value is a float: print it as an integer
+// when whole — matching pre-18 output and joe's historical rendering — and with two
+// decimals when fractional, matching PostgreSQL 18's text format.
+func formatActualRows(rows float64) string {
+	if rows == math.Trunc(rows) {
+		return strconv.FormatInt(int64(rows), 10)
+	}
+
+	return strconv.FormatFloat(rows, 'f', 2, 64)
 }
 
 func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error), plan *Plan, withCostsAndTiming bool) {
@@ -580,6 +645,11 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 }
 
 func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error), plan *Plan) {
+	// PostgreSQL 18+ marks planner-disabled nodes (enable_* = off) explicitly.
+	if plan.Disabled {
+		_, _ = outputFn("Disabled: true")
+	}
+
 	if len(plan.SortKey) > 0 {
 		keys := ""
 		for _, key := range plan.SortKey {
@@ -630,6 +700,16 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 
 	if plan.NodeType == IndexOnlyScan {
 		outputFn("Heap Fetches: %d", plan.HeapFetches)
+	}
+
+	// PostgreSQL 18+: number of index descents on Index/Index-Only/Bitmap-Index Scans.
+	if plan.IndexSearches > 0 {
+		_, _ = outputFn("Index Searches: %d", plan.IndexSearches)
+	}
+
+	// PostgreSQL 18+: tuplestore storage on Materialize/WindowAgg/CTE nodes.
+	if plan.Storage != "" {
+		_, _ = outputFn("Storage: %s  Maximum Storage: %dkB", plan.Storage, plan.MaximumStorage)
 	}
 
 	if plan.HashCondition != "" {
@@ -685,8 +765,13 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 		outputFn("Buffers: %s", buffers)
 	}
 
-	if plan.WALRecords != 0 || plan.WALFPI != 0 || plan.WALBytes != 0 {
-		_, _ = outputFn(fmt.Sprintf("WAL: records=%d fpi=%d bytes=%d", plan.WALRecords, plan.WALFPI, plan.WALBytes))
+	if plan.WALRecords != 0 || plan.WALFPI != 0 || plan.WALBytes != 0 || plan.WALBuffersFull != 0 {
+		walLine := fmt.Sprintf("WAL: records=%d fpi=%d bytes=%d", plan.WALRecords, plan.WALFPI, plan.WALBytes)
+		if plan.WALBuffersFull != 0 { // PostgreSQL 18+
+			walLine += fmt.Sprintf(" buffers-full=%d", plan.WALBuffersFull)
+		}
+
+		_, _ = outputFn(walLine)
 	}
 
 	ioTiming := ""

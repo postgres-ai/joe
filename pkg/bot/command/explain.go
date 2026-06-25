@@ -28,11 +28,11 @@ const (
 	// MsgExplainOptionReq describes an explain error.
 	MsgExplainOptionReq = "Use `explain` to see the query's plan, e.g. `explain select 1`"
 
-	// Query Explain prefixes.
-	queryExplain        = "EXPLAIN (FORMAT TEXT) "
-	queryExplainAnalyze = "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON %s) "
-	settingsExplain     = ", SETTINGS TRUE"
-	walExplain          = ", WAL"
+	// Query Explain prefixes. The ANALYZE form and its version-gated options live in
+	// pkg/pgexplain (pgexplain.ExplainAnalyzeQuery/ExplainSettingsOption/ExplainWALOption)
+	// alongside the parser for the JSON they produce; analyzePrefix below applies the
+	// per-version policy.
+	queryExplain = "EXPLAIN (FORMAT TEXT) "
 
 	postgresNumDiv = 10000 // Divider to get version from server_version_num.
 	pgVersion12    = 12    // Explain Settings are available starting with Postgres 12.
@@ -175,14 +175,14 @@ func analyzePrefix(dbVersionNum int) string {
 	settingsValue := ""
 
 	if (dbVersionNum / postgresNumDiv) >= pgVersion12 {
-		settingsValue = settingsExplain
+		settingsValue = pgexplain.ExplainSettingsOption
 	}
 
 	if (dbVersionNum / postgresNumDiv) >= pgVersion13 {
-		settingsValue += walExplain
+		settingsValue += pgexplain.ExplainWALOption
 	}
 
-	return fmt.Sprintf(queryExplainAnalyze, settingsValue)
+	return fmt.Sprintf(pgexplain.ExplainAnalyzeQuery, settingsValue)
 }
 
 func observeLocks(ctx context.Context, db *pgxpool.Pool, txPID int) ([][]string, error) {

@@ -1,0 +1,20 @@
+ Insert on joecap.t_items  (cost=0.00..0.01 rows=0 width=0) (actual time=0.251..0.251 rows=0 loops=1)
+   Buffers: shared hit=48
+   WAL: records=2 fpi=0 bytes=127
+   ->  Result  (cost=0.00..0.01 rows=1 width=8) (actual time=0.051..0.051 rows=1 loops=1)
+         Buffers: shared hit=13
+Settings: search_path = 'joecap'
+
+--- stats ---
+
+Time: 0.383 ms
+  - planning: 0.091 ms
+  - execution: 0.292 ms
+    - I/O read: N/A
+    - I/O write: N/A
+
+Shared buffers:
+  - hits: 48 (~384.00 KiB) from the buffer pool
+  - reads: 0 from the OS file cache, including disk I/O
+  - dirtied: 0
+  - writes: 0
