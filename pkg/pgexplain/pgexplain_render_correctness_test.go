@@ -14,8 +14,9 @@ import (
 
 // renderCorrectnessFixture parses a real EXPLAIN (FORMAT JSON) plan captured from
 // a live PostgreSQL server (testdata/correctness/<name>.json) and returns joe's
-// rendered plan text. Each assertion below compares that text against the wording
-// PostgreSQL itself emits for the same plan with EXPLAIN (FORMAT TEXT).
+// rendered plan text. The Test* functions that call it then compare that text
+// against the wording PostgreSQL itself emits for the same plan with
+// EXPLAIN (FORMAT TEXT).
 func renderCorrectnessFixture(t *testing.T, name string) string {
 	t.Helper()
 
@@ -112,6 +113,24 @@ func TestRenderFunctionScanAlias(t *testing.T) {
 		"a Function Scan must drop the alias when it equals the function name")
 	require.NotContains(t, out, "generate_series generate_series",
 		"a Function Scan must not duplicate the function name as a redundant alias")
+}
+
+// TestRenderFunctionScanDifferingAlias covers the other side of A4: when the alias
+// differs from the function name (e.g. "select * from generate_series(1,10) gs(n)"),
+// it must be kept. This exercises the alias-append branch that the equal-alias
+// fixture above does not.
+//
+// PG-native: " Function Scan on pg_catalog.generate_series gs  (cost=...)"
+// joe:       " Function Scan on generate_series gs  (cost=...)"
+//
+// joe does not schema-qualify the function name (it has no such pre-existing
+// behaviour, same as the equal-alias case), so the schema prefix is the only
+// remaining difference from PG's VERBOSE text; the alias rendering matches.
+func TestRenderFunctionScanDifferingAlias(t *testing.T) {
+	out := renderCorrectnessFixture(t, "function_scan_alias")
+
+	require.Contains(t, out, "Function Scan on generate_series gs  (cost=",
+		"a Function Scan must keep the alias when it differs from the function name")
 }
 
 // TestRenderTempBuffers covers A5. An on-disk sort reports temp block I/O.

@@ -219,7 +219,7 @@ type Plan struct {
 	SortSpaceType             string   `json:"Sort Space Type"`
 	SortSpaceUsed             uint64   `json:"Sort Space Used"` // kB
 	Strategy                  string   `json:"Strategy"`        // Aggregate strategy: Plain/Sorted/Hashed/Mixed
-	PartialMode               string   `json:"Partial Mode"`    // Aggregate split: Simple/Partial/Finalize
+	PartialMode               string   `json:"Partial Mode"`    // PG "Partial Mode": Simple, or Partial/Finalize (parallel agg phases)
 	SubplanName               string   `json:"Subplan Name"`
 	WorkersLaunched           uint     `json:"Workers Launched"`
 	WorkersPlanned            uint     `json:"Workers Planned"`
