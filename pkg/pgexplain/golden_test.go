@@ -124,9 +124,7 @@ func TestGolden(t *testing.T) {
 func TestGoldenPG18FractionalRows(t *testing.T) {
 	const fixture = "testdata/pg18/nested_loop.json"
 
-	if _, err := os.Stat(fixture); err != nil {
-		t.Skipf("fixture %s missing, skipping", fixture)
-	}
+	require.FileExists(t, fixture, "committed PG18 golden fixture %s must exist", fixture)
 
 	text := goldenRender(t, fixture)
 
@@ -154,9 +152,7 @@ func TestGoldenPG18FractionalRows(t *testing.T) {
 func TestGoldenPG18Insert(t *testing.T) {
 	const fixture = "testdata/pg18/insert.json"
 
-	if _, err := os.Stat(fixture); err != nil {
-		t.Skipf("fixture %s missing, skipping", fixture)
-	}
+	require.FileExists(t, fixture, "committed PG18 golden fixture %s must exist", fixture)
 
 	text := goldenRender(t, fixture)
 
