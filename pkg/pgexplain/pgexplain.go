@@ -716,7 +716,7 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 
 	// Incremental Sort: the prefix of the sort key the input is already ordered by.
 	if len(plan.PresortedKey) > 0 {
-		outputFn("Presorted Key: %s", strings.Join(plan.PresortedKey, ", "))
+		_, _ = outputFn("Presorted Key: %s", strings.Join(plan.PresortedKey, ", "))
 	}
 
 	// Incremental Sort per-group sort statistics (EXPLAIN ANALYZE).
@@ -756,11 +756,13 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 		if plan.PlannedPartitions > 0 {
 			info += fmt.Sprintf("Planned Partitions: %d  ", plan.PlannedPartitions)
 		}
+
 		info += fmt.Sprintf("Batches: %d  Memory Usage: %dkB", plan.HashAggBatches, plan.PeakMemoryUsage)
 		if plan.DiskUsage > 0 {
 			info += fmt.Sprintf("  Disk Usage: %dkB", plan.DiskUsage)
 		}
-		outputFn("%s", info)
+
+		_, _ = outputFn("%s", info)
 	}
 
 	if plan.HashBuckets != 0 {
@@ -772,13 +774,15 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 	// the cache has actually been probed (i.e. there was at least one miss).
 	if plan.NodeType == Memoize {
 		if plan.CacheKey != "" {
-			outputFn("Cache Key: %s", plan.CacheKey)
+			_, _ = outputFn("Cache Key: %s", plan.CacheKey)
 		}
+
 		if plan.CacheMode != "" {
-			outputFn("Cache Mode: %s", plan.CacheMode)
+			_, _ = outputFn("Cache Mode: %s", plan.CacheMode)
 		}
+
 		if plan.CacheMisses > 0 {
-			outputFn("Hits: %d  Misses: %d  Evictions: %d  Overflows: %d  Memory Usage: %dkB",
+			_, _ = outputFn("Hits: %d  Misses: %d  Evictions: %d  Overflows: %d  Memory Usage: %dkB",
 				plan.CacheHits, plan.CacheMisses, plan.CacheEvictions, plan.CacheOverflows, plan.PeakMemoryUsage)
 		}
 	}
@@ -813,10 +817,11 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 	// recheck discarded on lossy pages (the count appears only under ANALYZE and
 	// only when lossy pages forced a recheck, hence the >0 guard).
 	if plan.RecheckCond != "" {
-		outputFn("Recheck Cond: %v", plan.RecheckCond)
+		_, _ = outputFn("Recheck Cond: %v", plan.RecheckCond)
 	}
+
 	if plan.RowsRemovedByIndexRecheck > 0 {
-		outputFn("Rows Removed by Index Recheck: %d", plan.RowsRemovedByIndexRecheck)
+		_, _ = outputFn("Rows Removed by Index Recheck: %d", plan.RowsRemovedByIndexRecheck)
 	}
 
 	if plan.Filter != "" {
@@ -826,14 +831,14 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 
 	// Join-node qual evaluated at the join (Nested Loop / Merge Join / Hash Join).
 	if plan.JoinFilter != "" {
-		outputFn("Join Filter: %v", plan.JoinFilter)
-		outputFn("Rows Removed by Join Filter: %d", plan.RowsRemovedByJoinFilter)
+		_, _ = outputFn("Join Filter: %v", plan.JoinFilter)
+		_, _ = outputFn("Rows Removed by Join Filter: %d", plan.RowsRemovedByJoinFilter)
 	}
 
 	// WindowAgg run condition: the qual that lets the window scan stop early
 	// (PostgreSQL 15+). A single scalar expression string.
 	if plan.RunCondition != "" {
-		outputFn("Run Condition: %v", plan.RunCondition)
+		_, _ = outputFn("Run Condition: %v", plan.RunCondition)
 	}
 
 	if plan.WorkersPlanned > 0 {
