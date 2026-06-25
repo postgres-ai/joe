@@ -38,6 +38,33 @@ test:
     - make vet
     - make test
 
+# Runs the HypoPG integration test (pkg/bot/command/hypo_integration_test.go,
+# guarded by the `integration` build tag) against a real Postgres with HypoPG
+# installed. `make test` does not pass -tags integration, so without this job the
+# regression guard for the HypoPG 1.2.0 API change never runs in CI.
+test-hypopg:
+  stage: test
+  image: golang:1.26
+  only:
+    - branches
+    - tags
+    - merge_requests
+  variables:
+    DEBIAN_FRONTEND: "noninteractive"
+    JOE_TEST_HYPOPG_DSN: "postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable"
+  script:
+    # Install PostgreSQL 17 and the HypoPG extension from the PGDG apt repo.
+    - apt-get update
+    - apt-get install -y postgresql-common gnupg
+    - sh /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+    - apt-get install -y postgresql-17 postgresql-17-hypopg
+    # Initialise and start a throwaway cluster on 127.0.0.1:5432 (trust auth).
+    - chown -R postgres /tmp/pgdata 2>/dev/null || true
+    - su postgres -c "/usr/lib/postgresql/17/bin/initdb -D /tmp/pgdata --auth-host=trust --auth-local=trust"
+    - su postgres -c "/usr/lib/postgresql/17/bin/pg_ctl -D /tmp/pgdata -o '-c listen_addresses=127.0.0.1 -p 5432' -w start"
+    # Run only the HypoPG integration tests against that cluster.
+    - go test -tags integration ./pkg/bot/command/ -run Hypo -v
+
 lint:
   stage: test
   image: golangci/golangci-lint:v2.11.4

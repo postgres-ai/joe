@@ -29,6 +29,38 @@ const (
 // HypoPGCaption contains caption for rendered tables.
 const HypoPGCaption = "*HypoPG response:*\n"
 
+// listHypoIndexesQuery lists all hypothetical indexes of the current backend.
+//
+// It queries the hypopg() set-returning function directly and joins the catalogs
+// itself, rather than the hypopg_list_indexes object, on purpose: HypoPG 1.2.0
+// turned hypopg_list_indexes from a function into a view and renamed its columns
+// (indexname->index_name, nspname->schema_name, relname->table_name,
+// amname->am_name). hypopg()'s shape has been stable since 1.1.x, so this works
+// across every HypoPG version. The column aliases reproduce the modern view.
+const listHypoIndexesQuery = `select
+  h.indexrelid::text,
+  h.indexname,
+  n.nspname as schema_name,
+  coalesce(c.relname, '<dropped>') as table_name,
+  am.amname as am_name
+from hypopg() as h
+left join pg_catalog.pg_class as c
+  on c.oid = h.indrelid
+left join pg_catalog.pg_namespace as n
+  on n.oid = c.relnamespace
+left join pg_catalog.pg_am as am
+  on am.oid = h.amid`
+
+// describeHypoIndexQuery describes a single hypothetical index by its indexrelid.
+// See listHypoIndexesQuery for why it goes through hypopg() rather than the view.
+const describeHypoIndexQuery = `select
+  h.indexrelid::text,
+  h.indexname,
+  hypopg_get_indexdef(h.indexrelid),
+  pg_size_pretty(hypopg_relation_size(h.indexrelid))
+from hypopg() as h
+where h.indexrelid::text = $1`
+
 // hypoPGExceptionMessage defines an error message on failure of extension initialize.
 const hypoPGExceptionMessage = `:warning: The HypoPG extension is not installed.
 Make sure that the extension has been installed in your Postgres image for Database Lab: https://postgres.ai/docs/database-lab/supported_databases.
@@ -140,18 +172,22 @@ func (h *HypoCmd) create(ctx context.Context) error {
 	return nil
 }
 
-func (h *HypoCmd) describe(ctx context.Context, indexID string) error {
-	query := "select indexrelid::text, indexname, nspname, relname, amname from hypopg_list_indexes()"
+// describeHypoIndexes returns the hypothetical indexes of the current backend.
+// With an empty indexID it lists them all; otherwise it describes a single one.
+func describeHypoIndexes(ctx context.Context, db querier.Querier, indexID string) ([][]string, error) {
+	query := listHypoIndexesQuery
 	queryArgs := []interface{}{}
 
 	if indexID != "" {
-		query = `select indexrelid::text, indexname, hypopg_get_indexdef(indexrelid), 
-			pg_size_pretty(hypopg_relation_size(indexrelid)) 
-			from hypopg_list_indexes() where indexrelid = $1`
+		query = describeHypoIndexQuery
 		queryArgs = append(queryArgs, indexID)
 	}
 
-	res, err := querier.DBQuery(ctx, h.pool, query, queryArgs...)
+	return querier.DBQuery(ctx, db, query, queryArgs...)
+}
+
+func (h *HypoCmd) describe(ctx context.Context, indexID string) error {
+	res, err := describeHypoIndexes(ctx, h.pool, indexID)
 	if err != nil {
 		return errors.Wrap(err, "failed to run description query")
 	}
