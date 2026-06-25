@@ -80,6 +80,32 @@ func seedHypoIndex(t *testing.T, ctx context.Context, conn *pgxpool.Conn) (index
 	return indexrelid, indexname
 }
 
+// seedSecondHypoIndex adds a second hypothetical index on a different table,
+// alongside whatever seedHypoIndex already created. Unlike seedHypoIndex it does
+// not call hypopg_reset(), so both indexes coexist in the backend, which lets a
+// test prove the indexrelid filter selects one of several. It returns the new
+// index' indexrelid (as text) and name; its table is dropped on cleanup.
+func seedSecondHypoIndex(t *testing.T, ctx context.Context, conn *pgxpool.Conn) (indexrelid, indexname string) {
+	t.Helper()
+
+	_, err := conn.Exec(ctx, "create table if not exists joe_hypo_test2(id int, val text)")
+	require.NoError(t, err)
+
+	err = conn.QueryRow(ctx,
+		"select indexrelid::text, indexname from hypopg_create_index($1)",
+		"create index on joe_hypo_test2 (val)",
+	).Scan(&indexrelid, &indexname)
+	require.NoError(t, err)
+	require.NotEmpty(t, indexrelid)
+	require.NotEmpty(t, indexname)
+
+	t.Cleanup(func() {
+		_, _ = conn.Exec(ctx, "drop table if exists joe_hypo_test2")
+	})
+
+	return indexrelid, indexname
+}
+
 // TestListHypoIndexes_Integration covers explain.go's listHypoIndexes, used to
 // flag plans that involve a hypothetical index.
 func TestListHypoIndexes_Integration(t *testing.T) {
@@ -100,12 +126,27 @@ func TestDescribeHypoIndexes_ListAll_Integration(t *testing.T) {
 	require.NoError(t, err) // before the fix: 42883
 	require.GreaterOrEqual(t, len(res), 2, "want a header row plus at least one index row")
 	require.Contains(t, flattenRows(res), indexname)
+
+	// res[0] is the header row: the column names of listHypoIndexesQuery. Assert
+	// the aliases that reproduce the modern hypopg_list_indexes view, so a rename
+	// in listHypoIndexesQuery (the exact breakage this fix guards against) fails
+	// here rather than silently shipping the wrong column headers.
+	header := res[0]
+	require.Contains(t, header, "indexname")
+	require.Contains(t, header, "schema_name")
+	require.Contains(t, header, "table_name")
+	require.Contains(t, header, "am_name")
 }
 
-// TestDescribeHypoIndexes_One_Integration covers `hypo desc <indexrelid>`.
+// TestDescribeHypoIndexes_One_Integration covers `hypo desc <indexrelid>`. It
+// seeds two hypothetical indexes so the `where h.indexrelid::text = $1` filter is
+// genuinely exercised: a passing result must contain exactly the requested index
+// and not the other one. A non-matching id must yield an empty result, not an error.
 func TestDescribeHypoIndexes_One_Integration(t *testing.T) {
 	ctx, conn := hypoTestConn(t)
 	indexrelid, indexname := seedHypoIndex(t, ctx, conn)
+	secondRelid, secondName := seedSecondHypoIndex(t, ctx, conn)
+	require.NotEqual(t, indexrelid, secondRelid, "the two seeded indexes must be distinct")
 
 	res, err := describeHypoIndexes(ctx, conn, indexrelid)
 	require.NoError(t, err) // before the fix: 42883
@@ -114,6 +155,17 @@ func TestDescribeHypoIndexes_One_Integration(t *testing.T) {
 	row := strings.Join(res[1], " ")
 	require.Contains(t, row, indexname)
 	require.Contains(t, row, "joe_hypo_test", "hypopg_get_indexdef should mention the indexed table")
+	// The $1 filter must select the requested index, not the other one that also
+	// exists in this backend; otherwise a broken/always-true filter goes unnoticed.
+	require.NotContains(t, row, secondName, "the indexrelid filter must exclude the second index")
+	require.NotContains(t, row, "joe_hypo_test2", "the indexrelid filter must exclude the second index' table")
+
+	// A non-matching indexrelid yields an empty result set (zero rows, hence no
+	// header row either, since the header is emitted only alongside data) rather
+	// than an error.
+	none, err := describeHypoIndexes(ctx, conn, "99999999")
+	require.NoError(t, err)
+	require.Empty(t, none, "a non-matching indexrelid must yield no rows")
 }
 
 func flattenRows(res [][]string) string {
