@@ -19,6 +19,7 @@ package pgexplain
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -27,9 +28,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// integrationExplainPrefix is the EXACT EXPLAIN form joe uses (see
-// pkg/bot/command/explain.go: queryExplainAnalyze + settingsExplain + walExplain).
-const integrationExplainPrefix = "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON, SETTINGS TRUE, WAL) "
+// integrationExplainPrefix is the EXACT EXPLAIN form joe issues, built from the same
+// pgexplain constants as command.analyzePrefix so the smoke test can't drift from
+// production. The matrix runs PostgreSQL 13+, so the full SETTINGS + WAL form applies.
+var integrationExplainPrefix = fmt.Sprintf(ExplainAnalyzeQuery, ExplainSettingsOption+ExplainWALOption)
 
 // integrationQuery describes a single representative query plus the session
 // setup it needs (e.g. disabling hash/merge joins to force a nested loop with

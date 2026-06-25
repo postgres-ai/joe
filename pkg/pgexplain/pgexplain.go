@@ -26,6 +26,20 @@ const (
 	Under                   = "Under"
 )
 
+// The EXPLAIN request form and the JSON fields parsed below are two halves of one
+// contract (which options joe asks for determines which fields appear), so they
+// live together here. Callers (pkg/bot/command) own the policy of which
+// version-gated options to include for a given server version.
+const (
+	// ExplainAnalyzeQuery is the EXPLAIN form joe issues; the %s carries the
+	// version-gated options (SETTINGS, WAL).
+	ExplainAnalyzeQuery = "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON %s) "
+	// ExplainSettingsOption enables SETTINGS output (PostgreSQL 12+).
+	ExplainSettingsOption = ", SETTINGS TRUE"
+	// ExplainWALOption enables WAL output (PostgreSQL 13+).
+	ExplainWALOption = ", WAL"
+)
+
 type NodeType string
 
 // Node types as they appear in EXPLAIN's "Node Type" field. The values must match
