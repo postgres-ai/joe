@@ -788,7 +788,7 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 	}
 	if plan.LocalDirtiedBlocks > 0 || plan.LocalHitBlocks > 0 || plan.LocalReadBlocks > 0 || plan.LocalWrittenBlocks > 0 {
 		if buffers != "" {
-			buffers += " "
+			buffers += ", "
 		}
 		buffers += "local"
 		if plan.LocalHitBlocks > 0 {
@@ -806,8 +806,10 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 	}
 
 	if plan.TempReadBlocks > 0 || plan.TempWrittenBlocks > 0 {
+		// PostgreSQL comma-separates the shared/local/temp sections of the Buffers
+		// line (counters within a section stay space-separated).
 		if buffers != "" {
-			buffers += " "
+			buffers += ", "
 		}
 
 		buffers += "temp"

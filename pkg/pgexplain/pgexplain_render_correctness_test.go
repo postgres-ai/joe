@@ -115,16 +115,20 @@ func TestRenderFunctionScanAlias(t *testing.T) {
 }
 
 // TestRenderTempBuffers covers A5. An on-disk sort reports temp block I/O.
-// PostgreSQL renders a "temp read=N written=N" section in the Buffers line; joe's
-// per-node Buffers builder handled only shared and local buffers, dropping temp.
+// PostgreSQL renders a "temp read=N written=N" section in the Buffers line and
+// comma-separates it from the shared section. joe's per-node Buffers builder
+// handled only shared and local buffers (dropping temp) and joined sections with
+// a plain space instead of a comma.
 //
 // PG-native: "   Buffers: shared hit=323, temp read=608 written=666"
 // joe (old): "   Buffers: shared hit=323"
 func TestRenderTempBuffers(t *testing.T) {
 	out := renderCorrectnessFixture(t, "sort_temp_buffers")
 
-	require.Contains(t, out, "temp read=608 written=666",
-		"an on-disk sort must render its temp read/written buffer counts, matching PostgreSQL")
+	// Assert the full line, including the comma between sections, so the
+	// inter-section separator is guarded (not just the temp counters).
+	require.Contains(t, out, "Buffers: shared hit=323, temp read=608 written=666",
+		"an on-disk sort must render comma-separated shared and temp buffer sections, matching PostgreSQL")
 }
 
 // TestRenderBitmapIndexScanOn covers A6. A Bitmap Index Scan has no table, so
