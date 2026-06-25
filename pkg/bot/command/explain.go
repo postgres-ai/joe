@@ -212,6 +212,7 @@ func listHypoIndexes(ctx context.Context, db querier.Querier) ([]string, error) 
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 
 	hypoIndexes := []string{}
 	for rows.Next() {
@@ -221,6 +222,10 @@ func listHypoIndexes(ctx context.Context, db querier.Querier) ([]string, error) 
 		}
 
 		hypoIndexes = append(hypoIndexes, indexName)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return hypoIndexes, nil
