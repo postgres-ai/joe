@@ -2,12 +2,15 @@
 2026 © Postgres.ai
 */
 
-// Command explainrender renders a PostgreSQL `EXPLAIN (FORMAT JSON)` document
-// into joe's text plan (and optionally its stats summary) using joe's own
-// pgexplain renderer.
+// Command explainrender converts a PostgreSQL `EXPLAIN (FORMAT JSON)` document
+// into PostgreSQL's standard text plan (and optionally a stats summary) using
+// joe's pkg/pgexplain renderer. joe collects plans as JSON but often needs to
+// show the familiar text plan, and neither psql nor PostgreSQL can convert an
+// existing JSON plan back to text — so pkg/pgexplain performs that translation.
 //
-// It is handy for debugging joe's JSON->text rendering and for diffing joe's
-// output against PostgreSQL's native text EXPLAIN across server versions.
+// It is handy for debugging that JSON->text translation and for diffing joe's
+// output against PostgreSQL's own text EXPLAIN across server versions; any
+// difference is a rendering-fidelity bug.
 //
 // Usage:
 //
@@ -26,11 +29,13 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/pgexplain"
 )
 
-const usage = `explainrender renders a PostgreSQL EXPLAIN (FORMAT JSON) document into
-joe's text plan (and optionally its stats summary) using joe's pgexplain renderer.
+const usage = `explainrender converts a PostgreSQL EXPLAIN (FORMAT JSON) document into
+PostgreSQL's standard text plan (and optionally a stats summary) using joe's
+pkg/pgexplain renderer. psql cannot convert an existing JSON plan back to text;
+joe receives plans as JSON, so pkg/pgexplain re-renders the standard text form.
 
-It is useful for debugging joe's JSON->text rendering and for diffing joe's
-output against PostgreSQL's native text EXPLAIN across versions.
+Useful for debugging that JSON->text translation and for diffing joe's output
+against PostgreSQL's own text EXPLAIN across versions (any difference is a bug).
 
 Usage:
   explainrender [-stats] [file]
