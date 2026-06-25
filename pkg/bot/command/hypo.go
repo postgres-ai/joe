@@ -37,21 +37,29 @@ const HypoPGCaption = "*HypoPG response:*\n"
 // (indexname->index_name, nspname->schema_name, relname->table_name,
 // amname->am_name). hypopg()'s shape has been stable since 1.1.x, so this works
 // across every HypoPG version. The column aliases reproduce the modern view.
-const listHypoIndexesQuery = `select h.indexrelid::text, h.indexname,
-	n.nspname as schema_name,
-	coalesce(c.relname, '<dropped>') as table_name,
-	am.amname as am_name
-	from hypopg() h
-	left join pg_catalog.pg_class c on c.oid = h.indrelid
-	left join pg_catalog.pg_namespace n on n.oid = c.relnamespace
-	left join pg_catalog.pg_am am on am.oid = h.amid`
+const listHypoIndexesQuery = `select
+  h.indexrelid::text,
+  h.indexname,
+  n.nspname as schema_name,
+  coalesce(c.relname, '<dropped>') as table_name,
+  am.amname as am_name
+from hypopg() as h
+left join pg_catalog.pg_class as c
+  on c.oid = h.indrelid
+left join pg_catalog.pg_namespace as n
+  on n.oid = c.relnamespace
+left join pg_catalog.pg_am as am
+  on am.oid = h.amid`
 
 // describeHypoIndexQuery describes a single hypothetical index by its indexrelid.
 // See listHypoIndexesQuery for why it goes through hypopg() rather than the view.
-const describeHypoIndexQuery = `select h.indexrelid::text, h.indexname,
-	hypopg_get_indexdef(h.indexrelid),
-	pg_size_pretty(hypopg_relation_size(h.indexrelid))
-	from hypopg() h where h.indexrelid::text = $1`
+const describeHypoIndexQuery = `select
+  h.indexrelid::text,
+  h.indexname,
+  hypopg_get_indexdef(h.indexrelid),
+  pg_size_pretty(hypopg_relation_size(h.indexrelid))
+from hypopg() as h
+where h.indexrelid::text = $1`
 
 // hypoPGExceptionMessage defines an error message on failure of extension initialize.
 const hypoPGExceptionMessage = `:warning: The HypoPG extension is not installed.
