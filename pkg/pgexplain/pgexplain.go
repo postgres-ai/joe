@@ -81,7 +81,7 @@ type Explain struct {
 	Plan     Plan      `json:"Plan"`
 	Triggers []Trigger `json:"Triggers"`
 
-	QueryIdentifier uint64            `json:"Query Identifier"`
+	QueryIdentifier int64             `json:"Query Identifier"` // PostgreSQL queryid is a signed 64-bit value and is frequently negative.
 	Settings        map[string]string `json:"Settings"`
 	PlanningTime    float64           `json:"Planning Time"`
 	ExecutionTime   float64           `json:"Execution Time"`

@@ -131,6 +131,27 @@ const inputJSONPostgres18DetailFields = `[
   }
 ]`
 
+// TestNegativeQueryIdentifier guards against the uint64 query-id bug: PostgreSQL's
+// query identifier is a signed 64-bit value (often negative) and is emitted when
+// compute_query_id is active (e.g. pg_stat_statements loaded). Decoding it into a
+// uint64 fails for negative values, breaking the whole EXPLAIN.
+func TestNegativeQueryIdentifier(t *testing.T) {
+	const j = `[{
+		"Plan": {
+			"Node Type": "Result", "Parallel Aware": false,
+			"Startup Cost": 0.0, "Total Cost": 0.01, "Plan Rows": 1, "Plan Width": 4,
+			"Actual Startup Time": 0.0, "Actual Total Time": 0.0, "Actual Rows": 1.00, "Actual Loops": 1
+		},
+		"Query Identifier": -4586892858755505326,
+		"Planning Time": 0.1, "Triggers": [], "Execution Time": 0.1
+	}]`
+
+	explain, err := NewExplain(j)
+	require.NoError(t, err) // before fix: cannot unmarshal number -4586892858755505326 into uint64
+	require.Equal(t, int64(-4586892858755505326), explain.QueryIdentifier)
+	require.Contains(t, explain.RenderPlanText(), "Query ID: -4586892858755505326")
+}
+
 func TestRenderPostgres18DetailFields(t *testing.T) {
 	explain, err := NewExplain(inputJSONPostgres18DetailFields)
 	require.NoError(t, err)
