@@ -218,7 +218,8 @@ type Plan struct {
 	SortMethod                string   `json:"Sort Method"`
 	SortSpaceType             string   `json:"Sort Space Type"`
 	SortSpaceUsed             uint64   `json:"Sort Space Used"` // kB
-	Strategy                  string   `json:"Strategy"`
+	Strategy                  string   `json:"Strategy"`        // Aggregate strategy: Plain/Sorted/Hashed/Mixed
+	PartialMode               string   `json:"Partial Mode"`    // Aggregate split: Simple/Partial/Finalize
 	SubplanName               string   `json:"Subplan Name"`
 	WorkersLaunched           uint     `json:"Workers Launched"`
 	WorkersPlanned            uint     `json:"Workers Planned"`
@@ -553,8 +554,15 @@ func writeSubplanTextNodeCaption(outputFn func(string, ...interface{}) (int, err
 
 func planCostsAndTiming(plan *Plan) string {
 	costs := fmt.Sprintf("(cost=%.2f..%.2f rows=%d width=%d)", plan.StartupCost, plan.TotalCost, plan.PlanRows, plan.PlanWidth)
-	timing := fmt.Sprintf("(actual time=%.3f..%.3f rows=%s loops=%d)",
-		plan.ActualStartupTime, plan.ActualTotalTime, formatActualRows(plan.ActualRows), plan.ActualLoops)
+
+	// A node that ran zero loops was never reached during execution (e.g. the
+	// inner side of a nested loop whose outer produced no rows). PostgreSQL prints
+	// "(never executed)" in place of the actual-timing clause.
+	timing := "(never executed)"
+	if plan.ActualLoops != 0 {
+		timing = fmt.Sprintf("(actual time=%.3f..%.3f rows=%s loops=%d)",
+			plan.ActualStartupTime, plan.ActualTotalTime, formatActualRows(plan.ActualRows), plan.ActualLoops)
+	}
 
 	return fmt.Sprintf("  %s %s", costs, timing)
 }
@@ -571,6 +579,33 @@ func formatActualRows(rows float64) string {
 	return strconv.FormatFloat(rows, 'f', 2, 64)
 }
 
+// aggregateNodeType maps an Aggregate node's strategy and partial mode to the
+// caption PostgreSQL emits. The strategy selects the base name
+// (Plain->Aggregate, Sorted->GroupAggregate, Hashed->HashAggregate,
+// Mixed->MixedAggregate) and a non-Simple partial mode prepends the
+// "Partial "/"Finalize " word (e.g. "Finalize GroupAggregate").
+func aggregateNodeType(plan *Plan) string {
+	name := string(Aggregate)
+
+	switch plan.Strategy {
+	case "Sorted":
+		name = "GroupAggregate"
+	case "Hashed":
+		name = "HashAggregate"
+	case "Mixed":
+		name = "MixedAggregate"
+	}
+
+	switch plan.PartialMode {
+	case "Partial":
+		name = "Partial " + name
+	case "Finalize":
+		name = "Finalize " + name
+	}
+
+	return name
+}
+
 func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error), plan *Plan, withCostsAndTiming bool) {
 	costsAndTiming := ""
 
@@ -580,7 +615,13 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 
 	using := ""
 	if plan.IndexName != "" {
-		using = fmt.Sprintf(" using %v", plan.IndexName)
+		// A Bitmap Index Scan has no table of its own, so PostgreSQL names the
+		// index with "on"; Index/Index Only Scans use "using <index> on <table>".
+		if plan.NodeType == BitmapIndexScan {
+			using = fmt.Sprintf(" on %v", plan.IndexName)
+		} else {
+			using = fmt.Sprintf(" using %v", plan.IndexName)
+		}
 	}
 
 	on := ""
@@ -609,7 +650,12 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 		on = fmt.Sprintf(" on %q", plan.Alias)
 
 	case FunctionScan:
-		on = fmt.Sprintf(" on %s %s", plan.FunctionName, plan.Alias)
+		// PostgreSQL omits the alias when it equals the function name (the default),
+		// e.g. "Function Scan on generate_series" rather than "... generate_series generate_series".
+		on = fmt.Sprintf(" on %s", plan.FunctionName)
+		if plan.Alias != "" && plan.Alias != plan.FunctionName {
+			on += fmt.Sprintf(" %s", plan.Alias)
+		}
 
 	case SubqueryScan:
 		nodeType = fmt.Sprintf("%s on %s", plan.NodeType, plan.Alias)
@@ -624,9 +670,7 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 			nodeType = fmt.Sprintf("Hash %s Join", plan.JoinType)
 		}
 	case Aggregate:
-		if plan.Strategy == "Hashed" {
-			nodeType = fmt.Sprintf("Hash%v", Aggregate)
-		}
+		nodeType = aggregateNodeType(plan)
 
 	case NestedLoop:
 		if plan.JoinType != "Inner" {
@@ -761,6 +805,22 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 		}
 	}
 
+	if plan.TempReadBlocks > 0 || plan.TempWrittenBlocks > 0 {
+		if buffers != "" {
+			buffers += " "
+		}
+
+		buffers += "temp"
+
+		if plan.TempReadBlocks > 0 {
+			buffers += fmt.Sprintf(" read=%d", plan.TempReadBlocks)
+		}
+
+		if plan.TempWrittenBlocks > 0 {
+			buffers += fmt.Sprintf(" written=%d", plan.TempWrittenBlocks)
+		}
+	}
+
 	if buffers != "" {
 		outputFn("Buffers: %s", buffers)
 	}
@@ -816,8 +876,15 @@ func printTriggers(triggers []Trigger) string {
 	sb := strings.Builder{}
 
 	for _, trigger := range triggers {
-		fmt.Fprintf(&sb, "Trigger %s for constraint %s: time=%.3f calls=%d\n",
-			trigger.Name, trigger.ConstraintName, trigger.Time, trigger.Calls)
+		// PostgreSQL appends "for constraint <name>" only for constraint triggers
+		// (e.g. foreign-key checks); a plain trigger renders just "Trigger <name>:".
+		constraint := ""
+		if trigger.ConstraintName != "" {
+			constraint = fmt.Sprintf(" for constraint %s", trigger.ConstraintName)
+		}
+
+		fmt.Fprintf(&sb, "Trigger %s%s: time=%.3f calls=%d\n",
+			trigger.Name, constraint, trigger.Time, trigger.Calls)
 	}
 
 	return sb.String()
