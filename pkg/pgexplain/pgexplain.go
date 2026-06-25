@@ -650,9 +650,15 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 		on = fmt.Sprintf(" on %q", plan.Alias)
 
 	case FunctionScan:
-		// PostgreSQL omits the alias when it equals the function name (the default),
-		// e.g. "Function Scan on generate_series" rather than "... generate_series generate_series".
-		on = fmt.Sprintf(" on %s", plan.FunctionName)
+		// Schema-qualify the function name when present (e.g. "pg_catalog.generate_series"),
+		// mirroring how relation scans are qualified above. PostgreSQL also omits the alias
+		// when it equals the function name (the default), so it is appended only when it differs.
+		if plan.Schema != "" {
+			on = fmt.Sprintf(" on %s.%s", plan.Schema, plan.FunctionName)
+		} else {
+			on = fmt.Sprintf(" on %s", plan.FunctionName)
+		}
+
 		if plan.Alias != "" && plan.Alias != plan.FunctionName {
 			on += fmt.Sprintf(" %s", plan.Alias)
 		}

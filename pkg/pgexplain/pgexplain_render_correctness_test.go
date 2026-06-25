@@ -100,37 +100,33 @@ func TestRenderTriggerConstraintGuard(t *testing.T) {
 		"a non-constraint trigger must not render a dangling \"for constraint :\"")
 }
 
-// TestRenderFunctionScanAlias covers A4. PostgreSQL omits a Function Scan's alias
-// when it equals the function name. joe rendered " on <FunctionName> <Alias>"
-// unconditionally, duplicating the name.
+// TestRenderFunctionScanAlias covers A4. PostgreSQL schema-qualifies the function
+// name (under VERBOSE) and omits the alias when it equals that name. joe rendered
+// " on <FunctionName> <Alias>" unconditionally and without the schema, duplicating
+// the name and dropping the qualification.
 //
-// PG-native: " Function Scan on generate_series  (cost=...)"
+// PG-native: " Function Scan on pg_catalog.generate_series  (cost=...)"
 // joe (old): " Function Scan on generate_series generate_series  (cost=...)"
 func TestRenderFunctionScanAlias(t *testing.T) {
 	out := renderCorrectnessFixture(t, "function_scan")
 
-	require.Contains(t, out, "Function Scan on generate_series  (cost=",
-		"a Function Scan must drop the alias when it equals the function name")
+	require.Contains(t, out, "Function Scan on pg_catalog.generate_series  (cost=",
+		"a Function Scan must schema-qualify and drop the alias when it equals the function name")
 	require.NotContains(t, out, "generate_series generate_series",
 		"a Function Scan must not duplicate the function name as a redundant alias")
 }
 
 // TestRenderFunctionScanDifferingAlias covers the other side of A4: when the alias
 // differs from the function name (e.g. "select * from generate_series(1,10) gs(n)"),
-// it must be kept. This exercises the alias-append branch that the equal-alias
-// fixture above does not.
+// it must be kept (and the function name schema-qualified). This exercises the
+// alias-append branch that the equal-alias fixture above does not.
 //
 // PG-native: " Function Scan on pg_catalog.generate_series gs  (cost=...)"
-// joe:       " Function Scan on generate_series gs  (cost=...)"
-//
-// joe does not schema-qualify the function name (it has no such pre-existing
-// behaviour, same as the equal-alias case), so the schema prefix is the only
-// remaining difference from PG's VERBOSE text; the alias rendering matches.
 func TestRenderFunctionScanDifferingAlias(t *testing.T) {
 	out := renderCorrectnessFixture(t, "function_scan_alias")
 
-	require.Contains(t, out, "Function Scan on generate_series gs  (cost=",
-		"a Function Scan must keep the alias when it differs from the function name")
+	require.Contains(t, out, "Function Scan on pg_catalog.generate_series gs  (cost=",
+		"a Function Scan must schema-qualify the function name and keep a differing alias")
 }
 
 // TestRenderTempBuffers covers A5. An on-disk sort reports temp block I/O.
