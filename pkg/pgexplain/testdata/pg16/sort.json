@@ -1,0 +1,87 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Sort",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Startup Cost": 30.41,
+      "Total Cost": 31.66,
+      "Plan Rows": 500,
+      "Plan Width": 8,
+      "Actual Startup Time": 0.178,
+      "Actual Total Time": 0.189,
+      "Actual Rows": 500,
+      "Actual Loops": 1,
+      "Output": ["id", "val"],
+      "Sort Key": ["t_items.val"],
+      "Sort Method": "quicksort",
+      "Sort Space Used": 40,
+      "Sort Space Type": "Memory",
+      "Shared Hit Blocks": 6,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0,
+      "WAL Records": 0,
+      "WAL FPI": 0,
+      "WAL Bytes": 0,
+      "Plans": [
+        {
+          "Node Type": "Seq Scan",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Relation Name": "t_items",
+          "Schema": "joecap",
+          "Alias": "t_items",
+          "Startup Cost": 0.00,
+          "Total Cost": 8.00,
+          "Plan Rows": 500,
+          "Plan Width": 8,
+          "Actual Startup Time": 0.005,
+          "Actual Total Time": 0.026,
+          "Actual Rows": 500,
+          "Actual Loops": 1,
+          "Output": ["id", "val"],
+          "Shared Hit Blocks": 3,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0,
+          "WAL Records": 0,
+          "WAL FPI": 0,
+          "WAL Bytes": 0
+        }
+      ]
+    },
+    "Settings": {
+      "search_path": "joecap"
+    },
+    "Planning": {
+      "Shared Hit Blocks": 64,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning Time": 0.167,
+    "Triggers": [
+    ],
+    "Execution Time": 0.367
+  }
+]

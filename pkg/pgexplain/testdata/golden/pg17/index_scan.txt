@@ -1,0 +1,18 @@
+ Index Scan using t_items_pkey on joecap.t_items  (cost=0.27..8.29 rows=1 width=8) (actual time=0.008..0.008 rows=1 loops=1)
+   Index Cond: (t_items.id = 42)
+   Buffers: shared hit=3
+Settings: search_path = 'joecap'
+
+--- stats ---
+
+Time: 0.180 ms
+  - planning: 0.146 ms
+  - execution: 0.034 ms
+    - I/O read: N/A
+    - I/O write: N/A
+
+Shared buffers:
+  - hits: 3 (~24.00 KiB) from the buffer pool
+  - reads: 0 from the OS file cache, including disk I/O
+  - dirtied: 0
+  - writes: 0

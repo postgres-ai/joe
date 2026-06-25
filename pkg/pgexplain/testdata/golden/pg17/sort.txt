@@ -1,0 +1,21 @@
+ Sort  (cost=30.41..31.66 rows=500 width=8) (actual time=0.118..0.130 rows=500 loops=1)
+   Sort Key: t_items.val
+   Sort Method: quicksort  Memory: 36kB
+   Buffers: shared hit=6
+   ->  Seq Scan on joecap.t_items  (cost=0.00..8.00 rows=500 width=8) (actual time=0.005..0.024 rows=500 loops=1)
+         Buffers: shared hit=3
+Settings: search_path = 'joecap'
+
+--- stats ---
+
+Time: 0.563 ms
+  - planning: 0.365 ms
+  - execution: 0.198 ms
+    - I/O read: N/A
+    - I/O write: N/A
+
+Shared buffers:
+  - hits: 6 (~48.00 KiB) from the buffer pool
+  - reads: 0 from the OS file cache, including disk I/O
+  - dirtied: 0
+  - writes: 0

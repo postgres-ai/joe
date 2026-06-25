@@ -1,0 +1,20 @@
+ HashAggregate  (cost=10.50..10.60 rows=10 width=12) (actual time=0.053..0.054 rows=10 loops=1)
+   Group Key: t_items.val
+   Buffers: shared hit=3
+   ->  Seq Scan on joecap.t_items  (cost=0.00..8.00 rows=500 width=4) (actual time=0.003..0.018 rows=500 loops=1)
+         Buffers: shared hit=3
+Settings: search_path = 'joecap'
+
+--- stats ---
+
+Time: 0.609 ms
+  - planning: 0.122 ms
+  - execution: 0.487 ms
+    - I/O read: N/A
+    - I/O write: N/A
+
+Shared buffers:
+  - hits: 3 (~24.00 KiB) from the buffer pool
+  - reads: 0 from the OS file cache, including disk I/O
+  - dirtied: 0
+  - writes: 0

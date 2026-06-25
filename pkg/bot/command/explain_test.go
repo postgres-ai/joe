@@ -31,6 +31,18 @@ func TestAnalyzePrefix(t *testing.T) {
 			input:          160000,
 			expectedOutput: "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON , SETTINGS TRUE, WAL) ",
 		},
+		{
+			input:          170000,
+			expectedOutput: "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON , SETTINGS TRUE, WAL) ",
+		},
+		{
+			input:          180000,
+			expectedOutput: "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON , SETTINGS TRUE, WAL) ",
+		},
+		{
+			input:          190000,
+			expectedOutput: "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON , SETTINGS TRUE, WAL) ",
+		},
 	}
 
 	for _, tc := range testCases {

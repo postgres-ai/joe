@@ -1,0 +1,22 @@
+ Nested Loop  (cost=0.27..30.52 rows=5 width=12) (actual time=0.014..0.019 rows=2 loops=1)
+   Buffers: shared hit=13
+   ->  Seq Scan on joecap.t_small s  (cost=0.00..1.05 rows=5 width=4) (actual time=0.005..0.005 rows=5 loops=1)
+         Buffers: shared hit=1
+   ->  Index Scan using t_items_pkey on joecap.t_items i  (cost=0.27..5.89 rows=1 width=8) (actual time=0.002..0.002 rows=0 loops=5)
+         Index Cond: (i.id = s.id)
+         Buffers: shared hit=12
+Settings: enable_hashjoin = 'off', enable_mergejoin = 'off', search_path = 'joecap'
+
+--- stats ---
+
+Time: 0.284 ms
+  - planning: 0.246 ms
+  - execution: 0.038 ms
+    - I/O read: N/A
+    - I/O write: N/A
+
+Shared buffers:
+  - hits: 13 (~104.00 KiB) from the buffer pool
+  - reads: 0 from the OS file cache, including disk I/O
+  - dirtied: 0
+  - writes: 0
