@@ -30,8 +30,16 @@ const goldenSeparator = "\n--- stats ---\n"
 var goldenFractionalRows = regexp.MustCompile(`actual[^)]*\brows=\d+\.\d+`)
 
 // goldenIntegerRows matches an actual-timing rows token with a whole value,
-// e.g. "actual time=0.016..0.019 rows=5 loops=1".
-var goldenIntegerRows = regexp.MustCompile(`actual[^)]*\brows=\d+\b(?:\.\d+)?`)
+// e.g. "actual time=0.016..0.019 rows=5 loops=1". A whole value is followed by a
+// space (the " loops=" that always trails it in the actual-timing token), so the
+// trailing space distinguishes it from a fractional "rows=0.40 loops=5". Go's RE2
+// has no lookahead, so the space is what keeps this from also matching a decimal.
+var goldenIntegerRows = regexp.MustCompile(`actual[^)]*\brows=\d+ `)
+
+// goldenAnyFractionalRows matches a fractional actual-row value anywhere in the
+// rendered text, e.g. "rows=0.40". It is used as a negative guard against
+// whole-number values rendering with a spurious decimal (e.g. "rows=5.00").
+var goldenAnyFractionalRows = regexp.MustCompile(`rows=\d+\.\d+`)
 
 // goldenSettingsLine matches the rendered "Settings:" line. The settings are
 // rendered from a Go map, so their order is non-deterministic across runs;
@@ -125,7 +133,20 @@ func TestGoldenPG18FractionalRows(t *testing.T) {
 	require.Regexp(t, goldenFractionalRows, text,
 		"expected a fractional actual rows token (e.g. rows=0.40) in %s", fixture)
 	require.Regexp(t, goldenIntegerRows, text,
-		"expected an integer actual rows token (e.g. rows=5) in %s", fixture)
+		"expected a whole actual rows token rendered without a decimal (e.g. rows=5) in %s", fixture)
+
+	// Negative guard: a single-loop node's averaged Actual Rows is a whole
+	// number, so it must render WITHOUT a decimal (rows=5, never rows=5.00).
+	// This is the assertion that actually catches a regression where whole
+	// values are formatted with two decimals.
+	for _, line := range strings.Split(text, "\n") {
+		if !strings.Contains(line, "loops=1)") {
+			continue
+		}
+
+		require.NotRegexp(t, goldenAnyFractionalRows, line,
+			"single-loop node must render a whole actual rows token without a decimal in %s: %q", fixture, line)
+	}
 }
 
 // TestGoldenPG18Insert checks that a PostgreSQL 18 ModifyTable/Insert plan renders

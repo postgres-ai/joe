@@ -21,12 +21,23 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
+
+// integrationFractionalRows matches a fractional actual-rows token in rendered
+// plan text, e.g. "rows=0.60". On PostgreSQL 18+ a nested-loop inner node with
+// loops>1 and a non-integer per-loop average renders such a token; this is the
+// exact rendering the PG18 fractional-Actual-Rows fix introduced.
+var integrationFractionalRows = regexp.MustCompile(`rows=\d+\.\d+`)
+
+// integrationPG18 is the server_version_num at which Actual Rows became a
+// per-loop-averaged float (PostgreSQL 18).
+const integrationPG18 = 180000
 
 // integrationExplainPrefix is the EXACT EXPLAIN form joe issues, built from the same
 // pgexplain constants as command.analyzePrefix so the smoke test can't drift from
@@ -53,15 +64,24 @@ func integrationQueries() []integrationQuery {
 			query: "SELECT * FROM integration_big WHERE id = 42",
 		},
 		{
-			// Force a nested loop (inner loops > 1) by disabling the other join
-			// strategies. This is the shape that exercises fractional-rows
-			// handling on PG18.
+			// Force a nested loop whose inner side is re-executed per outer row
+			// (loops>1) via a selective indexed lookup. The 5-row outer table
+			// (ids 1..5) probes integration_big.id = s.id*137, which lands inside
+			// the table's id range (1..500) for only 3 of the 5 outer rows, so the
+			// inner Index Scan averages 3/5 = 0.60 rows/loop. On PostgreSQL 18+
+			// that renders as a fractional "rows=0.60", which is the exact shape
+			// that exercises the fractional-Actual-Rows handling the PG18 fix added;
+			// on older majors the same average is reported as a whole number.
+			// enable_material/enable_seqscan are disabled so the inner side stays a
+			// per-loop Index Scan rather than a materialized single-pass scan.
 			name: "nested_loop",
 			setup: []string{
 				"SET LOCAL enable_hashjoin = off",
 				"SET LOCAL enable_mergejoin = off",
+				"SET LOCAL enable_material = off",
+				"SET LOCAL enable_seqscan = off",
 			},
-			query: "SELECT b.id, s.label FROM integration_big b JOIN integration_small s ON s.id = (b.n % 5) + 1",
+			query: "SELECT s.id, b.n FROM integration_small s JOIN integration_big b ON b.id = s.id * 137",
 		},
 		{
 			name:  "aggregate_group",
@@ -72,6 +92,18 @@ func integrationQueries() []integrationQuery {
 			query: "INSERT INTO integration_big (n) SELECT g FROM generate_series(1, 10) g",
 		},
 	}
+}
+
+// integrationServerVersionNum returns the connected server's server_version_num
+// (e.g. 180001 for PostgreSQL 18.1), used to gate version-specific assertions.
+func integrationServerVersionNum(t *testing.T, ctx context.Context, conn *pgx.Conn) int {
+	t.Helper()
+
+	var num int
+	err := conn.QueryRow(ctx, "SELECT current_setting('server_version_num')::int").Scan(&num)
+	require.NoError(t, err, "failed to read server_version_num")
+
+	return num
 }
 
 func integrationConnect(t *testing.T) (*pgx.Conn, context.Context) {
@@ -150,6 +182,8 @@ func integrationExplainJSON(t *testing.T, ctx context.Context, conn *pgx.Conn, q
 func TestIntegrationExplainAgainstLiveServer(t *testing.T) {
 	conn, ctx := integrationConnect(t)
 
+	serverVersionNum := integrationServerVersionNum(t, ctx, conn)
+
 	integrationSetupSchema(t, ctx, conn)
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -166,12 +200,24 @@ func TestIntegrationExplainAgainstLiveServer(t *testing.T) {
 			require.NoError(t, err, "NewExplain failed to parse the EXPLAIN JSON")
 			require.NotNil(t, explain)
 
-			require.NotEmpty(t, explain.RenderPlanText(), "RenderPlanText returned empty output")
+			planText := explain.RenderPlanText()
+			require.NotEmpty(t, planText, "RenderPlanText returned empty output")
 
 			require.NotPanics(t, func() {
 				_ = explain.RenderPlanText()
 				_ = explain.RenderStats()
 			}, "rendering must not panic")
+
+			// On PostgreSQL 18+ the nested-loop inner Index Scan runs with loops>1
+			// and a non-integer per-loop average, so the rendered plan must contain
+			// a fractional actual-rows token (e.g. rows=0.60). This is the live-DB
+			// guard for the fractional-Actual-Rows fix: without it, a regression to
+			// integer-only rendering would silently pass the no-panic checks above.
+			if q.name == "nested_loop" && serverVersionNum >= integrationPG18 {
+				require.Regexp(t, integrationFractionalRows, planText,
+					"expected a fractional actual rows token (e.g. rows=0.60) on PostgreSQL %d; got:\n%s",
+					serverVersionNum, planText)
+			}
 		})
 	}
 }
