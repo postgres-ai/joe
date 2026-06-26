@@ -185,3 +185,58 @@ func TestRenderBitmapIndexScanOn(t *testing.T) {
 	require.NotContains(t, out, "Bitmap Index Scan using",
 		"a Bitmap Index Scan must not render the \"using <index>\" form")
 }
+
+// TestAggregateNodeType pins the Aggregate caption for every strategy and partial
+// mode, covering the Mixed->MixedAggregate and the Partial/Finalize branches that
+// the fixture-based tests above don't all reach (the goldens carry only
+// Plain/Sorted/Hashed).
+func TestAggregateNodeType(t *testing.T) {
+	cases := []struct {
+		strategy    string
+		partialMode string
+		want        string
+	}{
+		{"", "", "Aggregate"},
+		{"Plain", "Simple", "Aggregate"},
+		{"Sorted", "Simple", "GroupAggregate"},
+		{"Hashed", "Simple", "HashAggregate"},
+		{"Mixed", "Simple", "MixedAggregate"},
+		{"Plain", "Partial", "Partial Aggregate"},
+		{"Sorted", "Finalize", "Finalize GroupAggregate"},
+		{"Hashed", "Partial", "Partial HashAggregate"},
+		{"Mixed", "Finalize", "Finalize MixedAggregate"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.strategy+"/"+c.partialMode, func(t *testing.T) {
+			got := aggregateNodeType(&Plan{Strategy: c.strategy, PartialMode: c.partialMode})
+			require.Equal(t, c.want, got, "strategy %q, partial mode %q", c.strategy, c.partialMode)
+		})
+	}
+}
+
+// TestScanTarget pins the shared relation/CTE/function scan caption suffix,
+// including the alias-drop, no-schema, and empty-name (no clause) branches. The
+// empty-name case guards against a stray " on" for a Function Scan whose function
+// name is absent (e.g. a multi-function ROWS FROM).
+func TestScanTarget(t *testing.T) {
+	cases := []struct {
+		name   string
+		schema string
+		object string
+		alias  string
+		want   string
+	}{
+		{"schema-qualified, redundant alias dropped", "pg_catalog", "generate_series", "generate_series", " on pg_catalog.generate_series"},
+		{"schema-qualified, distinct alias kept", "pg_catalog", "generate_series", "gs", " on pg_catalog.generate_series gs"},
+		{"no schema, redundant alias dropped", "", "t_items", "t_items", " on t_items"},
+		{"no schema, distinct alias kept", "", "t_items", "i", " on t_items i"},
+		{"empty name yields no clause", "public", "", "x", ""},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			require.Equal(t, c.want, scanTarget(c.schema, c.object, c.alias))
+		})
+	}
+}

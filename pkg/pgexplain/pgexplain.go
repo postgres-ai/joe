@@ -599,6 +599,27 @@ func aggregateNodeType(plan *Plan) string {
 	return name
 }
 
+// scanTarget builds the " on [schema.]name [alias]" caption suffix shared by
+// relation, CTE, and function scans: it schema-qualifies the name when a schema
+// is present and appends the alias only when it differs from the name (matching
+// PostgreSQL, which drops a redundant alias). An empty name yields no suffix.
+func scanTarget(schema, name, alias string) string {
+	if name == "" {
+		return ""
+	}
+
+	on := " on " + name
+	if schema != "" {
+		on = " on " + schema + "." + name
+	}
+
+	if alias != "" && alias != name {
+		on += " " + alias
+	}
+
+	return on
+}
+
 func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error), plan *Plan, withCostsAndTiming bool) {
 	costsAndTiming := ""
 
@@ -617,21 +638,14 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 		}
 	}
 
-	on := ""
-	if plan.RelationName != "" || plan.CteName != "" {
-		name := plan.RelationName
-		if name == "" {
-			name = plan.CteName
-		}
-		if plan.Schema != "" {
-			on = fmt.Sprintf(" on %v.%v", plan.Schema, name)
-		} else {
-			on = fmt.Sprintf(" on %v", name)
-		}
-		if plan.Alias != "" && plan.Alias != name {
-			on += fmt.Sprintf(" %s", plan.Alias)
-		}
+	// Relation and CTE scans share the "[schema.]name [alias]" target form with
+	// Function Scan below (see scanTarget).
+	relName := plan.RelationName
+	if relName == "" {
+		relName = plan.CteName
 	}
+
+	on := scanTarget(plan.Schema, relName, plan.Alias)
 
 	nodeType := string(plan.NodeType)
 
@@ -643,17 +657,9 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 		on = fmt.Sprintf(" on %q", plan.Alias)
 
 	case FunctionScan:
-		// Schema-qualify the function name (like relation scans above); PostgreSQL omits
-		// the alias when it equals the function name, so append it only when it differs.
-		if plan.Schema != "" {
-			on = fmt.Sprintf(" on %s.%s", plan.Schema, plan.FunctionName)
-		} else {
-			on = fmt.Sprintf(" on %s", plan.FunctionName)
-		}
-
-		if plan.Alias != "" && plan.Alias != plan.FunctionName {
-			on += fmt.Sprintf(" %s", plan.Alias)
-		}
+		// Schema-qualify the function name like the relation scans above; an absent
+		// function name (e.g. a multi-function ROWS FROM) yields no " on" clause.
+		on = scanTarget(plan.Schema, plan.FunctionName, plan.Alias)
 
 	case SubqueryScan:
 		nodeType = fmt.Sprintf("%s on %s", plan.NodeType, plan.Alias)
