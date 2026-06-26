@@ -806,6 +806,18 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 		_, _ = outputFn("Rows Removed by Index Recheck: %d", plan.RowsRemovedByIndexRecheck)
 	}
 
+	// Join-node qual (Nested Loop / Merge / Hash Join). PostgreSQL prints the
+	// Join Filter and its removed-row count before a residual Filter on the same
+	// node, so this precedes the Filter block. The zero-valued "Rows Removed"
+	// line is suppressed, so guard on > 0.
+	if plan.JoinFilter != "" {
+		_, _ = outputFn("Join Filter: %v", plan.JoinFilter)
+
+		if plan.RowsRemovedByJoinFilter > 0 {
+			_, _ = outputFn("Rows Removed by Join Filter: %d", plan.RowsRemovedByJoinFilter)
+		}
+	}
+
 	// Filter (scan residual qual, or an Aggregate's HAVING). A hashed Aggregate
 	// prints its memory line between the Filter and its removed-row count.
 	if plan.Filter != "" {
@@ -829,16 +841,6 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 		}
 
 		_, _ = outputFn("%s", line)
-	}
-
-	// Join-node qual (Nested Loop / Merge / Hash Join). The zero-valued "Rows
-	// Removed" line is suppressed, so guard on > 0.
-	if plan.JoinFilter != "" {
-		_, _ = outputFn("Join Filter: %v", plan.JoinFilter)
-
-		if plan.RowsRemovedByJoinFilter > 0 {
-			_, _ = outputFn("Rows Removed by Join Filter: %d", plan.RowsRemovedByJoinFilter)
-		}
 	}
 
 	// WindowAgg run condition: the qual that lets the scan stop early.

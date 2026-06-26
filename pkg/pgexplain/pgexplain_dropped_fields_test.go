@@ -97,6 +97,37 @@ func TestDroppedFieldJoinFilterZeroRemoved(t *testing.T) {
 		"zero removed-row count must be suppressed, matching PostgreSQL")
 }
 
+// TestDroppedFieldJoinFilterBeforeFilter (B2) pins PostgreSQL's line ordering for a
+// join node that carries both a Join Filter and a residual Filter: explain.c prints
+// "Join Filter" and its removed-row count before "Filter" and its removed-row count.
+// joe used to emit the Filter block first, mis-ordering that plan shape.
+func TestDroppedFieldJoinFilterBeforeFilter(t *testing.T) {
+	const j = `[{
+		"Plan": {
+			"Node Type": "Nested Loop", "Parallel Aware": false, "Join Type": "Inner",
+			"Startup Cost": 0.0, "Total Cost": 1.0, "Plan Rows": 1, "Plan Width": 0,
+			"Actual Startup Time": 0.0, "Actual Total Time": 0.1, "Actual Rows": 1.00, "Actual Loops": 1,
+			"Join Filter": "(a.id <> b.id)", "Rows Removed by Join Filter": 7,
+			"Filter": "(a.x + b.y > 5)", "Rows Removed by Filter": 3
+		},
+		"Planning Time": 0.1, "Triggers": [], "Execution Time": 0.1
+	}]`
+
+	explain, err := NewExplain(j)
+	require.NoError(t, err)
+
+	out := explain.RenderPlanText()
+	iJoin := strings.Index(out, "Join Filter: (a.id <> b.id)")
+	iJoinRemoved := strings.Index(out, "Rows Removed by Join Filter: 7")
+	iFilter := strings.Index(out, "Filter: (a.x + b.y > 5)")
+	iFilterRemoved := strings.Index(out, "Rows Removed by Filter: 3")
+	require.NotEqual(t, -1, iJoin, "Join Filter line must render")
+	require.NotEqual(t, -1, iFilter, "Filter line must render")
+	require.Less(t, iJoin, iJoinRemoved, "Join Filter must precede its removed-row count")
+	require.Less(t, iJoinRemoved, iFilter, "Join Filter block must precede the Filter block")
+	require.Less(t, iFilter, iFilterRemoved, "Filter must precede its removed-row count")
+}
+
 // TestDroppedFieldPresortedKey (B3) checks the Incremental Sort "Presorted Key"
 // line, which PostgreSQL prints right after "Sort Key".
 func TestDroppedFieldPresortedKey(t *testing.T) {
