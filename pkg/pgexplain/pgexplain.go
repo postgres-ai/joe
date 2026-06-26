@@ -249,7 +249,9 @@ type Plan struct {
 	ExactHeapBlocks uint64 `json:"Exact Heap Blocks"`
 	LossyHeapBlocks uint64 `json:"Lossy Heap Blocks"`
 
-	// Hashed/Mixed Aggregate spill stats; "Memory Usage" reuses PeakMemoryUsage.
+	// Hashed/Mixed Aggregate stats. HashAggBatches (and "Memory Usage", which reuses
+	// PeakMemoryUsage) render for any hashed Aggregate; PlannedPartitions/DiskUsage
+	// appear only after a spill.
 	PlannedPartitions uint64 `json:"Planned Partitions"`
 	HashAggBatches    uint64 `json:"HashAgg Batches"`
 	DiskUsage         uint64 `json:"Disk Usage"` // kB
@@ -268,8 +270,9 @@ type Plan struct {
 	Slowest                     bool
 }
 
-// SortGroups holds the per-group statistics PostgreSQL reports for an Incremental
-// Sort node under EXPLAIN ANALYZE (both "Full-sort" and "Pre-sorted" groups).
+// SortGroups holds the per-group statistics PostgreSQL reports under EXPLAIN
+// ANALYZE for one category of Incremental Sort groups ("Full-sort" or
+// "Pre-sorted"); a Plan carries one pointer per category.
 type SortGroups struct {
 	GroupCount      uint64   `json:"Group Count"`
 	SortMethodsUsed []string `json:"Sort Methods Used"` // e.g. quicksort, top-N heapsort, external merge
@@ -751,7 +754,7 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 	}
 
 	// Memoize cache stats: key/mode always; the hit/miss line only under ANALYZE,
-	// once the cache was probed (CacheMisses > 0).
+	// once the node executed (a fully-cached node has CacheHits > 0, CacheMisses 0).
 	if plan.NodeType == Memoize {
 		if plan.CacheKey != "" {
 			_, _ = outputFn("Cache Key: %s", plan.CacheKey)
@@ -761,7 +764,7 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 			_, _ = outputFn("Cache Mode: %s", plan.CacheMode)
 		}
 
-		if plan.CacheMisses > 0 {
+		if plan.CacheHits > 0 || plan.CacheMisses > 0 {
 			_, _ = outputFn("Hits: %d  Misses: %d  Evictions: %d  Overflows: %d  Memory Usage: %dkB",
 				plan.CacheHits, plan.CacheMisses, plan.CacheEvictions, plan.CacheOverflows, plan.PeakMemoryUsage)
 		}

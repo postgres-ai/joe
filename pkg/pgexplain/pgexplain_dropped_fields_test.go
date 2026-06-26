@@ -42,6 +42,29 @@ func TestDroppedFieldMemoize(t *testing.T) {
 	require.Contains(t, out, "Hits: 99950  Misses: 50  Evictions: 0  Overflows: 0  Memory Usage: 4kB")
 }
 
+// TestDroppedFieldMemoizeFullyCached (B1) covers a Memoize node that served every
+// probe from cache (CacheHits > 0, CacheMisses == 0). psql still prints the hit/miss
+// line under ANALYZE, so guarding it on CacheMisses alone would have dropped it.
+func TestDroppedFieldMemoizeFullyCached(t *testing.T) {
+	const j = `[{
+		"Plan": {
+			"Node Type": "Memoize", "Parallel Aware": false,
+			"Startup Cost": 0.15, "Total Cost": 0.17, "Plan Rows": 1, "Plan Width": 7,
+			"Actual Startup Time": 0.0, "Actual Total Time": 0.0, "Actual Rows": 1.00, "Actual Loops": 100000,
+			"Cache Key": "i.cat", "Cache Mode": "logical",
+			"Cache Hits": 100000, "Cache Misses": 0, "Cache Evictions": 0, "Cache Overflows": 0,
+			"Peak Memory Usage": 4
+		},
+		"Planning Time": 0.1, "Triggers": [], "Execution Time": 0.1
+	}]`
+
+	explain, err := NewExplain(j)
+	require.NoError(t, err)
+
+	require.Contains(t, explain.RenderPlanText(),
+		"Hits: 100000  Misses: 0  Evictions: 0  Overflows: 0  Memory Usage: 4kB")
+}
+
 // TestDroppedFieldJoinFilter (B2) checks the join-node Join Filter and its removed
 // row count, which PostgreSQL prints on a Nested Loop with a non-pushed-down qual.
 func TestDroppedFieldJoinFilter(t *testing.T) {
@@ -227,10 +250,10 @@ func TestDroppedFieldsNoRegression(t *testing.T) {
 		"a fixture without any dropped-field node type must render byte-identical to its golden")
 
 	for _, label := range []string{
-		"Cache Key:", "Cache Mode:", "Hits: ", "Join Filter:", "Presorted Key:",
-		"Full-sort Groups:", "Pre-sorted Groups:", "Recheck Cond:",
-		"Rows Removed by Index Recheck:", "Heap Blocks:", "Planned Partitions:",
-		"Disk Usage:", "Run Condition:",
+		"Cache Key:", "Cache Mode:", "Hits: ", "Join Filter:",
+		"Rows Removed by Join Filter:", "Presorted Key:", "Full-sort Groups:",
+		"Pre-sorted Groups:", "Recheck Cond:", "Rows Removed by Index Recheck:",
+		"Heap Blocks:", "Planned Partitions:", "Disk Usage:", "Run Condition:",
 	} {
 		require.NotContains(t, got, label,
 			"a Seq Scan plan must not trigger the %q dropped-field branch", label)
