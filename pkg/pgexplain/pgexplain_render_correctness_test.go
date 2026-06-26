@@ -73,8 +73,11 @@ func TestRenderAggregatePartialMode(t *testing.T) {
 func TestRenderNeverExecuted(t *testing.T) {
 	out := renderCorrectnessFixture(t, "never_executed")
 
-	require.Contains(t, out, "(never executed)",
-		"a node with Actual Loops=0 must render (never executed), matching PostgreSQL")
+	// Bind the clause to the specific zero-loops node and to the costs that precede
+	// it, so "(never executed)" must replace the whole timing clause (not be appended
+	// or land on another node) to pass.
+	require.Contains(t, out, "Seq Scan on public.cats c  (cost=0.00..1.50 rows=50 width=4) (never executed)",
+		"a node with Actual Loops=0 must render (never executed) in place of the timing clause, matching PostgreSQL")
 	require.NotContains(t, out, "loops=0)",
 		"a never-executed node must not render an actual-timing clause with loops=0")
 }
@@ -155,7 +158,7 @@ func TestRenderTempBuffers(t *testing.T) {
 func TestRenderBitmapIndexScanOn(t *testing.T) {
 	out := renderCorrectnessFixture(t, "bitmap_index_scan")
 
-	require.Contains(t, out, "Bitmap Index Scan on idx_items_cat",
+	require.Contains(t, out, "Bitmap Index Scan on idx_items_cat  (cost=",
 		"a Bitmap Index Scan must render \"on <index>\", matching PostgreSQL")
 	require.NotContains(t, out, "Bitmap Index Scan using",
 		"a Bitmap Index Scan must not render the \"using <index>\" form")

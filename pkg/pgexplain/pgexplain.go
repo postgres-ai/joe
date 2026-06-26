@@ -26,12 +26,10 @@ const (
 	Under                   = "Under"
 )
 
-// The EXPLAIN request form and the JSON fields parsed below are two halves of one
-// contract (which options joe asks for determines which fields appear), so they
-// live together here. Callers (pkg/bot/command) own the policy of which
-// version-gated options to include for a given server version.
+// The EXPLAIN form joe issues and the JSON fields parsed below are one contract;
+// callers (pkg/bot/command) choose which version-gated options to include.
 const (
-	// ExplainAnalyzeQuery is the EXPLAIN form joe issues; the %s carries the
+	// ExplainAnalyzeQuery is the EXPLAIN form joe issues; %s carries the
 	// version-gated options (SETTINGS, WAL).
 	ExplainAnalyzeQuery = "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON %s) "
 	// ExplainSettingsOption enables SETTINGS output (PostgreSQL 12+).
@@ -42,10 +40,9 @@ const (
 
 type NodeType string
 
-// Node types as they appear in EXPLAIN's "Node Type" field. The values must match
-// PostgreSQL verbatim (e.g. "ModifyTable" has no space, "Seq Scan" does). Types
-// without a special case fall through to the generic renderer, which prints the
-// raw node-type string.
+// Node types as they appear in EXPLAIN's "Node Type" field; values must match
+// PostgreSQL verbatim (e.g. "ModifyTable" has no space, "Seq Scan" does).
+// Types without a special case fall through to the generic renderer.
 const (
 	Limit           NodeType = "Limit"
 	Append          NodeType = "Append"
@@ -179,9 +176,8 @@ type Plan struct {
 	WALBytes       uint64 `json:"WAL Bytes,omitempty"`
 	WALBuffersFull uint64 `json:"WAL Buffers Full,omitempty"` // PostgreSQL 18+
 
-	// PostgreSQL 18+ per-node fields. All are absent on older servers, so the
-	// renderers below only emit them when present (true / non-zero / non-empty),
-	// which keeps pre-18 output unchanged.
+	// PostgreSQL 18+ per-node fields, absent on older servers; renderers emit them
+	// only when present (true / non-zero / non-empty), so pre-18 output is unchanged.
 	Disabled       bool   `json:"Disabled,omitempty"`        // cost-based node disablement (was disable_cost)
 	IndexSearches  uint64 `json:"Index Searches,omitempty"`  // Index/Index-Only/Bitmap-Index Scan
 	Storage        string `json:"Storage,omitempty"`         // Material/WindowAgg/CTE, e.g. "Memory"
@@ -555,9 +551,8 @@ func writeSubplanTextNodeCaption(outputFn func(string, ...interface{}) (int, err
 func planCostsAndTiming(plan *Plan) string {
 	costs := fmt.Sprintf("(cost=%.2f..%.2f rows=%d width=%d)", plan.StartupCost, plan.TotalCost, plan.PlanRows, plan.PlanWidth)
 
-	// A node that ran zero loops was never reached during execution (e.g. the
-	// inner side of a nested loop whose outer produced no rows). PostgreSQL prints
-	// "(never executed)" in place of the actual-timing clause.
+	// A node that ran zero loops was never reached during execution; PostgreSQL
+	// prints "(never executed)" in place of the actual-timing clause.
 	timing := "(never executed)"
 	if plan.ActualLoops != 0 {
 		timing = fmt.Sprintf("(actual time=%.3f..%.3f rows=%s loops=%d)",
@@ -568,9 +563,8 @@ func planCostsAndTiming(plan *Plan) string {
 }
 
 // formatActualRows renders an actual-row count. PostgreSQL 18+ reports fractional
-// row counts (averaged over loops), so the value is a float: print it as an integer
-// when whole — matching pre-18 output and joe's historical rendering — and with two
-// decimals when fractional, matching PostgreSQL 18's text format.
+// counts (averaged over loops), so print whole values as integers (pre-18 compat)
+// and fractional values with two decimals (PostgreSQL 18's text format).
 func formatActualRows(rows float64) string {
 	if rows == math.Trunc(rows) {
 		return strconv.FormatInt(int64(rows), 10)
@@ -580,10 +574,8 @@ func formatActualRows(rows float64) string {
 }
 
 // aggregateNodeType maps an Aggregate node's strategy and partial mode to the
-// caption PostgreSQL emits. The strategy selects the base name
-// (Plain->Aggregate, Sorted->GroupAggregate, Hashed->HashAggregate,
-// Mixed->MixedAggregate) and a non-Simple partial mode prepends the
-// "Partial "/"Finalize " word (e.g. "Finalize GroupAggregate").
+// caption PostgreSQL emits: the strategy selects the base name, and a non-Simple
+// partial mode prepends "Partial "/"Finalize " (e.g. "Finalize GroupAggregate").
 func aggregateNodeType(plan *Plan) string {
 	name := string(Aggregate)
 
@@ -650,9 +642,8 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 		on = fmt.Sprintf(" on %q", plan.Alias)
 
 	case FunctionScan:
-		// Schema-qualify the function name when present (e.g. "pg_catalog.generate_series"),
-		// mirroring how relation scans are qualified above. PostgreSQL also omits the alias
-		// when it equals the function name (the default), so it is appended only when it differs.
+		// Schema-qualify the function name (like relation scans above); PostgreSQL omits
+		// the alias when it equals the function name, so append it only when it differs.
 		if plan.Schema != "" {
 			on = fmt.Sprintf(" on %s.%s", plan.Schema, plan.FunctionName)
 		} else {
@@ -692,6 +683,37 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 	details := formatDetails(plan)
 
 	_, _ = outputFn("%s%v%s%s%s%s", parallel, nodeType, details, using, on, costsAndTiming)
+}
+
+// bufferCounter is one labelled counter ("hit=42") within a Buffers section.
+type bufferCounter struct {
+	label string
+	value uint64
+}
+
+// appendBufferSection appends a "<name> label=val ..." section (e.g. "shared
+// hit=5 read=2") to the Buffers line, comma-separating it from any preceding
+// section. Only positive counters appear, and an all-zero section is omitted
+// entirely — matching psql (sections comma-separated, counters within a section
+// space-separated).
+func appendBufferSection(buffers, name string, counters ...bufferCounter) string {
+	section := ""
+
+	for _, c := range counters {
+		if c.value > 0 {
+			section += fmt.Sprintf(" %s=%d", c.label, c.value)
+		}
+	}
+
+	if section == "" {
+		return buffers
+	}
+
+	if buffers != "" {
+		buffers += ", "
+	}
+
+	return buffers + name + section
 }
 
 func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error), plan *Plan) {
@@ -777,57 +799,19 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 	}
 
 	buffers := ""
-	if plan.SharedDirtiedBlocks > 0 || plan.SharedHitBlocks > 0 || plan.SharedReadBlocks > 0 || plan.SharedWrittenBlocks > 0 {
-		buffers += "shared"
-		if plan.SharedHitBlocks > 0 {
-			buffers += fmt.Sprintf(" hit=%d", plan.SharedHitBlocks)
-		}
-		if plan.SharedReadBlocks > 0 {
-			buffers += fmt.Sprintf(" read=%d", plan.SharedReadBlocks)
-		}
-		if plan.SharedDirtiedBlocks > 0 {
-			buffers += fmt.Sprintf(" dirtied=%d", plan.SharedDirtiedBlocks)
-		}
-		if plan.SharedWrittenBlocks > 0 {
-			buffers += fmt.Sprintf(" written=%d", plan.SharedWrittenBlocks)
-		}
-	}
-	if plan.LocalDirtiedBlocks > 0 || plan.LocalHitBlocks > 0 || plan.LocalReadBlocks > 0 || plan.LocalWrittenBlocks > 0 {
-		if buffers != "" {
-			buffers += ", "
-		}
-		buffers += "local"
-		if plan.LocalHitBlocks > 0 {
-			buffers += fmt.Sprintf(" hit=%d", plan.LocalHitBlocks)
-		}
-		if plan.LocalReadBlocks > 0 {
-			buffers += fmt.Sprintf(" read=%d", plan.LocalReadBlocks)
-		}
-		if plan.LocalDirtiedBlocks > 0 {
-			buffers += fmt.Sprintf(" dirtied=%d", plan.LocalDirtiedBlocks)
-		}
-		if plan.LocalWrittenBlocks > 0 {
-			buffers += fmt.Sprintf(" written=%d", plan.LocalWrittenBlocks)
-		}
-	}
-
-	if plan.TempReadBlocks > 0 || plan.TempWrittenBlocks > 0 {
-		// PostgreSQL comma-separates the shared/local/temp sections of the Buffers
-		// line (counters within a section stay space-separated).
-		if buffers != "" {
-			buffers += ", "
-		}
-
-		buffers += "temp"
-
-		if plan.TempReadBlocks > 0 {
-			buffers += fmt.Sprintf(" read=%d", plan.TempReadBlocks)
-		}
-
-		if plan.TempWrittenBlocks > 0 {
-			buffers += fmt.Sprintf(" written=%d", plan.TempWrittenBlocks)
-		}
-	}
+	buffers = appendBufferSection(buffers, "shared",
+		bufferCounter{"hit", plan.SharedHitBlocks},
+		bufferCounter{"read", plan.SharedReadBlocks},
+		bufferCounter{"dirtied", plan.SharedDirtiedBlocks},
+		bufferCounter{"written", plan.SharedWrittenBlocks})
+	buffers = appendBufferSection(buffers, "local",
+		bufferCounter{"hit", plan.LocalHitBlocks},
+		bufferCounter{"read", plan.LocalReadBlocks},
+		bufferCounter{"dirtied", plan.LocalDirtiedBlocks},
+		bufferCounter{"written", plan.LocalWrittenBlocks})
+	buffers = appendBufferSection(buffers, "temp",
+		bufferCounter{"read", plan.TempReadBlocks},
+		bufferCounter{"written", plan.TempWrittenBlocks})
 
 	if buffers != "" {
 		outputFn("Buffers: %s", buffers)
