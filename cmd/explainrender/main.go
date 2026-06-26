@@ -114,6 +114,16 @@ func main() {
 
 	flag.Parse()
 
+	// flag stops parsing at the first non-flag argument, so a flag placed after
+	// the file path (e.g. `explainrender file.json -stats`) would be silently
+	// swallowed as a second positional. Reject extra arguments instead so the
+	// misuse surfaces rather than quietly dropping the flag.
+	if flag.NArg() > 1 {
+		flag.Usage()
+
+		os.Exit(1)
+	}
+
 	if err := run(flag.Arg(0), os.Stdout, *withStats); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "error:", err)
 

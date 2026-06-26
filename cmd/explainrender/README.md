@@ -29,6 +29,10 @@ explainrender [-stats] [file]
 - Reads the EXPLAIN JSON from `file` if given, otherwise from stdin.
 - Prints the rendered text plan. With `-stats`, also prints the stats summary
   under a `===== STATS =====` separator.
+- Flags must precede the file argument (`explainrender -stats file.json`): Go's
+  `flag` package stops parsing at the first non-flag argument, so anything after
+  the file is treated as an extra positional. Passing more than one positional
+  argument prints usage and exits non-zero.
 - `-h` prints usage. On a parse failure it prints a clear message to stderr and
   exits non-zero.
 
@@ -56,6 +60,12 @@ Build a standalone binary:
 
 ```bash
 make build-explainrender   # -> bin/explainrender
+```
+
+Using the built binary:
+
+```bash
+./bin/explainrender -stats < plan.json
 ```
 
 ## Diffing against PostgreSQL's native text EXPLAIN
