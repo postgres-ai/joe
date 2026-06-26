@@ -95,9 +95,11 @@ func TestRenderNeverExecuted(t *testing.T) {
 func TestRenderTriggerConstraintGuard(t *testing.T) {
 	out := renderCorrectnessFixture(t, "triggers")
 
-	require.Contains(t, out, "Trigger mytrig: time=",
+	// Assert the full lines (through the time/calls values the fixture pins), so a
+	// regression in the time/calls formatting is caught too, not just the clause.
+	require.Contains(t, out, "Trigger mytrig: time=0.881 calls=1\n",
 		"a non-constraint trigger must render without a for-constraint clause")
-	require.Contains(t, out, "Trigger RI_ConstraintTrigger_c_16505 for constraint trg_child_pid_fkey: time=",
+	require.Contains(t, out, "Trigger RI_ConstraintTrigger_c_16505 for constraint trg_child_pid_fkey: time=0.698 calls=1\n",
 		"a constraint trigger must keep its for-constraint clause")
 	require.NotContains(t, out, "for constraint : ",
 		"a non-constraint trigger must not render a dangling \"for constraint :\"")
@@ -147,6 +149,26 @@ func TestRenderTempBuffers(t *testing.T) {
 	// inter-section separator is guarded (not just the temp counters).
 	require.Contains(t, out, "Buffers: shared hit=323, temp read=608 written=666",
 		"an on-disk sort must render comma-separated shared and temp buffer sections, matching PostgreSQL")
+}
+
+// TestRenderLocalBuffers covers the local Buffers section and the shared->local
+// comma separator. Buffer counts accumulate up the subtree, so a join whose outer
+// side scans a regular table (shared blocks) and whose inner side scans a temp
+// table (local blocks) reports both on the join node. The fixture is a real pg16
+// "select r.id from reg_buf r join tmp_buf t on r.id = t.id" capture.
+//
+// PG-native: "   Buffers: shared hit=29, local hit=8"
+func TestRenderLocalBuffers(t *testing.T) {
+	out := renderCorrectnessFixture(t, "local_buffers")
+
+	// The join node carries both sections: guards the local label and the
+	// shared->local comma in one assertion.
+	require.Contains(t, out, "Buffers: shared hit=29, local hit=8",
+		"a node touching both shared and local blocks must render comma-separated shared and local sections, matching PostgreSQL")
+	// A node with only local blocks (the inner temp Seq Scan) renders the bare
+	// local section, without a leading comma.
+	require.Contains(t, out, "Buffers: local hit=8",
+		"a local-only node must render the local section alone, matching PostgreSQL")
 }
 
 // TestRenderBitmapIndexScanOn covers A6. A Bitmap Index Scan has no table, so

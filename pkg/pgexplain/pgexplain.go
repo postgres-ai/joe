@@ -42,7 +42,8 @@ type NodeType string
 
 // Node types as they appear in EXPLAIN's "Node Type" field; values must match
 // PostgreSQL verbatim (e.g. "ModifyTable" has no space, "Seq Scan" does).
-// Types without a special case fall through to the generic renderer.
+// Types without a special case fall through to the generic renderer, which
+// prints the raw node-type string.
 const (
 	Limit           NodeType = "Limit"
 	Append          NodeType = "Append"
@@ -214,7 +215,7 @@ type Plan struct {
 	SortMethod                string   `json:"Sort Method"`
 	SortSpaceType             string   `json:"Sort Space Type"`
 	SortSpaceUsed             uint64   `json:"Sort Space Used"` // kB
-	Strategy                  string   `json:"Strategy"`        // Aggregate strategy: Plain/Sorted/Hashed/Mixed
+	Strategy                  string   `json:"Strategy"`        // Aggregate (Plain/Sorted/Hashed/Mixed) or SetOp (Sorted/Hashed) strategy.
 	PartialMode               string   `json:"Partial Mode"`    // PG "Partial Mode": Simple, or Partial/Finalize (parallel agg phases)
 	SubplanName               string   `json:"Subplan Name"`
 	WorkersLaunched           uint     `json:"Workers Launched"`
