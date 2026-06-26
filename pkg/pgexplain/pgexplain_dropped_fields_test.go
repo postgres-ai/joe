@@ -92,6 +92,34 @@ func TestDroppedFieldSortGroups(t *testing.T) {
 	require.Contains(t, out, "Pre-sorted Groups: 1  Sort Method: top-N heapsort  Average Memory: 28kB  Peak Memory: 28kB")
 }
 
+// TestDroppedFieldSortGroupsDiskSpill (B4) covers the on-disk branch that no
+// captured fixture exercises: a group that spilled reports "Average Disk/Peak
+// Disk" instead of the in-memory "Average Memory/Peak Memory" suffix.
+func TestDroppedFieldSortGroupsDiskSpill(t *testing.T) {
+	const j = `[{
+		"Plan": {
+			"Node Type": "Incremental Sort", "Parallel Aware": false,
+			"Startup Cost": 0.0, "Total Cost": 1.0, "Plan Rows": 1, "Plan Width": 0,
+			"Actual Startup Time": 0.0, "Actual Total Time": 0.1, "Actual Rows": 1.00, "Actual Loops": 1,
+			"Sort Key": ["t.a", "t.b"], "Presorted Key": ["t.a"],
+			"Pre-sorted Groups": {
+				"Group Count": 3, "Sort Methods Used": ["external merge"],
+				"Sort Space Disk": {"Average Sort Space Used": 2048, "Peak Sort Space Used": 2048}
+			}
+		},
+		"Planning Time": 0.1, "Triggers": [], "Execution Time": 0.1
+	}]`
+
+	explain, err := NewExplain(j)
+	require.NoError(t, err)
+
+	out := explain.RenderPlanText()
+	require.Contains(t, out,
+		"Pre-sorted Groups: 3  Sort Method: external merge  Average Disk: 2048kB  Peak Disk: 2048kB")
+	require.NotContains(t, out, "Average Memory",
+		"a disk-spilled group must not render the in-memory suffix")
+}
+
 // TestDroppedFieldBitmapRecheck (B5/B6) checks the Bitmap Heap Scan "Recheck Cond",
 // the lossy-page "Rows Removed by Index Recheck" count, and the "Heap Blocks" line.
 func TestDroppedFieldBitmapRecheck(t *testing.T) {
@@ -183,10 +211,11 @@ func TestDroppedFieldsDecodeSafety(t *testing.T) {
 	}
 }
 
-// TestDroppedFieldsNoRegression surfaces the no-regression guarantee directly in
-// this file: a fixture with none of the affected node types must render
-// byte-identical to its committed golden. (TestGolden covers the full set; this
-// makes the "unaffected plans are untouched" contract explicit.)
+// TestDroppedFieldsNoRegression proves the new render branches stay dormant for a
+// plan that has none of the affected node types: the Seq Scan fixture must (1)
+// render byte-identical to its committed golden, and (2) contain none of the new
+// field labels. (2) is what makes this distinct from TestGolden's byte-identity
+// check — it pins that the added code paths produce nothing for an unrelated plan.
 func TestDroppedFieldsNoRegression(t *testing.T) {
 	const fixture = "testdata/pg17/seq_scan.json"
 
@@ -196,4 +225,14 @@ func TestDroppedFieldsNoRegression(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, string(want), got,
 		"a fixture without any dropped-field node type must render byte-identical to its golden")
+
+	for _, label := range []string{
+		"Cache Key:", "Cache Mode:", "Hits: ", "Join Filter:", "Presorted Key:",
+		"Full-sort Groups:", "Pre-sorted Groups:", "Recheck Cond:",
+		"Rows Removed by Index Recheck:", "Heap Blocks:", "Planned Partitions:",
+		"Disk Usage:", "Run Condition:",
+	} {
+		require.NotContains(t, got, label,
+			"a Seq Scan plan must not trigger the %q dropped-field branch", label)
+	}
 }
