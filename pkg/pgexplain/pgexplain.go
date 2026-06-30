@@ -221,6 +221,43 @@ type Plan struct {
 	WorkersLaunched           uint     `json:"Workers Launched"`
 	WorkersPlanned            uint     `json:"Workers Planned"`
 
+	// Diagnostic fields for specific node types, each rendered only when present
+	// (non-empty / non-nil / >0) so unrelated plans stay byte-for-byte unchanged.
+
+	// Memoize cache statistics; "Memory Usage" reuses PeakMemoryUsage above.
+	CacheKey       string `json:"Cache Key"`
+	CacheMode      string `json:"Cache Mode"` // "logical" or "binary"
+	CacheHits      uint64 `json:"Cache Hits"`
+	CacheMisses    uint64 `json:"Cache Misses"`
+	CacheEvictions uint64 `json:"Cache Evictions"`
+	CacheOverflows uint64 `json:"Cache Overflows"`
+
+	// Join-node qual evaluated at the join (not pushed down to a child).
+	JoinFilter              string `json:"Join Filter"`
+	RowsRemovedByJoinFilter uint64 `json:"Rows Removed by Join Filter"`
+
+	// Incremental Sort. PresortedKey (always present) is the already-ordered prefix;
+	// the *Groups stats appear only under ANALYZE, hence pointers (nil = absent).
+	PresortedKey    []string    `json:"Presorted Key"`
+	FullSortGroups  *SortGroups `json:"Full-sort Groups"`
+	PresortedGroups *SortGroups `json:"Pre-sorted Groups"`
+
+	// Bitmap Heap Scan: recheck qual for lossy pages, plus exact/lossy page counts.
+	RecheckCond     string `json:"Recheck Cond"`
+	ExactHeapBlocks uint64 `json:"Exact Heap Blocks"`
+	LossyHeapBlocks uint64 `json:"Lossy Heap Blocks"`
+
+	// Hashed/Mixed Aggregate stats. HashAggBatches (and "Memory Usage", which reuses
+	// PeakMemoryUsage) render for any hashed Aggregate; PlannedPartitions/DiskUsage
+	// appear only after a spill.
+	PlannedPartitions uint64 `json:"Planned Partitions"`
+	HashAggBatches    uint64 `json:"HashAgg Batches"`
+	DiskUsage         uint64 `json:"Disk Usage"` // kB
+
+	// WindowAgg run condition: a scalar string (NOT an array — typing it []string
+	// would fail the whole decode).
+	RunCondition string `json:"Run Condition"`
+
 	// Calculated params.
 	ActualCost                  float64
 	ActualDuration              float64
@@ -229,6 +266,23 @@ type Plan struct {
 	PlannerRowEstimateDirection EstimateDirection
 	PlannerRowEstimateFactor    float64
 	Slowest                     bool
+}
+
+// SortGroups holds the per-group statistics PostgreSQL reports under EXPLAIN
+// ANALYZE for one category of Incremental Sort groups ("Full-sort" or
+// "Pre-sorted"); a Plan carries one pointer per category.
+type SortGroups struct {
+	GroupCount      uint64   `json:"Group Count"`
+	SortMethodsUsed []string `json:"Sort Methods Used"` // e.g. quicksort, top-N heapsort, external merge
+	// At most one is set: a group sorts either in memory or (on spill) to disk.
+	SortSpaceMemory *SortSpaceUsage `json:"Sort Space Memory"`
+	SortSpaceDisk   *SortSpaceUsage `json:"Sort Space Disk"`
+}
+
+// SortSpaceUsage is the average/peak sort space (kB) for a group of sorts.
+type SortSpaceUsage struct {
+	AverageSortSpaceUsed uint64 `json:"Average Sort Space Used"` // kB
+	PeakSortSpaceUsed    uint64 `json:"Peak Sort Space Used"`    // kB
 }
 
 type Tip struct {
@@ -740,6 +794,15 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 		outputFn("Sort Key: %s", keys)
 	}
 
+	// Incremental Sort: the prefix of the sort key the input is already ordered by.
+	if len(plan.PresortedKey) > 0 {
+		_, _ = outputFn("Presorted Key: %s", strings.Join(plan.PresortedKey, ", "))
+	}
+
+	// Incremental Sort per-group sort statistics (EXPLAIN ANALYZE).
+	writeSortGroups(outputFn, "Full-sort", plan.FullSortGroups)
+	writeSortGroups(outputFn, "Pre-sorted", plan.PresortedGroups)
+
 	if plan.SortMethod != "" || plan.SortSpaceType != "" {
 		details := ""
 		if plan.SortMethod != "" {
@@ -769,6 +832,23 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 		outputFn("Buckets: %d  Batches: %d  Memory Usage: %dkB", plan.HashBuckets, plan.HashBatches, plan.PeakMemoryUsage)
 	}
 
+	// Memoize cache stats: key/mode always; the hit/miss line only under ANALYZE,
+	// once the node executed (a fully-cached node has CacheHits > 0, CacheMisses 0).
+	if plan.NodeType == Memoize {
+		if plan.CacheKey != "" {
+			_, _ = outputFn("Cache Key: %s", plan.CacheKey)
+		}
+
+		if plan.CacheMode != "" {
+			_, _ = outputFn("Cache Mode: %s", plan.CacheMode)
+		}
+
+		if plan.CacheHits > 0 || plan.CacheMisses > 0 {
+			_, _ = outputFn("Hits: %d  Misses: %d  Evictions: %d  Overflows: %d  Memory Usage: %dkB",
+				plan.CacheHits, plan.CacheMisses, plan.CacheEvictions, plan.CacheOverflows, plan.PeakMemoryUsage)
+		}
+	}
+
 	if plan.IndexCondition != "" {
 		outputFn("Index Cond: %v", plan.IndexCondition)
 	}
@@ -795,14 +875,61 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 		outputFn("Hash Cond: %v", plan.HashCondition)
 	}
 
+	// Bitmap Heap Scan: recheck of the index qual, and rows the recheck discarded
+	// on lossy pages (count only under ANALYZE, hence the >0 guard).
+	if plan.RecheckCond != "" {
+		_, _ = outputFn("Recheck Cond: %v", plan.RecheckCond)
+	}
+
+	if plan.RowsRemovedByIndexRecheck > 0 {
+		_, _ = outputFn("Rows Removed by Index Recheck: %d", plan.RowsRemovedByIndexRecheck)
+	}
+
+	// Join-node qual (Nested Loop / Merge / Hash Join). PostgreSQL prints the
+	// Join Filter and its removed-row count before a residual Filter on the same
+	// node, so this precedes the Filter block. The zero-valued "Rows Removed"
+	// line is suppressed, so guard on > 0.
+	if plan.JoinFilter != "" {
+		_, _ = outputFn("Join Filter: %v", plan.JoinFilter)
+
+		if plan.RowsRemovedByJoinFilter > 0 {
+			_, _ = outputFn("Rows Removed by Join Filter: %d", plan.RowsRemovedByJoinFilter)
+		}
+	}
+
+	// Filter (scan residual qual, or an Aggregate's HAVING). A hashed Aggregate
+	// prints its memory line between the Filter and its removed-row count.
 	if plan.Filter != "" {
-		outputFn("Filter: %v", plan.Filter)
-		outputFn("Rows Removed by Filter: %d", plan.RowsRemovedByFilter)
+		_, _ = outputFn("Filter: %v", plan.Filter)
+		writeHashAggInfo(outputFn, plan)
+		_, _ = outputFn("Rows Removed by Filter: %d", plan.RowsRemovedByFilter)
+	} else {
+		// A hashed/mixed Aggregate without a HAVING qual still reports its memory.
+		writeHashAggInfo(outputFn, plan)
+	}
+
+	// Bitmap Heap Scan: exact/lossy heap pages; a zero-valued side is omitted.
+	if plan.ExactHeapBlocks > 0 || plan.LossyHeapBlocks > 0 {
+		line := "Heap Blocks:"
+		if plan.ExactHeapBlocks > 0 {
+			line += fmt.Sprintf(" exact=%d", plan.ExactHeapBlocks)
+		}
+
+		if plan.LossyHeapBlocks > 0 {
+			line += fmt.Sprintf(" lossy=%d", plan.LossyHeapBlocks)
+		}
+
+		_, _ = outputFn("%s", line)
+	}
+
+	// WindowAgg run condition: the qual that lets the scan stop early.
+	if plan.RunCondition != "" {
+		_, _ = outputFn("Run Condition: %v", plan.RunCondition)
 	}
 
 	if plan.WorkersPlanned > 0 {
-		outputFn("Workers Planned: %d", plan.WorkersPlanned)
-		outputFn("Workers Launched: %d", plan.WorkersLaunched)
+		_, _ = outputFn("Workers Planned: %d", plan.WorkersPlanned)
+		_, _ = outputFn("Workers Launched: %d", plan.WorkersLaunched)
 	}
 
 	buffers := ""
@@ -845,6 +972,60 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 	if len(ioTiming) > 0 {
 		outputFn("I/O Timings:%s", ioTiming)
 	}
+}
+
+// writeSortGroups renders one Incremental Sort group-statistics line, e.g.
+//
+//	Full-sort Groups: 2  Sort Method: quicksort  Average Memory: 25kB  Peak Memory: 25kB
+//
+// No-op when the group info is absent (pre-ANALYZE or a non-incremental sort).
+func writeSortGroups(outputFn func(string, ...interface{}) (int, error), label string, groups *SortGroups) {
+	if groups == nil {
+		return
+	}
+
+	line := fmt.Sprintf("%s Groups: %d  Sort Method: %s",
+		label, groups.GroupCount, strings.Join(groups.SortMethodsUsed, ", "))
+	line += sortSpaceSuffix("Memory", groups.SortSpaceMemory)
+	line += sortSpaceSuffix("Disk", groups.SortSpaceDisk)
+
+	_, _ = outputFn("%s", line)
+}
+
+// sortSpaceSuffix formats a sort group's space usage, e.g.
+// "  Average Memory: 25kB  Peak Memory: 25kB"; empty when the group did not use
+// that space (memory and disk are mutually exclusive per group).
+func sortSpaceSuffix(label string, usage *SortSpaceUsage) string {
+	if usage == nil {
+		return ""
+	}
+
+	return fmt.Sprintf("  Average %s: %dkB  Peak %s: %dkB",
+		label, usage.AverageSortSpaceUsed, label, usage.PeakSortSpaceUsed)
+}
+
+// writeHashAggInfo renders the hashed/mixed Aggregate memory + spill line, e.g.
+//
+//	Planned Partitions: 4  Batches: 85  Memory Usage: 137kB  Disk Usage: 1880kB
+//
+// The partition prefix and disk suffix appear only after a spill. No-op unless
+// the node reports "HashAgg Batches" (i.e. a hashed/mixed Aggregate).
+func writeHashAggInfo(outputFn func(string, ...interface{}) (int, error), plan *Plan) {
+	if plan.HashAggBatches == 0 {
+		return
+	}
+
+	info := ""
+	if plan.PlannedPartitions > 0 {
+		info += fmt.Sprintf("Planned Partitions: %d  ", plan.PlannedPartitions)
+	}
+
+	info += fmt.Sprintf("Batches: %d  Memory Usage: %dkB", plan.HashAggBatches, plan.PeakMemoryUsage)
+	if plan.DiskUsage > 0 {
+		info += fmt.Sprintf("  Disk Usage: %dkB", plan.DiskUsage)
+	}
+
+	_, _ = outputFn("%s", info)
 }
 
 func formatDetails(plan *Plan) string {

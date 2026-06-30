@@ -1,0 +1,27 @@
+ Aggregate  (cost=46.75..46.76 rows=1 width=8) (actual time=0.307..0.308 rows=1 loops=1)
+   Buffers: shared hit=2
+   ->  Nested Loop  (cost=0.00..40.62 rows=2450 width=0) (actual time=0.063..0.249 rows=2450 loops=1)
+         Join Filter: (c1.id <> c2.id)
+         Rows Removed by Join Filter: 50
+         Buffers: shared hit=2
+         ->  Seq Scan on public.cats c1  (cost=0.00..1.50 rows=50 width=4) (actual time=0.055..0.057 rows=50 loops=1)
+               Buffers: shared hit=1
+         ->  Materialize  (cost=0.00..1.75 rows=50 width=4) (actual time=0.000..0.001 rows=50 loops=50)
+               Buffers: shared hit=1
+               ->  Seq Scan on public.cats c2  (cost=0.00..1.50 rows=50 width=4) (actual time=0.002..0.004 rows=50 loops=1)
+                     Buffers: shared hit=1
+Settings: enable_hashjoin = 'off', enable_mergejoin = 'off'
+
+--- stats ---
+
+Time: 0.599 ms
+  - planning: 0.259 ms
+  - execution: 0.340 ms
+    - I/O read: N/A
+    - I/O write: N/A
+
+Shared buffers:
+  - hits: 2 (~16.00 KiB) from the buffer pool
+  - reads: 0 from the OS file cache, including disk I/O
+  - dirtied: 0
+  - writes: 0

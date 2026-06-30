@@ -1,0 +1,133 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Limit",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Startup Cost": 37.66,
+      "Total Cost": 46.31,
+      "Plan Rows": 100,
+      "Plan Width": 8,
+      "Actual Startup Time": 2.758,
+      "Actual Total Time": 2.764,
+      "Actual Rows": 100,
+      "Actual Loops": 1,
+      "Output": ["a", "b"],
+      "Shared Hit Blocks": 232,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0,
+      "WAL Records": 0,
+      "WAL FPI": 0,
+      "WAL Bytes": 0,
+      "Plans": [
+        {
+          "Node Type": "Incremental Sort",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Startup Cost": 37.66,
+          "Total Cost": 4364.16,
+          "Plan Rows": 50000,
+          "Plan Width": 8,
+          "Actual Startup Time": 2.757,
+          "Actual Total Time": 2.759,
+          "Actual Rows": 100,
+          "Actual Loops": 1,
+          "Output": ["a", "b"],
+          "Sort Key": ["isort_t.a", "isort_t.b"],
+          "Presorted Key": ["isort_t.a"],
+          "Full-sort Groups": {
+            "Group Count": 1,
+            "Sort Methods Used": ["quicksort"],
+            "Sort Space Memory": {
+              "Average Sort Space Used": 27,
+              "Peak Sort Space Used": 27
+            }
+          },
+          "Pre-sorted Groups": {
+            "Group Count": 1,
+            "Sort Methods Used": ["top-N heapsort"],
+            "Sort Space Memory": {
+              "Average Sort Space Used": 28,
+              "Peak Sort Space Used": 28
+            }
+          },
+          "Shared Hit Blocks": 232,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0,
+          "WAL Records": 0,
+          "WAL FPI": 0,
+          "WAL Bytes": 0,
+          "Plans": [
+            {
+              "Node Type": "Index Scan",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Scan Direction": "Forward",
+              "Index Name": "isort_t_a_idx",
+              "Relation Name": "isort_t",
+              "Schema": "public",
+              "Alias": "isort_t",
+              "Startup Cost": 0.29,
+              "Total Cost": 1826.20,
+              "Plan Rows": 50000,
+              "Plan Width": 8,
+              "Actual Startup Time": 0.036,
+              "Actual Total Time": 2.698,
+              "Actual Rows": 501,
+              "Actual Loops": 1,
+              "Output": ["a", "b"],
+              "Shared Hit Blocks": 225,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "WAL Records": 0,
+              "WAL FPI": 0,
+              "WAL Bytes": 0
+            }
+          ]
+        }
+      ]
+    },
+    "Settings": {
+      "enable_seqscan": "off"
+    },
+    "Planning": {
+      "Shared Hit Blocks": 64,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning Time": 0.230,
+    "Triggers": [
+    ],
+    "Execution Time": 2.773
+  }
+]

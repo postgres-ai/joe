@@ -1,0 +1,27 @@
+ Nested Loop  (cost=0.15..4034.15 rows=6000 width=19) (actual time=0.024..33.450 rows=8000 loops=1)
+   Buffers: shared hit=549
+   ->  Seq Scan on public.memo_items i  (cost=0.00..1541.00 rows=100000 width=12) (actual time=0.003..20.072 rows=100000 loops=1)
+         Buffers: shared hit=541
+   ->  Memoize  (cost=0.15..0.17 rows=1 width=7) (actual time=0.000..0.000 rows=0 loops=100000)
+         Cache Key: i.cat
+         Cache Mode: logical
+         Hits: 99950  Misses: 50  Evictions: 0  Overflows: 0  Memory Usage: 4kB
+         Buffers: shared hit=8
+         ->  Index Scan using memo_cats_pkey on public.memo_cats c  (cost=0.14..0.16 rows=1 width=7) (actual time=0.000..0.000 rows=0 loops=50)
+               Index Cond: ((c.id = i.cat) AND (c.id < 5))
+               Buffers: shared hit=8
+Settings: enable_hashjoin = 'off', enable_mergejoin = 'off'
+
+--- stats ---
+
+Time: 34.317 ms
+  - planning: 0.686 ms
+  - execution: 33.631 ms
+    - I/O read: N/A
+    - I/O write: N/A
+
+Shared buffers:
+  - hits: 549 (~4.30 MiB) from the buffer pool
+  - reads: 0 from the OS file cache, including disk I/O
+  - dirtied: 0
+  - writes: 0

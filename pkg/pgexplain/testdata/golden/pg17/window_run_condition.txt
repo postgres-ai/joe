@@ -1,0 +1,19 @@
+ WindowAgg  (cost=0.35..3094.39 rows=50157 width=38) (actual time=0.011..0.032 rows=10 loops=1)
+   Run Condition: ((row_number() OVER (?) <= 10) AND (rank() OVER (?) <= 20))
+   Buffers: shared hit=13
+   ->  Index Scan using idx_items_val on public.items  (cost=0.29..2216.64 rows=50157 width=22) (actual time=0.008..0.026 rows=11 loops=1)
+         Buffers: shared hit=13
+
+--- stats ---
+
+Time: 0.168 ms
+  - planning: 0.114 ms
+  - execution: 0.054 ms
+    - I/O read: N/A
+    - I/O write: N/A
+
+Shared buffers:
+  - hits: 13 (~104.00 KiB) from the buffer pool
+  - reads: 0 from the OS file cache, including disk I/O
+  - dirtied: 0
+  - writes: 0
