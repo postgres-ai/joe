@@ -24,6 +24,9 @@ Follow the [tutorial](https://postgres.ai/docs/tutorials/joe-setup) to install J
 ## Development
 See our [GitLab Container Registry](https://gitlab.com/postgres-ai/joe/container_registry) for develop builds. 
 
+### Development tools
+- [`cmd/explainrender`](./cmd/explainrender) — converts `EXPLAIN (FORMAT JSON)` into PostgreSQL's standard text plan via `pkg/pgexplain` (the JSON→text translation Joe uses because psql can't convert a JSON plan back to text). Handy for debugging that translation and diffing it against PostgreSQL's own text `EXPLAIN` across versions.
+
 ## Community
 
 Bug reports, ideas, and merge requests are welcome: https://gitlab.com/postgres-ai/joe
