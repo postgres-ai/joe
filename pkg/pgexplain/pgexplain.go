@@ -26,12 +26,10 @@ const (
 	Under                   = "Under"
 )
 
-// The EXPLAIN request form and the JSON fields parsed below are two halves of one
-// contract (which options joe asks for determines which fields appear), so they
-// live together here. Callers (pkg/bot/command) own the policy of which
-// version-gated options to include for a given server version.
+// The EXPLAIN form joe issues and the JSON fields parsed below are one contract;
+// callers (pkg/bot/command) choose which version-gated options to include.
 const (
-	// ExplainAnalyzeQuery is the EXPLAIN form joe issues; the %s carries the
+	// ExplainAnalyzeQuery is the EXPLAIN form joe issues; %s carries the
 	// version-gated options (SETTINGS, WAL).
 	ExplainAnalyzeQuery = "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON %s) "
 	// ExplainSettingsOption enables SETTINGS output (PostgreSQL 12+).
@@ -42,10 +40,10 @@ const (
 
 type NodeType string
 
-// Node types as they appear in EXPLAIN's "Node Type" field. The values must match
-// PostgreSQL verbatim (e.g. "ModifyTable" has no space, "Seq Scan" does). Types
-// without a special case fall through to the generic renderer, which prints the
-// raw node-type string.
+// Node types as they appear in EXPLAIN's "Node Type" field; values must match
+// PostgreSQL verbatim (e.g. "ModifyTable" has no space, "Seq Scan" does).
+// Types without a special case fall through to the generic renderer, which
+// prints the raw node-type string.
 const (
 	Limit           NodeType = "Limit"
 	Append          NodeType = "Append"
@@ -179,9 +177,8 @@ type Plan struct {
 	WALBytes       uint64 `json:"WAL Bytes,omitempty"`
 	WALBuffersFull uint64 `json:"WAL Buffers Full,omitempty"` // PostgreSQL 18+
 
-	// PostgreSQL 18+ per-node fields. All are absent on older servers, so the
-	// renderers below only emit them when present (true / non-zero / non-empty),
-	// which keeps pre-18 output unchanged.
+	// PostgreSQL 18+ per-node fields, absent on older servers; renderers emit them
+	// only when present (true / non-zero / non-empty), so pre-18 output is unchanged.
 	Disabled       bool   `json:"Disabled,omitempty"`        // cost-based node disablement (was disable_cost)
 	IndexSearches  uint64 `json:"Index Searches,omitempty"`  // Index/Index-Only/Bitmap-Index Scan
 	Storage        string `json:"Storage,omitempty"`         // Material/WindowAgg/CTE, e.g. "Memory"
@@ -218,7 +215,8 @@ type Plan struct {
 	SortMethod                string   `json:"Sort Method"`
 	SortSpaceType             string   `json:"Sort Space Type"`
 	SortSpaceUsed             uint64   `json:"Sort Space Used"` // kB
-	Strategy                  string   `json:"Strategy"`
+	Strategy                  string   `json:"Strategy"`        // Aggregate (Plain/Sorted/Hashed/Mixed) or SetOp (Sorted/Hashed) strategy.
+	PartialMode               string   `json:"Partial Mode"`    // PG "Partial Mode": Simple, or Partial/Finalize (parallel agg phases)
 	SubplanName               string   `json:"Subplan Name"`
 	WorkersLaunched           uint     `json:"Workers Launched"`
 	WorkersPlanned            uint     `json:"Workers Planned"`
@@ -553,22 +551,73 @@ func writeSubplanTextNodeCaption(outputFn func(string, ...interface{}) (int, err
 
 func planCostsAndTiming(plan *Plan) string {
 	costs := fmt.Sprintf("(cost=%.2f..%.2f rows=%d width=%d)", plan.StartupCost, plan.TotalCost, plan.PlanRows, plan.PlanWidth)
-	timing := fmt.Sprintf("(actual time=%.3f..%.3f rows=%s loops=%d)",
-		plan.ActualStartupTime, plan.ActualTotalTime, formatActualRows(plan.ActualRows), plan.ActualLoops)
+
+	// A node that ran zero loops was never reached during execution; PostgreSQL
+	// prints "(never executed)" in place of the actual-timing clause.
+	timing := "(never executed)"
+	if plan.ActualLoops != 0 {
+		timing = fmt.Sprintf("(actual time=%.3f..%.3f rows=%s loops=%d)",
+			plan.ActualStartupTime, plan.ActualTotalTime, formatActualRows(plan.ActualRows), plan.ActualLoops)
+	}
 
 	return fmt.Sprintf("  %s %s", costs, timing)
 }
 
 // formatActualRows renders an actual-row count. PostgreSQL 18+ reports fractional
-// row counts (averaged over loops), so the value is a float: print it as an integer
-// when whole — matching pre-18 output and joe's historical rendering — and with two
-// decimals when fractional, matching PostgreSQL 18's text format.
+// counts (averaged over loops), so print whole values as integers (pre-18 compat)
+// and fractional values with two decimals (PostgreSQL 18's text format).
 func formatActualRows(rows float64) string {
 	if rows == math.Trunc(rows) {
 		return strconv.FormatInt(int64(rows), 10)
 	}
 
 	return strconv.FormatFloat(rows, 'f', 2, 64)
+}
+
+// aggregateNodeType maps an Aggregate node's strategy and partial mode to the
+// caption PostgreSQL emits: the strategy selects the base name, and a non-Simple
+// partial mode prepends "Partial "/"Finalize " (e.g. "Finalize GroupAggregate").
+func aggregateNodeType(plan *Plan) string {
+	name := string(Aggregate)
+
+	switch plan.Strategy {
+	case "Sorted":
+		name = "GroupAggregate"
+	case "Hashed":
+		name = "HashAggregate"
+	case "Mixed":
+		name = "MixedAggregate"
+	}
+
+	switch plan.PartialMode {
+	case "Partial":
+		name = "Partial " + name
+	case "Finalize":
+		name = "Finalize " + name
+	}
+
+	return name
+}
+
+// scanTarget builds the " on [schema.]name [alias]" caption suffix shared by
+// relation, CTE, and function scans: it schema-qualifies the name when a schema
+// is present and appends the alias only when it differs from the name (matching
+// PostgreSQL, which drops a redundant alias). An empty name yields no suffix.
+func scanTarget(schema, name, alias string) string {
+	if name == "" {
+		return ""
+	}
+
+	on := " on " + name
+	if schema != "" {
+		on = " on " + schema + "." + name
+	}
+
+	if alias != "" && alias != name {
+		on += " " + alias
+	}
+
+	return on
 }
 
 func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error), plan *Plan, withCostsAndTiming bool) {
@@ -580,24 +629,23 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 
 	using := ""
 	if plan.IndexName != "" {
-		using = fmt.Sprintf(" using %v", plan.IndexName)
+		// A Bitmap Index Scan has no table of its own, so PostgreSQL names the
+		// index with "on"; Index/Index Only Scans use "using <index> on <table>".
+		if plan.NodeType == BitmapIndexScan {
+			using = fmt.Sprintf(" on %v", plan.IndexName)
+		} else {
+			using = fmt.Sprintf(" using %v", plan.IndexName)
+		}
 	}
 
-	on := ""
-	if plan.RelationName != "" || plan.CteName != "" {
-		name := plan.RelationName
-		if name == "" {
-			name = plan.CteName
-		}
-		if plan.Schema != "" {
-			on = fmt.Sprintf(" on %v.%v", plan.Schema, name)
-		} else {
-			on = fmt.Sprintf(" on %v", name)
-		}
-		if plan.Alias != "" && plan.Alias != name {
-			on += fmt.Sprintf(" %s", plan.Alias)
-		}
+	// Relation and CTE scans share the "[schema.]name [alias]" target form with
+	// Function Scan below (see scanTarget).
+	relName := plan.RelationName
+	if relName == "" {
+		relName = plan.CteName
 	}
+
+	on := scanTarget(plan.Schema, relName, plan.Alias)
 
 	nodeType := string(plan.NodeType)
 
@@ -609,7 +657,9 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 		on = fmt.Sprintf(" on %q", plan.Alias)
 
 	case FunctionScan:
-		on = fmt.Sprintf(" on %s %s", plan.FunctionName, plan.Alias)
+		// Schema-qualify the function name like the relation scans above; an absent
+		// function name (e.g. a multi-function ROWS FROM) yields no " on" clause.
+		on = scanTarget(plan.Schema, plan.FunctionName, plan.Alias)
 
 	case SubqueryScan:
 		nodeType = fmt.Sprintf("%s on %s", plan.NodeType, plan.Alias)
@@ -624,9 +674,7 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 			nodeType = fmt.Sprintf("Hash %s Join", plan.JoinType)
 		}
 	case Aggregate:
-		if plan.Strategy == "Hashed" {
-			nodeType = fmt.Sprintf("Hash%v", Aggregate)
-		}
+		nodeType = aggregateNodeType(plan)
 
 	case NestedLoop:
 		if plan.JoinType != "Inner" {
@@ -642,6 +690,37 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 	details := formatDetails(plan)
 
 	_, _ = outputFn("%s%v%s%s%s%s", parallel, nodeType, details, using, on, costsAndTiming)
+}
+
+// bufferCounter is one labelled counter ("hit=42") within a Buffers section.
+type bufferCounter struct {
+	label string
+	value uint64
+}
+
+// appendBufferSection appends a "<name> label=val ..." section (e.g. "shared
+// hit=5 read=2") to the Buffers line, comma-separating it from any preceding
+// section. Only positive counters appear, and an all-zero section is omitted
+// entirely — matching psql (sections comma-separated, counters within a section
+// space-separated).
+func appendBufferSection(buffers, name string, counters ...bufferCounter) string {
+	section := ""
+
+	for _, c := range counters {
+		if c.value > 0 {
+			section += fmt.Sprintf(" %s=%d", c.label, c.value)
+		}
+	}
+
+	if section == "" {
+		return buffers
+	}
+
+	if buffers != "" {
+		buffers += ", "
+	}
+
+	return buffers + name + section
 }
 
 func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error), plan *Plan) {
@@ -727,39 +806,19 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 	}
 
 	buffers := ""
-	if plan.SharedDirtiedBlocks > 0 || plan.SharedHitBlocks > 0 || plan.SharedReadBlocks > 0 || plan.SharedWrittenBlocks > 0 {
-		buffers += "shared"
-		if plan.SharedHitBlocks > 0 {
-			buffers += fmt.Sprintf(" hit=%d", plan.SharedHitBlocks)
-		}
-		if plan.SharedReadBlocks > 0 {
-			buffers += fmt.Sprintf(" read=%d", plan.SharedReadBlocks)
-		}
-		if plan.SharedDirtiedBlocks > 0 {
-			buffers += fmt.Sprintf(" dirtied=%d", plan.SharedDirtiedBlocks)
-		}
-		if plan.SharedWrittenBlocks > 0 {
-			buffers += fmt.Sprintf(" written=%d", plan.SharedWrittenBlocks)
-		}
-	}
-	if plan.LocalDirtiedBlocks > 0 || plan.LocalHitBlocks > 0 || plan.LocalReadBlocks > 0 || plan.LocalWrittenBlocks > 0 {
-		if buffers != "" {
-			buffers += " "
-		}
-		buffers += "local"
-		if plan.LocalHitBlocks > 0 {
-			buffers += fmt.Sprintf(" hit=%d", plan.LocalHitBlocks)
-		}
-		if plan.LocalReadBlocks > 0 {
-			buffers += fmt.Sprintf(" read=%d", plan.LocalReadBlocks)
-		}
-		if plan.LocalDirtiedBlocks > 0 {
-			buffers += fmt.Sprintf(" dirtied=%d", plan.LocalDirtiedBlocks)
-		}
-		if plan.LocalWrittenBlocks > 0 {
-			buffers += fmt.Sprintf(" written=%d", plan.LocalWrittenBlocks)
-		}
-	}
+	buffers = appendBufferSection(buffers, "shared",
+		bufferCounter{"hit", plan.SharedHitBlocks},
+		bufferCounter{"read", plan.SharedReadBlocks},
+		bufferCounter{"dirtied", plan.SharedDirtiedBlocks},
+		bufferCounter{"written", plan.SharedWrittenBlocks})
+	buffers = appendBufferSection(buffers, "local",
+		bufferCounter{"hit", plan.LocalHitBlocks},
+		bufferCounter{"read", plan.LocalReadBlocks},
+		bufferCounter{"dirtied", plan.LocalDirtiedBlocks},
+		bufferCounter{"written", plan.LocalWrittenBlocks})
+	buffers = appendBufferSection(buffers, "temp",
+		bufferCounter{"read", plan.TempReadBlocks},
+		bufferCounter{"written", plan.TempWrittenBlocks})
 
 	if buffers != "" {
 		outputFn("Buffers: %s", buffers)
@@ -816,8 +875,15 @@ func printTriggers(triggers []Trigger) string {
 	sb := strings.Builder{}
 
 	for _, trigger := range triggers {
-		fmt.Fprintf(&sb, "Trigger %s for constraint %s: time=%.3f calls=%d\n",
-			trigger.Name, trigger.ConstraintName, trigger.Time, trigger.Calls)
+		// PostgreSQL appends "for constraint <name>" only for constraint triggers
+		// (e.g. foreign-key checks); a plain trigger renders just "Trigger <name>:".
+		constraint := ""
+		if trigger.ConstraintName != "" {
+			constraint = fmt.Sprintf(" for constraint %s", trigger.ConstraintName)
+		}
+
+		fmt.Fprintf(&sb, "Trigger %s%s: time=%.3f calls=%d\n",
+			trigger.Name, constraint, trigger.Time, trigger.Calls)
 	}
 
 	return sb.String()
