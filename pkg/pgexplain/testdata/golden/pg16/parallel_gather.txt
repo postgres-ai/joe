@@ -1,10 +1,10 @@
- Aggregate  (cost=5.62..5.63 rows=1 width=8) (actual time=2.314..3.515 rows=1 loops=1)
+ Finalize Aggregate  (cost=5.62..5.63 rows=1 width=8) (actual time=2.314..3.515 rows=1 loops=1)
    Buffers: shared hit=3
    ->  Gather  (cost=5.60..5.61 rows=2 width=8) (actual time=0.461..3.510 rows=3 loops=1)
          Workers Planned: 2
          Workers Launched: 2
          Buffers: shared hit=3
-         ->  Aggregate  (cost=5.60..5.61 rows=1 width=8) (actual time=0.015..0.015 rows=1 loops=3)
+         ->  Partial Aggregate  (cost=5.60..5.61 rows=1 width=8) (actual time=0.015..0.015 rows=1 loops=3)
                Buffers: shared hit=3
                ->  Parallel Seq Scan on joecap.t_items  (cost=0.00..5.08 rows=208 width=0) (actual time=0.002..0.009 rows=167 loops=3)
                      Buffers: shared hit=3
