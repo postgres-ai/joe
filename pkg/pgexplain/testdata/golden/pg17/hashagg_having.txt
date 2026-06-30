@@ -1,0 +1,23 @@
+ HashAggregate  (cost=877.25..881.00 rows=100 width=12) (actual time=3.460..3.482 rows=200 loops=1)
+   Group Key: having_t.g
+   Filter: (count(*) > 100)
+   Batches: 1  Memory Usage: 53kB
+   Rows Removed by Filter: 100
+   Buffers: shared hit=200
+   ->  Seq Scan on public.having_t  (cost=0.00..651.50 rows=45150 width=4) (actual time=0.018..1.202 rows=45150 loops=1)
+         Buffers: shared hit=200
+Settings: enable_sort = 'off', work_mem = '64kB'
+
+--- stats ---
+
+Time: 3.700 ms
+  - planning: 0.172 ms
+  - execution: 3.528 ms
+    - I/O read: N/A
+    - I/O write: N/A
+
+Shared buffers:
+  - hits: 200 (~1.60 MiB) from the buffer pool
+  - reads: 0 from the OS file cache, including disk I/O
+  - dirtied: 0
+  - writes: 0

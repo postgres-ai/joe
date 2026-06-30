@@ -1,5 +1,6 @@
  HashAggregate  (cost=10.50..10.60 rows=10 width=12) (actual time=0.062..0.063 rows=10 loops=1)
    Group Key: t_items.val
+   Batches: 1  Memory Usage: 32kB
    Buffers: shared hit=3
    ->  Seq Scan on joecap.t_items  (cost=0.00..8.00 rows=500 width=4) (actual time=0.007..0.024 rows=500 loops=1)
          Buffers: shared hit=3
