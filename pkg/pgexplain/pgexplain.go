@@ -188,7 +188,9 @@ type Plan struct {
 	Alias                     string   `json:"Alias"`
 	CteName                   string   `json:"CTE Name"`
 	Filter                    string   `json:"Filter"`
+	OneTimeFilter             string   `json:"One-Time Filter"` // Result node's gating qual (constant or InitPlan expression)
 	FunctionName              string   `json:"Function Name"`
+	FunctionCall              string   `json:"Function Call"` // Function Scan; comma-joined for a multi-function ROWS FROM
 	GroupKey                  []string `json:"Group Key"`
 	HashBatches               uint64   `json:"Hash Batches"`
 	HashBuckets               uint64   `json:"Hash Buckets"`
@@ -197,6 +199,7 @@ type Plan struct {
 	IndexCondition            string   `json:"Index Cond"`
 	IndexName                 string   `json:"Index Name"`
 	MergeCondition            string   `json:"Merge Cond"`
+	TidCondition              string   `json:"TID Cond"` // Tid Scan / Tid Range Scan ctid qual
 	JoinType                  string   `json:"Join Type"`
 	NodeType                  NodeType `json:"Node Type"`
 	Operation                 string   `json:"Operation"`
@@ -216,6 +219,7 @@ type Plan struct {
 	SortSpaceType             string   `json:"Sort Space Type"`
 	SortSpaceUsed             uint64   `json:"Sort Space Used"` // kB
 	Strategy                  string   `json:"Strategy"`        // Aggregate (Plain/Sorted/Hashed/Mixed) or SetOp (Sorted/Hashed) strategy.
+	Command                   string   `json:"Command"`         // SetOp command: Except/Except All/Intersect/Intersect All
 	PartialMode               string   `json:"Partial Mode"`    // PG "Partial Mode": Simple, or Partial/Finalize (parallel agg phases)
 	SubplanName               string   `json:"Subplan Name"`
 	WorkersLaunched           uint     `json:"Workers Launched"`
@@ -653,6 +657,23 @@ func aggregateNodeType(plan *Plan) string {
 	return name
 }
 
+// setOpNodeType maps a SetOp node's strategy and command to the caption
+// PostgreSQL emits: a hashed strategy makes the base name "HashSetOp" (else
+// "SetOp"), and the set command (Except/Except All/Intersect/Intersect All) is
+// appended, e.g. "HashSetOp Except" or "SetOp Intersect All".
+func setOpNodeType(plan *Plan) string {
+	name := string(SetOp)
+	if plan.Strategy == "Hashed" {
+		name = "HashSetOp"
+	}
+
+	if plan.Command != "" {
+		name += " " + plan.Command
+	}
+
+	return name
+}
+
 // scanTarget builds the " on [schema.]name [alias]" caption suffix shared by
 // relation, CTE, and function scans: it schema-qualifies the name when a schema
 // is present and appends the alias only when it differs from the name (matching
@@ -711,9 +732,15 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 		on = fmt.Sprintf(" on %q", plan.Alias)
 
 	case FunctionScan:
-		// Schema-qualify the function name like the relation scans above; an absent
-		// function name (e.g. a multi-function ROWS FROM) yields no " on" clause.
-		on = scanTarget(plan.Schema, plan.FunctionName, plan.Alias)
+		// Schema-qualify the function name like the relation scans above. A
+		// multi-function ROWS FROM carries no "Function Name", only an "Alias";
+		// psql's ExplainTargetRel then targets that alias (the RTE eref name), so
+		// fall back to it rather than dropping the " on" clause.
+		if plan.FunctionName != "" {
+			on = scanTarget(plan.Schema, plan.FunctionName, plan.Alias)
+		} else {
+			on = scanTarget("", plan.Alias, "")
+		}
 
 	case SubqueryScan:
 		nodeType = fmt.Sprintf("%s on %s", plan.NodeType, plan.Alias)
@@ -729,6 +756,9 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 		}
 	case Aggregate:
 		nodeType = aggregateNodeType(plan)
+
+	case SetOp:
+		nodeType = setOpNodeType(plan)
 
 	case NestedLoop:
 		if plan.JoinType != "Inner" {
@@ -857,6 +887,11 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 		outputFn("Merge Cond: %v", plan.MergeCondition)
 	}
 
+	// Tid Scan / Tid Range Scan ctid qual (both use the same "TID Cond" label).
+	if plan.TidCondition != "" {
+		_, _ = outputFn("TID Cond: %v", plan.TidCondition)
+	}
+
 	if plan.NodeType == IndexOnlyScan {
 		outputFn("Heap Fetches: %d", plan.HeapFetches)
 	}
@@ -897,12 +932,31 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 		}
 	}
 
+	// Function Scan's argument expression(s); comma-joined for a multi-function
+	// ROWS FROM. PostgreSQL prints it before any residual Filter.
+	if plan.FunctionCall != "" {
+		_, _ = outputFn("Function Call: %v", plan.FunctionCall)
+	}
+
+	// Result node's gating qual, printed before a residual Filter. The value is
+	// passed through verbatim so both the constant ("false") and expression
+	// (InitPlan) forms reproduce psql exactly.
+	if plan.OneTimeFilter != "" {
+		_, _ = outputFn("One-Time Filter: %v", plan.OneTimeFilter)
+	}
+
 	// Filter (scan residual qual, or an Aggregate's HAVING). A hashed Aggregate
 	// prints its memory line between the Filter and its removed-row count.
 	if plan.Filter != "" {
 		_, _ = outputFn("Filter: %v", plan.Filter)
 		writeHashAggInfo(outputFn, plan)
-		_, _ = outputFn("Rows Removed by Filter: %d", plan.RowsRemovedByFilter)
+
+		// psql's show_instrumentation_count suppresses a zero "Rows Removed by
+		// Filter" in TEXT ("not interesting enough"), even though it is always
+		// present in the JSON; mirror that so a zero count is not re-emitted.
+		if plan.RowsRemovedByFilter > 0 {
+			_, _ = outputFn("Rows Removed by Filter: %d", plan.RowsRemovedByFilter)
+		}
 	} else {
 		// A hashed/mixed Aggregate without a HAVING qual still reports its memory.
 		writeHashAggInfo(outputFn, plan)

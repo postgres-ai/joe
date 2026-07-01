@@ -1444,7 +1444,6 @@ const ExpectedText5HashJoinAndNestedLoop = ` Nested Loop Left Join
    ->  Hash Right Join
          Hash Cond: (u1.u1y = "*VALUES*_1".column2)
          Filter: ("*VALUES*_1".column1 = "*VALUES*".column1)
-         Rows Removed by Filter: 0
          ->  Function Scan on unnest u1
          ->  Hash
                ->  Values Scan on "*VALUES*_1"
@@ -1575,18 +1574,14 @@ const ExpectedText6SubqueryScan = ` Nested Loop
                      ->  Materialize
                            ->  Seq Scan on text_tbl tt1
                                  Filter: (f1 = 'foo'::text)
-                                 Rows Removed by Filter: 0
                ->  Materialize
                      ->  Seq Scan on text_tbl tt3
                            Filter: (f1 = 'foo'::text)
-                           Rows Removed by Filter: 0
          ->  Hash
                ->  Seq Scan on text_tbl tt4
                      Filter: (f1 = 'foo'::text)
-                     Rows Removed by Filter: 0
    ->  Subquery Scan on ss1
          Filter: (ss1.c0 = 'foo'::text)
-         Rows Removed by Filter: 0
          ->  Limit
                ->  Seq Scan on text_tbl tt5
 `
@@ -1840,5 +1835,107 @@ Shared buffers:
 
 		tc.explain.writeStatsText(buf)
 		assert.Equal(t, buf.String(), tc.expectedResult)
+	}
+}
+
+// TestFidelityLongtail pins joe's text rendering to psql's own FORMAT TEXT for a
+// set of node types whose plan-body lines previously diverged. Every `expected`
+// value below is the literal FORMAT TEXT output captured from real psql
+// (PostgreSQL 16-19; all six fixes are version-independent) with the cost/timing
+// clause dropped (writeExplainTextWithoutCosts renders no costs). The input JSON
+// is the matching EXPLAIN (FORMAT JSON) for the same query, trimmed to the fields
+// that drive the line under test.
+func TestFidelityLongtail(t *testing.T) {
+	testCases := []struct {
+		name      string
+		inputJSON string
+		expected  string
+	}{
+		{
+			// FIX-1: psql's show_instrumentation_count suppresses a zero count in
+			// TEXT (goes Filter: -> next line directly); joe used to re-emit the
+			// JSON's literal 0.
+			name: "Rows Removed by Filter zero suppressed",
+			inputJSON: `[{"Plan":{"Node Type":"CTE Scan","CTE Name":"m","Alias":"m",` +
+				`"Filter":"(m.c > 0)","Rows Removed by Filter":0}}]`,
+			expected: " CTE Scan on m\n   Filter: (m.c > 0)\n",
+		},
+		{
+			// FIX-1 control: a non-zero count is still printed verbatim.
+			name: "Rows Removed by Filter non-zero kept",
+			inputJSON: `[{"Plan":{"Node Type":"Seq Scan","Schema":"public","Relation Name":"items","Alias":"items",` +
+				`"Filter":"(items.val > 5)","Rows Removed by Filter":5}}]`,
+			expected: " Seq Scan on public.items\n   Filter: (items.val > 5)\n   Rows Removed by Filter: 5\n",
+		},
+		{
+			// FIX-2: hashed SetOp is labelled "HashSetOp <Command>".
+			name:      "HashSetOp label with command",
+			inputJSON: `[{"Plan":{"Node Type":"SetOp","Strategy":"Hashed","Command":"Except"}}]`,
+			expected:  " HashSetOp Except\n",
+		},
+		{
+			// FIX-2: sorted SetOp is labelled "SetOp <Command>".
+			name:      "SetOp label with command",
+			inputJSON: `[{"Plan":{"Node Type":"SetOp","Strategy":"Sorted","Command":"Except"}}]`,
+			expected:  " SetOp Except\n",
+		},
+		{
+			// FIX-3 + FIX-4 control: single Function Scan keeps its schema-qualified
+			// caption and gains the Function Call line.
+			name: "Function Scan single with Function Call",
+			inputJSON: `[{"Plan":{"Node Type":"Function Scan","Schema":"pg_catalog","Function Name":"generate_series",` +
+				`"Alias":"g","Function Call":"generate_series(1, 5)"}}]`,
+			expected: " Function Scan on pg_catalog.generate_series g\n   Function Call: generate_series(1, 5)\n",
+		},
+		{
+			// FIX-3 + FIX-4: a multi-function ROWS FROM carries no "Function Name",
+			// only "Alias"; the caption must fall back to the alias and the
+			// comma-joined Function Call must render.
+			name: "Function Scan ROWS FROM alias and Function Call",
+			inputJSON: `[{"Plan":{"Node Type":"Function Scan","Alias":"t",` +
+				`"Function Call":"generate_series(1, 5), generate_series(1, 3)"}}]`,
+			expected: " Function Scan on t\n   Function Call: generate_series(1, 5), generate_series(1, 3)\n",
+		},
+		{
+			// FIX-5: a Result node's constant One-Time Filter.
+			name:      "Result One-Time Filter constant",
+			inputJSON: `[{"Plan":{"Node Type":"Result","One-Time Filter":"false"}}]`,
+			expected:  " Result\n   One-Time Filter: false\n",
+		},
+		{
+			// FIX-5: a Result node's expression One-Time Filter (InitPlan form) is
+			// passed through verbatim.
+			name:      "Result One-Time Filter expression",
+			inputJSON: `[{"Plan":{"Node Type":"Result","One-Time Filter":"((InitPlan 1).col1 > 0)"}}]`,
+			expected:  " Result\n   One-Time Filter: ((InitPlan 1).col1 > 0)\n",
+		},
+		{
+			// FIX-6: Tid Scan's TID Cond qual.
+			name: "Tid Scan TID Cond",
+			inputJSON: `[{"Plan":{"Node Type":"Tid Scan","Schema":"public","Relation Name":"tidtest","Alias":"tidtest",` +
+				`"TID Cond":"(tidtest.ctid = '(0,1)'::tid)"}}]`,
+			expected: " Tid Scan on public.tidtest\n   TID Cond: (tidtest.ctid = '(0,1)'::tid)\n",
+		},
+		{
+			// FIX-6: Tid Range Scan shares the same "TID Cond" JSON label.
+			name: "Tid Range Scan TID Cond",
+			inputJSON: `[{"Plan":{"Node Type":"Tid Range Scan","Schema":"public","Relation Name":"tidtest","Alias":"tidtest",` +
+				`"TID Cond":"(tidtest.ctid < '(2,0)'::tid)"}}]`,
+			expected: " Tid Range Scan on public.tidtest\n   TID Cond: (tidtest.ctid < '(2,0)'::tid)\n",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			explain, err := NewExplain(tc.inputJSON)
+			if err != nil {
+				t.Fatalf("explain parsing failed: %v", err)
+			}
+
+			buf := bytes.Buffer{}
+			explain.writeExplainTextWithoutCosts(&buf)
+
+			assert.Equal(t, tc.expected, buf.String())
+		})
 	}
 }
