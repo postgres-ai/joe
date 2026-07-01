@@ -1938,6 +1938,17 @@ func TestFidelityLongtail(t *testing.T) {
 			inputJSON: `[{"Plan":{"Node Type":"Subquery Scan","Alias":"ss1"}}]`,
 			expected:  " Subquery Scan on ss1\n",
 		},
+		{
+			// FIX-8: PostgreSQL 18+ reports tuplestore Storage on CTE Scan/Material/
+			// WindowAgg nodes AFTER the node's Filter/Rows-Removed block (right before
+			// Buffers); joe used to emit it before the Filter, so a filtered CTE Scan
+			// diverged in line order from psql FORMAT TEXT.
+			name: "Storage rendered after Filter/Rows-Removed block",
+			inputJSON: `[{"Plan":{"Node Type":"CTE Scan","CTE Name":"m","Alias":"m",` +
+				`"Filter":"(m.cat >= 5)","Rows Removed by Filter":5,"Storage":"Memory","Maximum Storage":17}}]`,
+			expected: " CTE Scan on m\n   Filter: (m.cat >= 5)\n   Rows Removed by Filter: 5\n" +
+				"   Storage: Memory  Maximum Storage: 17kB\n",
+		},
 	}
 
 	for _, tc := range testCases {

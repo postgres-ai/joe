@@ -949,11 +949,6 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 		_, _ = outputFn("Index Searches: %d", plan.IndexSearches)
 	}
 
-	// PostgreSQL 18+: tuplestore storage on Materialize/WindowAgg/CTE nodes.
-	if plan.Storage != "" {
-		_, _ = outputFn("Storage: %s  Maximum Storage: %dkB", plan.Storage, plan.MaximumStorage)
-	}
-
 	if plan.HashCondition != "" {
 		outputFn("Hash Cond: %v", plan.HashCondition)
 	}
@@ -1032,6 +1027,15 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 	if plan.WorkersPlanned > 0 {
 		_, _ = outputFn("Workers Planned: %d", plan.WorkersPlanned)
 		_, _ = outputFn("Workers Launched: %d", plan.WorkersLaunched)
+	}
+
+	// PostgreSQL 18+: tuplestore storage on Materialize/WindowAgg/CTE nodes.
+	// psql emits this from the node's show_*_info after the Filter/Rows-Removed
+	// block and immediately before the per-node Buffers line, so render it here
+	// (not before the Filter) to preserve line order — e.g. a CTE Scan prints
+	// "Filter / Rows Removed by Filter / Storage / Buffers".
+	if plan.Storage != "" {
+		_, _ = outputFn("Storage: %s  Maximum Storage: %dkB", plan.Storage, plan.MaximumStorage)
 	}
 
 	buffers := ""
