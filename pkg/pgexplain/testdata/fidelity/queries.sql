@@ -24,8 +24,20 @@ select * from items where val > 5;
 select cat, count(*) from items group by cat having count(*) > 100;
 
 -- name: cte_scan_filter_zero_removed
--- FIX-1 (=0) on a CTE Scan: c>0 removes nothing from the materialized CTE.
+-- FIX-1 (=0) on a CTE Scan: c>0 removes nothing from the materialized CTE. This is
+-- purely the FIX-1 zero-removed case; the FIX-8 Storage/Filter ordering (which only
+-- shows both lines when the Filter removes >0 rows) is pinned separately by
+-- cte_scan_filter_storage_ordering below.
 with m as materialized (select cat, count(*) c from items group by cat) select * from m where c > 0;
+
+-- name: cte_scan_filter_storage_ordering
+-- FIX-8 (dedicated): on PG18+ a materialized CTE Scan reports "Storage: ...
+-- Maximum Storage: NkB" AFTER its Filter/Rows-Removed block (right before Buffers).
+-- val>1995 keeps 5 of 2000 rows, so the node carries BOTH "Rows Removed by Filter:
+-- 1995" and the Storage line at once, pinning their order; reverting FIX-8 (moving
+-- Storage before the Filter) makes this diverge. On PG16/17 there is no Storage
+-- field, so the same fixture just exercises the FIX-1 (>0) count there.
+with m as materialized (select val from items) select * from m where val > 1995;
 
 -- name: hashsetop_except
 -- FIX-2 (hashed) + FIX-7: EXCEPT plans as "HashSetOp Except" over two synthetic

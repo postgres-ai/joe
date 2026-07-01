@@ -1035,6 +1035,16 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 		// psql's show_instrumentation_count suppresses a zero "Rows Removed by
 		// Filter" in TEXT ("not interesting enough"), even though it is always
 		// present in the JSON; mirror that so a zero count is not re-emitted.
+		//
+		// Known residual (inherent JSON->text information loss): psql gates this
+		// line on the RAW accumulated nfiltered (summed over every loop) yet prints
+		// round(nfiltered/nloops). joe only has that already-rounded per-loop value
+		// from the JSON, so a node executed nloops>1 times whose per-loop average
+		// rounds to 0 while the raw total is still >0 makes psql emit "Rows Removed
+		// by Filter: 0" that joe here suppresses -- the raw-0 and rounds-to-0 cases
+		// are indistinguishable once the count is rounded into the JSON. This
+		// matches how the Join Filter and Index Recheck counts above round, and is
+		// the same class of residual as those guards.
 		if plan.RowsRemovedByFilter > 0 {
 			_, _ = outputFn("Rows Removed by Filter: %d", plan.RowsRemovedByFilter)
 		}
