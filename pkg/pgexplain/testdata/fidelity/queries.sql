@@ -37,6 +37,16 @@ select id from ta except select id from tb;
 -- FIX-2 (sorted): the same EXCEPT with hashing disabled plans as "SetOp Except".
 select id from ta except select id from tb;
 
+-- name: subquery_scan_keyword_alias
+-- quoteIdentifier() keyword coverage: the subquery alias "left" is a lowercase
+-- TYPE_FUNC_NAME keyword, so psql quote_identifier()s it ("Subquery Scan on
+-- \"left\"") even though it matches the safe-identifier pattern; joe must quote it
+-- too. Unlike the "*SELECT* N" SetOp aliases above (which quote via special
+-- characters), this pins the non-UNRESERVED keyword branch that joe began quoting
+-- once reservedKeywords grew into nonUnreservedKeywords. The outer "id > 0" (removes
+-- 0 rows) keeps a Subquery Scan with a zero-removed Filter instead of flattening it.
+select * from (select id from cats order by id limit 10) "left" where id > 0;
+
 -- name: function_scan_single
 -- FIX-3 + FIX-4 control: single Function Scan renders "Function Call:" and the
 -- "on pg_catalog.generate_series g" caption.

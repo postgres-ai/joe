@@ -1939,6 +1939,23 @@ func TestFidelityLongtail(t *testing.T) {
 			expected:  " Subquery Scan on ss1\n",
 		},
 		{
+			// quote_identifier() quotes any non-UNRESERVED keyword, not only the
+			// RESERVED ones: a lowercase TYPE_FUNC_NAME keyword alias such as "left"
+			// (verified against live psql: `select quote_ident('left')` -> "left" on
+			// PG 16-19) must be double-quoted, matching a real "Subquery Scan on
+			// \"left\"" plan. See nonUnreservedKeywords.
+			name:      "Subquery Scan type_func_name keyword alias quoted",
+			inputJSON: `[{"Plan":{"Node Type":"Subquery Scan","Alias":"left"}}]`,
+			expected:  " Subquery Scan on \"left\"\n",
+		},
+		{
+			// Companion COL_NAME keyword case: "between" is likewise quoted by psql on
+			// PG 16-19, exercising the second keyword category added to the set.
+			name:      "Subquery Scan col_name keyword alias quoted",
+			inputJSON: `[{"Plan":{"Node Type":"Subquery Scan","Alias":"between"}}]`,
+			expected:  " Subquery Scan on \"between\"\n",
+		},
+		{
 			// FIX-8: PostgreSQL 18+ reports tuplestore Storage on CTE Scan/Material/
 			// WindowAgg nodes AFTER the node's Filter/Rows-Removed block (right before
 			// Buffers); joe used to emit it before the Filter, so a filtered CTE Scan
