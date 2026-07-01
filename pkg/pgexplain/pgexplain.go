@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -674,6 +675,51 @@ func setOpNodeType(plan *Plan) string {
 	return name
 }
 
+// safeIdentifier matches an identifier PostgreSQL can print without quoting: it
+// must start with a lowercase letter or underscore and contain only lowercase
+// letters, digits, and underscores (an uppercase letter or special character
+// forces quoting).
+var safeIdentifier = regexp.MustCompile(`^[a-z_][a-z0-9_]*$`)
+
+// reservedKeywords are the SQL keywords PostgreSQL's quote_identifier() always
+// double-quotes when they appear as an identifier. This is the reserved set from
+// PostgreSQL's keyword list; it need not be exhaustive for fidelity on realistic
+// aliases, since every uppercase/special-character case is already caught by
+// safeIdentifier above.
+var reservedKeywords = map[string]bool{
+	"all": true, "analyse": true, "analyze": true, "and": true, "any": true,
+	"array": true, "as": true, "asc": true, "asymmetric": true, "both": true,
+	"case": true, "cast": true, "check": true, "collate": true, "column": true,
+	"constraint": true, "create": true, "current_catalog": true, "current_date": true,
+	"current_role": true, "current_time": true, "current_timestamp": true,
+	"current_user": true, "default": true, "deferrable": true, "desc": true,
+	"distinct": true, "do": true, "else": true, "end": true, "except": true,
+	"false": true, "fetch": true, "for": true, "foreign": true, "from": true,
+	"grant": true, "group": true, "having": true, "in": true, "initially": true,
+	"intersect": true, "into": true, "lateral": true, "leading": true, "limit": true,
+	"localtime": true, "localtimestamp": true, "not": true, "null": true, "offset": true,
+	"on": true, "only": true, "or": true, "order": true, "placing": true,
+	"primary": true, "references": true, "returning": true, "select": true,
+	"session_user": true, "some": true, "symmetric": true, "table": true, "then": true,
+	"to": true, "trailing": true, "true": true, "union": true, "unique": true,
+	"user": true, "using": true, "variadic": true, "when": true, "where": true,
+	"window": true, "with": true,
+}
+
+// quoteIdentifier mirrors PostgreSQL's quote_identifier(): an identifier is left
+// bare only when it is a safe lowercase token (see safeIdentifier) that is not a
+// reserved keyword; otherwise it is wrapped in double quotes with any embedded
+// double quote doubled. So an ordinary alias like ss1 passes through unchanged,
+// while a SetOp child alias such as "*SELECT* 1" becomes `"*SELECT* 1"`. Note
+// Go's %q is not equivalent: it quotes unconditionally and uses C-style escapes.
+func quoteIdentifier(s string) string {
+	if safeIdentifier.MatchString(s) && !reservedKeywords[s] {
+		return s
+	}
+
+	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+}
+
 // scanTarget builds the " on [schema.]name [alias]" caption suffix shared by
 // relation, CTE, and function scans: it schema-qualifies the name when a schema
 // is present and appends the alias only when it differs from the name (matching
@@ -743,7 +789,9 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 		}
 
 	case SubqueryScan:
-		nodeType = fmt.Sprintf("%s on %s", plan.NodeType, plan.Alias)
+		// psql quote_identifier()s the subquery alias, so a synthetic SetOp child
+		// alias like "*SELECT* 1" is double-quoted; an ordinary alias is left bare.
+		nodeType = fmt.Sprintf("%s on %s", plan.NodeType, quoteIdentifier(plan.Alias))
 
 	case MergeJoin:
 		if plan.JoinType != "Inner" {

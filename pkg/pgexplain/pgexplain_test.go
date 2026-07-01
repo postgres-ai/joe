@@ -1923,6 +1923,21 @@ func TestFidelityLongtail(t *testing.T) {
 				`"TID Cond":"(tidtest.ctid < '(2,0)'::tid)"}}]`,
 			expected: " Tid Range Scan on public.tidtest\n   TID Cond: (tidtest.ctid < '(2,0)'::tid)\n",
 		},
+		{
+			// FIX-7: a Subquery Scan over a SetOp child carries the synthetic alias
+			// "*SELECT* 1", which psql quote_identifier()s (uppercase + special
+			// chars); joe must double-quote it to match.
+			name:      "Subquery Scan special alias quoted",
+			inputJSON: `[{"Plan":{"Node Type":"Subquery Scan","Alias":"*SELECT* 1"}}]`,
+			expected:  " Subquery Scan on \"*SELECT* 1\"\n",
+		},
+		{
+			// FIX-7 control: an ordinary lowercase alias is left unquoted (so the
+			// existing Subquery Scan goldens do not regress).
+			name:      "Subquery Scan ordinary alias unquoted",
+			inputJSON: `[{"Plan":{"Node Type":"Subquery Scan","Alias":"ss1"}}]`,
+			expected:  " Subquery Scan on ss1\n",
+		},
 	}
 
 	for _, tc := range testCases {
