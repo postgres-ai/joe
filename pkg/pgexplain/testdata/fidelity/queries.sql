@@ -54,8 +54,8 @@ select id from ta except select id from tb;
 -- TYPE_FUNC_NAME keyword, so psql quote_identifier()s it ("Subquery Scan on
 -- \"left\"") even though it matches the safe-identifier pattern; joe must quote it
 -- too. Unlike the "*SELECT* N" SetOp aliases above (which quote via special
--- characters), this pins the non-UNRESERVED keyword branch that joe began quoting
--- once reservedKeywords grew into nonUnreservedKeywords. The outer "id > 0" (removes
+-- characters), this pins the non-UNRESERVED keyword branch that joe quotes via
+-- nonUnreservedKeywords. The outer "id > 0" (removes
 -- 0 rows) keeps a Subquery Scan with a zero-removed Filter instead of flattening it.
 select * from (select id from cats order by id limit 10) "left" where id > 0;
 

@@ -819,11 +819,14 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 		// Schema-qualify the function name like the relation scans above. A
 		// multi-function ROWS FROM carries no "Function Name", only an "Alias";
 		// psql's ExplainTargetRel then targets that alias (the RTE eref name), so
-		// fall back to it rather than dropping the " on" clause.
+		// fall back to it rather than dropping the " on" clause. psql runs that
+		// refname through quote_identifier(), so a keyword or special-char alias
+		// (e.g. ROWS FROM (...) AS "left"(a,b)) is quoted like FIX-7's Subquery
+		// Scan; an ordinary alias such as t stays bare.
 		if plan.FunctionName != "" {
 			on = scanTarget(plan.Schema, plan.FunctionName, plan.Alias)
-		} else {
-			on = scanTarget("", plan.Alias, "")
+		} else if plan.Alias != "" {
+			on = scanTarget("", quoteIdentifier(plan.Alias), "")
 		}
 
 	case SubqueryScan:

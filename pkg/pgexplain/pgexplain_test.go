@@ -1841,7 +1841,7 @@ Shared buffers:
 // TestFidelityLongtail pins joe's text rendering to psql's own FORMAT TEXT for a
 // set of node types whose plan-body lines previously diverged. Every `expected`
 // value below is the literal FORMAT TEXT output captured from real psql
-// (PostgreSQL 16-19; all six fixes are version-independent) with the cost/timing
+// (PostgreSQL 16-19; all eight fixes are version-independent) with the cost/timing
 // clause dropped (writeExplainTextWithoutCosts renders no costs). The input JSON
 // is the matching EXPLAIN (FORMAT JSON) for the same query, trimmed to the fields
 // that drive the line under test.
@@ -1895,6 +1895,15 @@ func TestFidelityLongtail(t *testing.T) {
 			inputJSON: `[{"Plan":{"Node Type":"Function Scan","Alias":"t",` +
 				`"Function Call":"generate_series(1, 5), generate_series(1, 3)"}}]`,
 			expected: " Function Scan on t\n   Function Call: generate_series(1, 5), generate_series(1, 3)\n",
+		},
+		{
+			// FIX-4 (quoting): psql's ExplainTargetRel runs the ROWS FROM alias
+			// through quote_identifier(), so a lowercase keyword alias like "left"
+			// is double-quoted in the caption, mirroring FIX-7's Subquery Scan.
+			name: "Function Scan ROWS FROM keyword alias quoted",
+			inputJSON: `[{"Plan":{"Node Type":"Function Scan","Alias":"left",` +
+				`"Function Call":"generate_series(1, 5)"}}]`,
+			expected: " Function Scan on \"left\"\n   Function Call: generate_series(1, 5)\n",
 		},
 		{
 			// FIX-5: a Result node's constant One-Time Filter.
