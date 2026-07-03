@@ -125,6 +125,56 @@ test-pg-matrix-19:
   script:
     - go test -tags integration ./pkg/pgexplain/... -run Integration -v
 
+# Byte-fidelity guard: for each supported major, capture a fixture battery as both
+# FORMAT JSON (rendered through joe) and FORMAT TEXT (psql) against a live Postgres
+# service and assert the normalized plan bodies are byte-identical. This catches the
+# JSON->text rendering drift (missing lines, wrong captions, wrong line order) that
+# joe-rendered goldens cannot. Mirrors test-pg-matrix's service + DSN + only:.
+fidelity-pg-matrix:
+  stage: test
+  image: golang:1.26
+  only:
+    - branches
+    - tags
+    - merge_requests
+  parallel:
+    matrix:
+      - PG_MAJOR: ["16", "17", "18"]
+  services:
+    - name: postgres:$PG_MAJOR
+      alias: postgres
+      variables:
+        POSTGRES_HOST_AUTH_METHOD: trust
+        POSTGRES_DB: t
+  variables:
+    PGEXPLAIN_TEST_DSN: "postgres://postgres@postgres:5432/t?sslmode=disable"
+  script:
+    - go test -tags integration ./pkg/pgexplain/... -run TestFidelityAgainstLiveServer -v
+
+# Same fidelity guard against PostgreSQL 19 (beta). allow_failure because the
+# `postgres:19beta1` image tag may not yet be published and PG19 is pre-release.
+fidelity-pg-matrix-19:
+  stage: test
+  image: golang:1.26
+  allow_failure: true
+  only:
+    - branches
+    - tags
+    - merge_requests
+  parallel:
+    matrix:
+      - PG_MAJOR: ["19beta1"]
+  services:
+    - name: postgres:$PG_MAJOR
+      alias: postgres
+      variables:
+        POSTGRES_HOST_AUTH_METHOD: trust
+        POSTGRES_DB: t
+  variables:
+    PGEXPLAIN_TEST_DSN: "postgres://postgres@postgres:5432/t?sslmode=disable"
+  script:
+    - go test -tags integration ./pkg/pgexplain/... -run TestFidelityAgainstLiveServer -v
+
 build-binary:
   stage: build-binary
   only:
