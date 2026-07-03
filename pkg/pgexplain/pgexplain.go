@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -188,7 +189,9 @@ type Plan struct {
 	Alias                     string   `json:"Alias"`
 	CteName                   string   `json:"CTE Name"`
 	Filter                    string   `json:"Filter"`
+	OneTimeFilter             string   `json:"One-Time Filter"` // Result node's gating qual (constant or InitPlan expression)
 	FunctionName              string   `json:"Function Name"`
+	FunctionCall              string   `json:"Function Call"` // Function Scan; comma-joined for a multi-function ROWS FROM
 	GroupKey                  []string `json:"Group Key"`
 	HashBatches               uint64   `json:"Hash Batches"`
 	HashBuckets               uint64   `json:"Hash Buckets"`
@@ -197,6 +200,7 @@ type Plan struct {
 	IndexCondition            string   `json:"Index Cond"`
 	IndexName                 string   `json:"Index Name"`
 	MergeCondition            string   `json:"Merge Cond"`
+	TidCondition              string   `json:"TID Cond"` // Tid Scan / Tid Range Scan ctid qual
 	JoinType                  string   `json:"Join Type"`
 	NodeType                  NodeType `json:"Node Type"`
 	Operation                 string   `json:"Operation"`
@@ -216,6 +220,7 @@ type Plan struct {
 	SortSpaceType             string   `json:"Sort Space Type"`
 	SortSpaceUsed             uint64   `json:"Sort Space Used"` // kB
 	Strategy                  string   `json:"Strategy"`        // Aggregate (Plain/Sorted/Hashed/Mixed) or SetOp (Sorted/Hashed) strategy.
+	Command                   string   `json:"Command"`         // SetOp command: Except/Except All/Intersect/Intersect All
 	PartialMode               string   `json:"Partial Mode"`    // PG "Partial Mode": Simple, or Partial/Finalize (parallel agg phases)
 	SubplanName               string   `json:"Subplan Name"`
 	WorkersLaunched           uint     `json:"Workers Launched"`
@@ -653,6 +658,106 @@ func aggregateNodeType(plan *Plan) string {
 	return name
 }
 
+// setOpNodeType maps a SetOp node's strategy and command to the caption
+// PostgreSQL emits: a hashed strategy makes the base name "HashSetOp" (else
+// "SetOp"), and the set command (Except/Except All/Intersect/Intersect All) is
+// appended, e.g. "HashSetOp Except" or "SetOp Intersect All".
+func setOpNodeType(plan *Plan) string {
+	name := string(SetOp)
+	if plan.Strategy == "Hashed" {
+		name = "HashSetOp"
+	}
+
+	if plan.Command != "" {
+		name += " " + plan.Command
+	}
+
+	return name
+}
+
+// safeIdentifier matches an identifier PostgreSQL can print without quoting: it
+// must start with a lowercase letter or underscore and contain only lowercase
+// letters, digits, and underscores (an uppercase letter or special character
+// forces quoting).
+var safeIdentifier = regexp.MustCompile(`^[a-z_][a-z0-9_]*$`)
+
+// nonUnreservedKeywords is the set of SQL keywords PostgreSQL's quote_identifier()
+// double-quotes when they appear as a bare (lowercase, safe-pattern) identifier.
+// quote_identifier() (src/backend/utils/adt/ruleutils.c) quotes any keyword whose
+// category is NOT UNRESERVED, i.e. every RESERVED_KEYWORD, COL_NAME_KEYWORD, and
+// TYPE_FUNC_NAME_KEYWORD in the parser's keyword list (src/include/parser/kwlist.h);
+// the ~330 UNRESERVED keywords are left bare. The set below is derived from the
+// live server's pg_get_keywords() (equivalently kwlist.h) as the union across
+// PostgreSQL 16-19: the RESERVED and TYPE_FUNC_NAME categories are word-identical
+// across those majors, and COL_NAME is unioned (its lone cross-major variance is
+// documented on that block). Uppercase/special-character identifiers are already
+// forced to quote by safeIdentifier above, so only these lowercase keyword
+// collisions (e.g. left, join, inner, between, int, values) need the table.
+var nonUnreservedKeywords = map[string]bool{
+	// RESERVED_KEYWORD (78 words, word-identical across PG 16-19).
+	"all": true, "analyse": true, "analyze": true, "and": true, "any": true,
+	"array": true, "as": true, "asc": true, "asymmetric": true, "both": true,
+	"case": true, "cast": true, "check": true, "collate": true, "column": true,
+	"constraint": true, "create": true, "current_catalog": true, "current_date": true, "current_role": true,
+	"current_time": true, "current_timestamp": true, "current_user": true, "default": true, "deferrable": true,
+	"desc": true, "distinct": true, "do": true, "else": true, "end": true,
+	"except": true, "false": true, "fetch": true, "for": true, "foreign": true,
+	"from": true, "grant": true, "group": true, "having": true, "in": true,
+	"initially": true, "intersect": true, "into": true, "lateral": true, "leading": true,
+	"limit": true, "localtime": true, "localtimestamp": true, "not": true, "null": true,
+	"offset": true, "on": true, "only": true, "or": true, "order": true,
+	"placing": true, "primary": true, "references": true, "returning": true, "select": true,
+	"session_user": true, "some": true, "symmetric": true, "system_user": true, "table": true,
+	"then": true, "to": true, "trailing": true, "true": true, "union": true,
+	"unique": true, "user": true, "using": true, "variadic": true, "when": true,
+	"where": true, "window": true, "with": true,
+
+	// TYPE_FUNC_NAME_KEYWORD (23 words, word-identical across PG 16-19).
+	"authorization": true, "binary": true, "collation": true, "concurrently": true, "cross": true,
+	"current_schema": true, "freeze": true, "full": true, "ilike": true, "inner": true,
+	"is": true, "isnull": true, "join": true, "left": true, "like": true,
+	"natural": true, "notnull": true, "outer": true, "overlaps": true, "right": true,
+	"similar": true, "tablesample": true, "verbose": true,
+
+	// COL_NAME_KEYWORD (union of 64 words across PG 16-19). Its only cross-major
+	// variance: json is unreserved on PG 16, and the json_*/merge_action family
+	// (json_exists, json_query, json_scalar, json_serialize, json_table,
+	// json_value, merge_action) plus graph_table are not keywords before PG 17
+	// (graph_table before PG 19). joe quotes all of them on every major, which
+	// matches psql where they are keywords and harmlessly over-quotes them as
+	// bare aliases on older majors where they are unreserved; none is a realistic
+	// alias, so this residual is never exercised by the fidelity guard.
+	"between": true, "bigint": true, "bit": true, "boolean": true, "char": true,
+	"character": true, "coalesce": true, "dec": true, "decimal": true, "exists": true,
+	"extract": true, "float": true, "graph_table": true, "greatest": true, "grouping": true,
+	"inout": true, "int": true, "integer": true, "interval": true, "json": true,
+	"json_array": true, "json_arrayagg": true, "json_exists": true, "json_object": true, "json_objectagg": true,
+	"json_query": true, "json_scalar": true, "json_serialize": true, "json_table": true, "json_value": true,
+	"least": true, "merge_action": true, "national": true, "nchar": true, "none": true,
+	"normalize": true, "nullif": true, "numeric": true, "out": true, "overlay": true,
+	"position": true, "precision": true, "real": true, "row": true, "setof": true,
+	"smallint": true, "substring": true, "time": true, "timestamp": true, "treat": true,
+	"trim": true, "values": true, "varchar": true, "xmlattributes": true, "xmlconcat": true,
+	"xmlelement": true, "xmlexists": true, "xmlforest": true, "xmlnamespaces": true, "xmlparse": true,
+	"xmlpi": true, "xmlroot": true, "xmlserialize": true, "xmltable": true,
+}
+
+// quoteIdentifier mirrors PostgreSQL's quote_identifier(): an identifier is left
+// bare only when it is a safe lowercase token (see safeIdentifier) that is not a
+// keyword requiring quotes (see nonUnreservedKeywords); otherwise it is wrapped in
+// double quotes with any embedded double quote doubled. So an ordinary alias like
+// ss1 passes through unchanged, while a SetOp child alias such as "*SELECT* 1"
+// becomes `"*SELECT* 1"` and a lowercase keyword alias like left or values is
+// quoted exactly as psql would. Note Go's %q is not equivalent: it quotes
+// unconditionally and uses C-style escapes.
+func quoteIdentifier(s string) string {
+	if safeIdentifier.MatchString(s) && !nonUnreservedKeywords[s] {
+		return s
+	}
+
+	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+}
+
 // scanTarget builds the " on [schema.]name [alias]" caption suffix shared by
 // relation, CTE, and function scans: it schema-qualifies the name when a schema
 // is present and appends the alias only when it differs from the name (matching
@@ -711,12 +816,23 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 		on = fmt.Sprintf(" on %q", plan.Alias)
 
 	case FunctionScan:
-		// Schema-qualify the function name like the relation scans above; an absent
-		// function name (e.g. a multi-function ROWS FROM) yields no " on" clause.
-		on = scanTarget(plan.Schema, plan.FunctionName, plan.Alias)
+		// Schema-qualify the function name like the relation scans above. A
+		// multi-function ROWS FROM carries no "Function Name", only an "Alias";
+		// psql's ExplainTargetRel then targets that alias (the RTE eref name), so
+		// fall back to it rather than dropping the " on" clause. psql runs that
+		// refname through quote_identifier(), so a keyword or special-char alias
+		// (e.g. ROWS FROM (...) AS "left"(a,b)) is quoted like FIX-7's Subquery
+		// Scan; an ordinary alias such as t stays bare.
+		if plan.FunctionName != "" {
+			on = scanTarget(plan.Schema, plan.FunctionName, plan.Alias)
+		} else if plan.Alias != "" {
+			on = scanTarget("", quoteIdentifier(plan.Alias), "")
+		}
 
 	case SubqueryScan:
-		nodeType = fmt.Sprintf("%s on %s", plan.NodeType, plan.Alias)
+		// psql quote_identifier()s the subquery alias, so a synthetic SetOp child
+		// alias like "*SELECT* 1" is double-quoted; an ordinary alias is left bare.
+		nodeType = fmt.Sprintf("%s on %s", plan.NodeType, quoteIdentifier(plan.Alias))
 
 	case MergeJoin:
 		if plan.JoinType != "Inner" {
@@ -729,6 +845,9 @@ func writePlanTextNodeCaption(outputFn func(string, ...interface{}) (int, error)
 		}
 	case Aggregate:
 		nodeType = aggregateNodeType(plan)
+
+	case SetOp:
+		nodeType = setOpNodeType(plan)
 
 	case NestedLoop:
 		if plan.JoinType != "Inner" {
@@ -857,6 +976,11 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 		outputFn("Merge Cond: %v", plan.MergeCondition)
 	}
 
+	// Tid Scan / Tid Range Scan ctid qual (both use the same "TID Cond" label).
+	if plan.TidCondition != "" {
+		_, _ = outputFn("TID Cond: %v", plan.TidCondition)
+	}
+
 	if plan.NodeType == IndexOnlyScan {
 		outputFn("Heap Fetches: %d", plan.HeapFetches)
 	}
@@ -864,11 +988,6 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 	// PostgreSQL 18+: number of index descents on Index/Index-Only/Bitmap-Index Scans.
 	if plan.IndexSearches > 0 {
 		_, _ = outputFn("Index Searches: %d", plan.IndexSearches)
-	}
-
-	// PostgreSQL 18+: tuplestore storage on Materialize/WindowAgg/CTE nodes.
-	if plan.Storage != "" {
-		_, _ = outputFn("Storage: %s  Maximum Storage: %dkB", plan.Storage, plan.MaximumStorage)
 	}
 
 	if plan.HashCondition != "" {
@@ -897,12 +1016,41 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 		}
 	}
 
+	// Function Scan's argument expression(s); comma-joined for a multi-function
+	// ROWS FROM. PostgreSQL prints it before any residual Filter.
+	if plan.FunctionCall != "" {
+		_, _ = outputFn("Function Call: %v", plan.FunctionCall)
+	}
+
+	// Result node's gating qual, printed before a residual Filter. The value is
+	// passed through verbatim so both the constant ("false") and expression
+	// (InitPlan) forms reproduce psql exactly.
+	if plan.OneTimeFilter != "" {
+		_, _ = outputFn("One-Time Filter: %v", plan.OneTimeFilter)
+	}
+
 	// Filter (scan residual qual, or an Aggregate's HAVING). A hashed Aggregate
 	// prints its memory line between the Filter and its removed-row count.
 	if plan.Filter != "" {
 		_, _ = outputFn("Filter: %v", plan.Filter)
 		writeHashAggInfo(outputFn, plan)
-		_, _ = outputFn("Rows Removed by Filter: %d", plan.RowsRemovedByFilter)
+
+		// psql's show_instrumentation_count suppresses a zero "Rows Removed by
+		// Filter" in TEXT ("not interesting enough"), even though it is always
+		// present in the JSON; mirror that so a zero count is not re-emitted.
+		//
+		// Known residual (inherent JSON->text information loss): psql gates this
+		// line on the RAW accumulated nfiltered (summed over every loop) yet prints
+		// round(nfiltered/nloops). joe only has that already-rounded per-loop value
+		// from the JSON, so a node executed nloops>1 times whose per-loop average
+		// rounds to 0 while the raw total is still >0 makes psql emit "Rows Removed
+		// by Filter: 0" that joe here suppresses -- the raw-0 and rounds-to-0 cases
+		// are indistinguishable once the count is rounded into the JSON. This
+		// matches how the Join Filter and Index Recheck counts above round, and is
+		// the same class of residual as those guards.
+		if plan.RowsRemovedByFilter > 0 {
+			_, _ = outputFn("Rows Removed by Filter: %d", plan.RowsRemovedByFilter)
+		}
 	} else {
 		// A hashed/mixed Aggregate without a HAVING qual still reports its memory.
 		writeHashAggInfo(outputFn, plan)
@@ -930,6 +1078,15 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 	if plan.WorkersPlanned > 0 {
 		_, _ = outputFn("Workers Planned: %d", plan.WorkersPlanned)
 		_, _ = outputFn("Workers Launched: %d", plan.WorkersLaunched)
+	}
+
+	// PostgreSQL 18+: tuplestore storage on Materialize/WindowAgg/CTE nodes.
+	// psql emits this from the node's show_*_info after the Filter/Rows-Removed
+	// block and immediately before the per-node Buffers line, so render it here
+	// (not before the Filter) to preserve line order — e.g. a CTE Scan prints
+	// "Filter / Rows Removed by Filter / Storage / Buffers".
+	if plan.Storage != "" {
+		_, _ = outputFn("Storage: %s  Maximum Storage: %dkB", plan.Storage, plan.MaximumStorage)
 	}
 
 	buffers := ""
