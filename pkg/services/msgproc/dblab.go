@@ -111,7 +111,7 @@ func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.Us
 		}
 	}()
 
-	clone, err := s.createDBLabClone(ctx, user, sessionID)
+	clone, err := s.createDBLabClone(ctx, user, sessionID, true)
 	if err != nil {
 		return errors.Wrap(err, "failed to create a Database Lab clone")
 	}
@@ -186,6 +186,9 @@ func initConn(ctx context.Context, dblabClone models.Clone) (*pgxpool.Pool, *pgx
 	connectionConfig.MaxConnLifetime = maxConnLifetime
 	connectionConfig.MaxConnIdleTime = maxConnIdleTime
 	connectionConfig.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+	// Route raised notices to the v2 recorder (no-op unless a v2 exec
+	// command is capturing on the connection).
+	connectionConfig.ConnConfig.OnNotice = v2Notices.handle
 
 	pool, err := pgxpool.NewWithConfig(ctx, connectionConfig)
 	if err != nil {
@@ -205,19 +208,20 @@ func initConn(ctx context.Context, dblabClone models.Clone) (*pgxpool.Pool, *pgx
 }
 
 // createDBLabClone creates a new clone.
-func (s *ProcessingService) createDBLabClone(ctx context.Context, user *usermanager.User, sessionID string) (*dblabmodels.Clone, error) {
+func (s *ProcessingService) createDBLabClone(ctx context.Context, user *usermanager.User,
+	cloneID string, restricted bool) (*dblabmodels.Clone, error) {
 	pwd, err := password.Generate(PasswordLength, PasswordMinDigits, PasswordMinSymbols, false, true)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to generate a password to a new clone")
 	}
 
 	clientRequest := types.CloneCreateRequest{
-		ID:        sessionID,
+		ID:        cloneID,
 		Protected: false,
 		DB: &types.DatabaseRequest{
 			Username:   joeUserNamePrefix + user.UserInfo.Name,
 			Password:   pwd,
-			Restricted: true,
+			Restricted: restricted,
 			DBName:     s.config.DBLab.DBName,
 		},
 	}

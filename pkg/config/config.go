@@ -29,6 +29,7 @@ const (
 type Config struct {
 	App            App                          `yaml:"app"`
 	Platform       Platform                     `yaml:"platform"`
+	APIV2          APIV2                        `yaml:"apiV2"`
 	Registration   Registration                 `yaml:"registration"`
 	ChannelMapping *ChannelMapping              `yaml:"channelMapping"`
 	Enterprise     definition.EnterpriseOptions `yaml:"-"`
@@ -49,6 +50,20 @@ type Platform struct {
 	Token          string `yaml:"token" env:"JOE_PLATFORM_TOKEN"`
 	Project        string `yaml:"project" env:"JOE_PLATFORM_PROJECT"`
 	HistoryEnabled bool   `yaml:"historyEnabled" env:"JOE_PLATFORM_HISTORY_ENABLED"`
+}
+
+// APIV2 describes the Joe API v2 (signed reply callback) options. When
+// enabled, Joe accepts the Platform's schema_version=2 dispatch requests on
+// the webui command endpoint and POSTs HMAC-signed replies to the dispatch's
+// reply_url (header x-joe-signature) per the locked signing contract.
+type APIV2 struct {
+	// Enabled turns on v2 dispatch handling. Default: false.
+	Enabled bool `yaml:"enabled" env:"JOE_API_V2_ENABLED"`
+
+	// ReplySecret signs v2 replies. When empty, the webui workspace's
+	// signingSecret (the instance verify token — the secret the Platform
+	// uses for reply verification) is used, which is the standard setup.
+	ReplySecret string `yaml:"replySecret" env:"JOE_API_V2_REPLY_SECRET"`
 }
 
 // Registration describes configuration parameters to register an application on the Platform.

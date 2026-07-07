@@ -127,3 +127,34 @@ func TestLoadFile_NonStringScalarsLeftAlone(t *testing.T) {
 	assert.True(t, cfg.App.Debug)
 	assert.Equal(t, uint(8080), cfg.App.Port)
 }
+
+func TestLoadFile_APIV2Section(t *testing.T) {
+	t.Run("defaults to disabled with empty secret", func(t *testing.T) {
+		var cfg Config
+		_, err := LoadFile(writeConfig(t, `platform: {token: "x"}`), &cfg)
+		require.NoError(t, err)
+		assert.False(t, cfg.APIV2.Enabled)
+		assert.Empty(t, cfg.APIV2.ReplySecret)
+	})
+
+	t.Run("parses enabled and replySecret", func(t *testing.T) {
+		t.Setenv("JOE_TEST_REPLY_SECRET", "reply-secret-value")
+
+		var cfg Config
+		_, err := LoadFile(writeConfig(t, "apiV2:\n  enabled: true\n  replySecret: \"${JOE_TEST_REPLY_SECRET}\"\n"), &cfg)
+		require.NoError(t, err)
+		assert.True(t, cfg.APIV2.Enabled)
+		assert.Equal(t, "reply-secret-value", cfg.APIV2.ReplySecret)
+	})
+
+	t.Run("env overrides apply", func(t *testing.T) {
+		t.Setenv("JOE_API_V2_ENABLED", "true")
+		t.Setenv("JOE_API_V2_REPLY_SECRET", "env-secret")
+
+		var cfg Config
+		_, err := LoadFile(writeConfig(t, `platform: {token: "x"}`), &cfg)
+		require.NoError(t, err)
+		assert.True(t, cfg.APIV2.Enabled)
+		assert.Equal(t, "env-secret", cfg.APIV2.ReplySecret)
+	})
+}

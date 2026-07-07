@@ -11,6 +11,7 @@ import (
 	"net"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -105,6 +106,10 @@ type ProcessingService struct {
 	UserManager      *usermanager.UserManager
 	platformManager  *platform.Client
 	config           ProcessingConfig
+
+	// v2SessionLocks serializes Joe API v2 command execution per platform
+	// session (sessionID -> *sync.Mutex).
+	v2SessionLocks sync.Map
 
 	// TODO (akartasov): Add specific services.
 	//Auditor

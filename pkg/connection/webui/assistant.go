@@ -304,6 +304,13 @@ func (a *Assistant) commandHandler(w http.ResponseWriter, r *http.Request) {
 
 	body := buf.Bytes()
 
+	// The Joe API v2 dispatch (schema_version=2) arrives on the same
+	// HMAC-verified endpoint; route it to the v2 execute-and-reply pipeline.
+	if isV2Dispatch(body) {
+		a.handleV2Command(w, body)
+		return
+	}
+
 	webMessage := Message{}
 	if err := json.Unmarshal(body, &webMessage); err != nil {
 		log.Err("Failed to unmarshal the request body:", err)

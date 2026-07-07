@@ -1,0 +1,631 @@
+/*
+2026 © Postgres.ai
+*/
+
+package msgproc
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/pkg/errors"
+
+	"gitlab.com/postgres-ai/database-lab/v3/pkg/client/dblabapi/types"
+	"gitlab.com/postgres-ai/database-lab/v3/pkg/log"
+
+	"gitlab.com/postgres-ai/joe/pkg/bot/querier"
+	pgaiv2sdk "gitlab.com/postgres-ai/joe/pkg/pgai_v2_sdk"
+	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"
+	"gitlab.com/postgres-ai/joe/pkg/transmission/pgtransmission"
+)
+
+// The FIXED command_string envelopes composed by the platform dispatcher
+// (public.joe_command_dispatch). Joe peels them to derive the companion
+// text-format EXPLAIN; the envelopes themselves run verbatim.
+const (
+	v2PlanEnvelopePrefix    = "explain (format json, costs on, buffers off, analyze off, timing off) "
+	v2ExplainEnvelopePrefix = "begin; explain (analyze on, format json, costs on, buffers on, timing on) "
+	v2ExplainEnvelopeSuffix = "; rollback;"
+
+	v2ExplainJSONQuery = "explain (analyze on, format json, costs on, buffers on, timing on) "
+	v2ExplainTextQuery = "explain (analyze on, costs on, buffers on, timing on) "
+	v2PlanTextQuery    = "explain (costs on) "
+	v2HypoPlanQuery    = "explain (format json, costs on) "
+)
+
+// Result caps (the platform additionally minimizes at read time).
+const (
+	v2ResultRowsCap   = 1000
+	v2ActivityRowsCap = 200
+)
+
+// v2UserPrefix and v2ClonePrefix namespace per-session v2 resources.
+const (
+	v2UserPrefix  = "v2_session_"
+	v2ClonePrefix = "v2-"
+)
+
+// v2TerminatePIDRe extracts the backend pid from the dispatcher-composed
+// terminate command string.
+var v2TerminatePIDRe = regexp.MustCompile(`pg_terminate_backend\((\d+)\)`)
+
+// v2CloneID builds the Database Lab clone ID for a platform session.
+func v2CloneID(sessionID string) string {
+	return v2ClonePrefix + sessionID
+}
+
+// ExecuteV2Command executes a Joe API v2 dispatch request on the session's
+// Database Lab clone and returns the per-command reply result fields.
+// Commands of one platform session are serialized; distinct sessions run
+// concurrently on their own clones.
+func (s *ProcessingService) ExecuteV2Command(ctx context.Context,
+	req *pgaiv2sdk.DispatchRequest) (map[string]interface{}, error) {
+	unlock := s.lockV2Session(req.SessionID)
+	defer unlock()
+
+	user, err := s.UserManager.CreateUser(v2UserPrefix + req.SessionID)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to prepare the v2 session user")
+	}
+
+	if err := s.ensureV2Session(ctx, user, req.SessionID); err != nil {
+		return nil, errors.Wrap(err, "failed to prepare a Database Lab clone session")
+	}
+
+	user.Session.LastActionTs = time.Now()
+
+	switch strings.ToLower(req.Command) {
+	case pgaiv2sdk.CommandPlan:
+		return s.runV2Plan(ctx, user, req.CommandString)
+
+	case pgaiv2sdk.CommandExplain:
+		return s.runV2Explain(ctx, user, req.CommandString)
+
+	case pgaiv2sdk.CommandExec:
+		return s.runV2Exec(ctx, user, req.CommandString)
+
+	case pgaiv2sdk.CommandHypo:
+		return s.runV2Hypo(ctx, user, req.CommandString, req.Args["query"])
+
+	case pgaiv2sdk.CommandActivity:
+		return s.runV2Activity(ctx, user, req.CommandString)
+
+	case pgaiv2sdk.CommandDescribe:
+		return s.runV2Describe(user, req.CommandString)
+
+	case pgaiv2sdk.CommandTerminate:
+		return s.runV2Terminate(ctx, user, req.CommandString)
+
+	case pgaiv2sdk.CommandReset:
+		return s.runV2Reset(ctx, user)
+	}
+
+	return nil, errors.Errorf("unsupported v2 command %q", req.Command)
+}
+
+// lockV2Session serializes command execution within one platform session.
+func (s *ProcessingService) lockV2Session(sessionID string) func() {
+	muIface, _ := s.v2SessionLocks.LoadOrStore(sessionID, &sync.Mutex{})
+	mu := muIface.(*sync.Mutex)
+	mu.Lock()
+
+	return mu.Unlock
+}
+
+// ensureV2Session provides the user with a running clone session, creating a
+// per-platform-session Database Lab clone on first use. It deliberately
+// avoids the v1 messenger notifications: v2 progress is tracked by the
+// platform's command lifecycle, not chat messages.
+func (s *ProcessingService) ensureV2Session(ctx context.Context, user *usermanager.User, sessionID string) error {
+	if user.Session.Clone != nil {
+		if s.isActiveSession(ctx, user.Session.Clone.ID) {
+			if conn := user.Session.CloneConnection; conn != nil && conn.Ping(ctx) == nil {
+				return nil
+			}
+
+			// The clone is up but the cached connection died (e.g. its
+			// backend was terminated); re-acquire a fresh one.
+			if cloneConn, err := user.Session.Pool.Acquire(ctx); err == nil {
+				user.Session.CloneConnection = cloneConn.Conn()
+				return nil
+			}
+		}
+
+		// Unreachable or inactive clone: rebuild the session from scratch.
+		if err := s.destroySession(ctx, user); err != nil {
+			log.Dbg("v2: failed to destroy the stale session clone:", err)
+			s.stopSession(ctx, user)
+		}
+	}
+
+	// Unlike the v1 flow the clone user is NOT restricted: the hypo command
+	// needs `create extension if not exists hypopg` on a fresh clone
+	// (superuser-only), and the platform's execution policy/scopes — not
+	// clone-user privileges — are the v2 authorization boundary (v1 exec
+	// runs arbitrary SQL either way).
+	clone, err := s.createDBLabClone(ctx, user, v2CloneID(sessionID), false)
+	if err != nil {
+		return errors.Wrap(err, "failed to create a Database Lab clone")
+	}
+
+	dblabClone := s.buildDBLabCloneConn(clone.DB)
+
+	pool, userConn, err := initConn(ctx, dblabClone)
+	if err != nil {
+		return errors.Wrap(err, "failed to init database connection")
+	}
+
+	user.Session.ConnParams = dblabClone
+	user.Session.Clone = clone
+	user.Session.Pool = pool
+	user.Session.CloneConnection = userConn
+	user.Session.PlatformSessionID = sessionID
+	user.Session.Direct = true
+	user.Session.LastActionTs = time.Now()
+
+	return nil
+}
+
+// runV2Plan executes the fixed EXPLAIN (FORMAT JSON, no ANALYZE) envelope and
+// a companion text EXPLAIN of the bare statement.
+func (s *ProcessingService) runV2Plan(ctx context.Context, user *usermanager.User,
+	commandString string) (map[string]interface{}, error) {
+	conn := user.Session.CloneConnection
+
+	planJSON, err := queryV2TextLines(ctx, conn, commandString)
+	if err != nil {
+		return nil, err
+	}
+
+	sql := strings.TrimPrefix(commandString, v2PlanEnvelopePrefix)
+
+	planText, err := queryV2TextLines(ctx, conn, v2PlanTextQuery+sql)
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"plan_text": planText,
+		"plan_json": json.RawMessage(planJSON),
+	}, nil
+}
+
+// runV2Explain executes EXPLAIN ANALYZE inside an explicitly rolled-back
+// transaction (M5: a data-modifying statement must never commit a write on
+// the clone), producing both the JSON and the text form.
+func (s *ProcessingService) runV2Explain(ctx context.Context, user *usermanager.User,
+	commandString string) (map[string]interface{}, error) {
+	sql := strings.TrimPrefix(commandString, v2ExplainEnvelopePrefix)
+	sql = strings.TrimSuffix(sql, v2ExplainEnvelopeSuffix)
+
+	var planJSON, planText string
+
+	err := s.inRolledBackV2Tx(ctx, user, func(tx pgx.Tx) error {
+		var txErr error
+
+		if planJSON, txErr = queryV2TextLines(ctx, tx, v2ExplainJSONQuery+sql); txErr != nil {
+			return txErr
+		}
+
+		planText, txErr = queryV2TextLines(ctx, tx, v2ExplainTextQuery+sql)
+
+		return txErr
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"plan_text": planText,
+		"plan_json": json.RawMessage(planJSON),
+	}, nil
+}
+
+// runV2Exec executes the statement(s) on the session's persistent clone
+// connection, collecting the last result set, the row count, and notices.
+func (s *ProcessingService) runV2Exec(ctx context.Context, user *usermanager.User,
+	commandString string) (map[string]interface{}, error) {
+	pgConn := user.Session.CloneConnection.PgConn()
+
+	v2Notices.start(pgConn)
+
+	results, err := pgConn.Exec(ctx, commandString).ReadAll()
+
+	notices := v2Notices.stop(pgConn)
+	if notices == nil {
+		notices = []string{}
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	resultRows := []interface{}{}
+	rowCount := 0
+
+	if len(results) > 0 {
+		last := results[len(results)-1]
+
+		if len(last.FieldDescriptions) > 0 {
+			rowCount = len(last.Rows)
+			resultRows = convertV2ResultRows(last.FieldDescriptions, last.Rows, v2ResultRowsCap)
+		} else if affected := last.CommandTag.RowsAffected(); affected > 0 {
+			rowCount = int(affected)
+		}
+	}
+
+	return map[string]interface{}{
+		"result_rows": resultRows,
+		"row_count":   json.Number(strconv.Itoa(rowCount)),
+		"notices":     stringsToInterfaces(notices),
+	}, nil
+}
+
+// runV2Hypo creates the hypothetical index (rolled back afterwards) and
+// EXPLAINs the typed target query against it.
+func (s *ProcessingService) runV2Hypo(ctx context.Context, user *usermanager.User,
+	commandString, targetQuery string) (map[string]interface{}, error) {
+	if targetQuery == "" {
+		return nil, errors.New("hypo dispatch carried no args.query")
+	}
+
+	var (
+		hypoPlan  string
+		hypoNames []string
+	)
+
+	err := s.inRolledBackV2Tx(ctx, user, func(tx pgx.Tx) error {
+		if _, txErr := tx.Exec(ctx, "create extension if not exists hypopg"); txErr != nil {
+			return errors.Wrap(txErr, "failed to init the HypoPG extension")
+		}
+
+		rows, txErr := tx.Query(ctx, "select indexname from hypopg_create_index($1)", commandString)
+		if txErr != nil {
+			return errors.Wrap(txErr, "failed to create a hypothetical index")
+		}
+
+		for rows.Next() {
+			var name string
+			if txErr := rows.Scan(&name); txErr != nil {
+				rows.Close()
+				return txErr
+			}
+
+			hypoNames = append(hypoNames, name)
+		}
+
+		rows.Close()
+
+		if txErr := rows.Err(); txErr != nil {
+			return txErr
+		}
+
+		hypoPlan, txErr = queryV2TextLines(ctx, tx, v2HypoPlanQuery+targetQuery)
+
+		return txErr
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	hypoUsed := false
+
+	for _, name := range hypoNames {
+		if strings.Contains(hypoPlan, name) {
+			hypoUsed = true
+			break
+		}
+	}
+
+	return map[string]interface{}{
+		"hypo_plan": json.RawMessage(hypoPlan),
+		"hypo_used": hypoUsed,
+	}, nil
+}
+
+// runV2Activity snapshots the dispatcher-composed pg_stat_activity query.
+func (s *ProcessingService) runV2Activity(ctx context.Context, user *usermanager.User,
+	commandString string) (map[string]interface{}, error) {
+	snapshot, err := queryV2Snapshot(ctx, user.Session.Pool, commandString, v2ActivityRowsCap)
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{"snapshot": snapshot}, nil
+}
+
+// runV2Describe transmits the psql meta-command through the existing psql
+// transmission runner.
+func (s *ProcessingService) runV2Describe(user *usermanager.User, commandString string) (map[string]interface{}, error) {
+	runner := pgtransmission.NewPgTransmitter(user.Session.ConnParams, pgtransmission.LogsEnabledDefault)
+
+	output, err := runner.Run(commandString)
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"snapshot": map[string]interface{}{
+			"describe": commandString,
+			"output":   output,
+		},
+	}, nil
+}
+
+// runV2Terminate runs the dispatcher-composed pg_terminate_backend call.
+func (s *ProcessingService) runV2Terminate(ctx context.Context, user *usermanager.User,
+	commandString string) (map[string]interface{}, error) {
+	var terminated bool
+	if err := user.Session.Pool.QueryRow(ctx, commandString).Scan(&terminated); err != nil {
+		return nil, err
+	}
+
+	result := map[string]interface{}{
+		"terminated": terminated,
+		"pid":        nil,
+	}
+
+	if pid := extractV2TerminatePID(commandString); pid != "" {
+		result["pid"] = json.Number(pid)
+	}
+
+	return result, nil
+}
+
+// runV2Reset resets the session's clone to the latest snapshot and
+// re-establishes the database connections (the clone's Postgres restarts).
+func (s *ProcessingService) runV2Reset(ctx context.Context, user *usermanager.User) (map[string]interface{}, error) {
+	if err := s.DBLab.ResetClone(ctx, user.Session.Clone.ID, types.ResetCloneRequest{Latest: true}); err != nil {
+		return nil, errors.Wrap(err, "failed to reset clone")
+	}
+
+	if user.Session.CloneConnection != nil {
+		if err := user.Session.CloneConnection.Close(ctx); err != nil {
+			log.Dbg("failed to close user connection after reset:", err)
+		}
+	}
+
+	for _, idleConnection := range user.Session.Pool.AcquireAllIdle(ctx) {
+		if err := idleConnection.Conn().Close(ctx); err != nil {
+			log.Dbg("failed to close idle connection after reset:", err)
+		}
+
+		idleConnection.Release()
+	}
+
+	cloneConn, err := user.Session.Pool.Acquire(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to acquire database connection after reset")
+	}
+
+	user.Session.CloneConnection = cloneConn.Conn()
+
+	return map[string]interface{}{"reset": true}, nil
+}
+
+// inRolledBackV2Tx runs fn inside a transaction on a dedicated pool
+// connection and ALWAYS rolls it back.
+func (s *ProcessingService) inRolledBackV2Tx(ctx context.Context, user *usermanager.User, fn func(tx pgx.Tx) error) error {
+	serviceConn, err := user.Session.Pool.Acquire(ctx)
+	if err != nil {
+		return errors.Wrap(err, "failed to acquire connection")
+	}
+	defer serviceConn.Release()
+
+	tx, err := serviceConn.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return errors.Wrap(err, "failed to begin transaction")
+	}
+
+	defer func() {
+		if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
+			log.Dbg("failed to rollback transaction:", rbErr)
+		}
+	}()
+
+	return fn(tx)
+}
+
+// queryV2TextLines runs a single-column query (EXPLAIN forms) and joins the
+// returned lines with LF.
+func queryV2TextLines(ctx context.Context, db querier.Querier, sql string) (string, error) {
+	rows, err := db.Query(ctx, sql)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+
+	lines := []string{}
+
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			return "", err
+		}
+
+		lines = append(lines, line)
+	}
+
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+
+	return strings.Join(lines, "\n"), nil
+}
+
+// queryV2Snapshot runs a query and converts up to limit rows into JSON-ready
+// objects.
+func queryV2Snapshot(ctx context.Context, db querier.Querier, sql string, limit int) ([]interface{}, error) {
+	rows, err := db.Query(ctx, sql)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	snapshot := []interface{}{}
+
+	for rows.Next() {
+		if len(snapshot) >= limit {
+			break
+		}
+
+		fields := rows.FieldDescriptions()
+		rawValues := rows.RawValues()
+		row := make(map[string]interface{}, len(fields))
+
+		for i, field := range fields {
+			row[field.Name] = convertV2Value(field.DataTypeOID, rawValues[i])
+		}
+
+		snapshot = append(snapshot, row)
+	}
+
+	rows.Close()
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return snapshot, nil
+}
+
+// convertV2ResultRows converts raw text-format rows into JSON-ready objects,
+// capped at limit rows.
+func convertV2ResultRows(fields []pgconn.FieldDescription, rows [][][]byte, limit int) []interface{} {
+	converted := make([]interface{}, 0, min(len(rows), limit))
+
+	for _, rawRow := range rows {
+		if len(converted) >= limit {
+			break
+		}
+
+		row := make(map[string]interface{}, len(fields))
+
+		for i, field := range fields {
+			var raw []byte
+			if i < len(rawRow) {
+				raw = rawRow[i]
+			}
+
+			row[field.Name] = convertV2Value(field.DataTypeOID, raw)
+		}
+
+		converted = append(converted, row)
+	}
+
+	return converted
+}
+
+// v2JSONNumberRe matches the JSON number grammar — the only server texts safe
+// to carry as JSON numbers (rejects NaN/Infinity).
+var v2JSONNumberRe = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$`)
+
+// convertV2Value maps a text-format Postgres value to a JSON-ready value:
+// SQL NULL -> nil, booleans -> bool, numeric-family values -> json.Number
+// (arbitrary precision — the decimal contract forbids float64), everything
+// else -> the server's text representation.
+func convertV2Value(oid uint32, raw []byte) interface{} {
+	if raw == nil {
+		return nil
+	}
+
+	text := string(raw)
+
+	switch oid {
+	case pgtype.BoolOID:
+		return text == "t"
+	case pgtype.Int2OID, pgtype.Int4OID, pgtype.Int8OID, pgtype.OIDOID,
+		pgtype.NumericOID, pgtype.Float4OID, pgtype.Float8OID:
+		if v2JSONNumberRe.MatchString(text) {
+			return json.Number(text)
+		}
+
+		return text
+	default:
+		return text
+	}
+}
+
+// extractV2TerminatePID pulls the pid out of the dispatcher-composed
+// terminate command string.
+func extractV2TerminatePID(commandString string) string {
+	match := v2TerminatePIDRe.FindStringSubmatch(commandString)
+	if match == nil {
+		return ""
+	}
+
+	return match[1]
+}
+
+func stringsToInterfaces(values []string) []interface{} {
+	converted := make([]interface{}, len(values))
+	for i, v := range values {
+		converted[i] = v
+	}
+
+	return converted
+}
+
+// v2Notices captures Postgres notices raised on registered backend
+// connections (initConn wires it into every clone connection).
+var v2Notices = newNoticeRecorder()
+
+type noticeRecorder struct {
+	mu    sync.Mutex
+	sinks map[*pgconn.PgConn][]string
+}
+
+func newNoticeRecorder() *noticeRecorder {
+	return &noticeRecorder{sinks: make(map[*pgconn.PgConn][]string)}
+}
+
+// handle is the pgconn OnNotice hook.
+func (r *noticeRecorder) handle(conn *pgconn.PgConn, notice *pgconn.Notice) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.sinks[conn]; !ok {
+		return
+	}
+
+	r.sinks[conn] = append(r.sinks[conn], formatV2Notice(notice))
+}
+
+// start begins capturing notices for a connection.
+func (r *noticeRecorder) start(conn *pgconn.PgConn) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.sinks[conn] = []string{}
+}
+
+// stop ends capturing and returns the collected notices; nil when the
+// connection was not captured.
+func (r *noticeRecorder) stop(conn *pgconn.PgConn) []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	notices, ok := r.sinks[conn]
+	if !ok {
+		return nil
+	}
+
+	delete(r.sinks, conn)
+
+	return notices
+}
+
+// formatV2Notice renders a notice the way psql/psycopg2 display it:
+// "SEVERITY:  message".
+func formatV2Notice(notice *pgconn.Notice) string {
+	return fmt.Sprintf("%s:  %s", notice.Severity, notice.Message)
+}

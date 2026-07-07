@@ -46,6 +46,20 @@ platform:
   # visualization. Default: true.
   historyEnabled: true
 
+# Joe API v2: Platform-dispatched commands with HMAC-signed reply callbacks
+# (x-joe-signature). When enabled, Joe recognizes the Platform's
+# schema_version=2 dispatch requests arriving on the Web UI command endpoint,
+# executes them on a Database Lab clone, and POSTs a signed reply to the
+# dispatch's reply_url.
+apiV2:
+  # Enable Joe API v2 dispatch handling. Default: false.
+  enabled: false
+
+  # Secret used to sign v2 replies. Leave empty to use the webui workspace's
+  # signingSecret (the instance verify token) — the standard setup, since the
+  # Platform verifies replies with the same instance token.
+  # replySecret: "${JOE_API_V2_REPLY_SECRET}"
+
 # Register the application on the Platform.
 registration:
   # Enable automatic registration. Default: false.
