@@ -5,12 +5,26 @@
 package webui
 
 import (
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
 	"gitlab.com/postgres-ai/joe/pkg/config"
+	"gitlab.com/postgres-ai/joe/pkg/connection"
+	"gitlab.com/postgres-ai/joe/pkg/models"
+	pgaiv2sdk "gitlab.com/postgres-ai/joe/pkg/pgai_v2_sdk"
+	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"
 )
 
 func TestIsV2Dispatch(t *testing.T) {
@@ -56,6 +70,267 @@ func TestTruncateV2Error(t *testing.T) {
 		truncated := truncateV2Error(long)
 		assert.LessOrEqual(t, len(truncated), v2ErrorMaxBytes)
 		assert.True(t, strings.HasSuffix(truncated, "x"))
+	})
+}
+
+func TestDeliverV2Reply(t *testing.T) {
+	assistant := &Assistant{}
+	ctx := context.Background()
+
+	t.Run("2xx delivered, not retriable", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		retriable, err := assistant.deliverV2Reply(ctx, server.URL, []byte(`{}`), "v0=sig")
+		assert.NoError(t, err)
+		assert.False(t, retriable)
+	})
+
+	t.Run("4xx deterministic, not retriable", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "bad signature", http.StatusBadRequest)
+		}))
+		defer server.Close()
+
+		retriable, err := assistant.deliverV2Reply(ctx, server.URL, []byte(`{}`), "v0=sig")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "400")
+		assert.False(t, retriable)
+	})
+
+	t.Run("5xx retriable", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "temporary", http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		retriable, err := assistant.deliverV2Reply(ctx, server.URL, []byte(`{}`), "v0=sig")
+		assert.Error(t, err)
+		assert.True(t, retriable)
+	})
+
+	t.Run("connection refused retriable", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		deadURL := server.URL
+
+		server.Close()
+
+		retriable, err := assistant.deliverV2Reply(ctx, deadURL, []byte(`{}`), "v0=sig")
+		assert.Error(t, err)
+		assert.True(t, retriable)
+	})
+}
+
+func TestPostV2Reply(t *testing.T) {
+	assistant := &Assistant{
+		credentialsCfg: &config.Credentials{SigningSecret: "test-secret"},
+		appCfg:         &config.Config{},
+	}
+	reply := pgaiv2sdk.NewDoneReply(&pgaiv2sdk.DispatchRequest{
+		CommandID: "17",
+		Nonce:     "nonce",
+		Command:   pgaiv2sdk.CommandReset,
+	}, map[string]interface{}{"reset": true})
+
+	t.Run("delivered on the first attempt", func(t *testing.T) {
+		var hits atomic.Int32
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hits.Add(1)
+			assert.True(t, strings.HasPrefix(r.Header.Get(pgaiv2sdk.SignatureHeader), "v0="))
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		assert.NoError(t, assistant.postV2Reply(context.Background(), server.URL, reply))
+		assert.EqualValues(t, 1, hits.Load())
+	})
+
+	t.Run("4xx not retried, error surfaced", func(t *testing.T) {
+		var hits atomic.Int32
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			hits.Add(1)
+			http.Error(w, "bad reply", http.StatusBadRequest)
+		}))
+		defer server.Close()
+
+		err := assistant.postV2Reply(context.Background(), server.URL, reply)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "400")
+		assert.EqualValues(t, 1, hits.Load())
+	})
+
+	t.Run("5xx retried exactly v2ReplyAttempts times", func(t *testing.T) {
+		var hits atomic.Int32
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			hits.Add(1)
+			http.Error(w, "temporary", http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		err := assistant.postV2Reply(context.Background(), server.URL, reply)
+		assert.Error(t, err)
+		assert.EqualValues(t, v2ReplyAttempts, hits.Load())
+	})
+}
+
+// fakeV2Executor is a connection.MessageProcessor that records v2 dispatches.
+type fakeV2Executor struct {
+	requests chan *pgaiv2sdk.DispatchRequest
+	result   map[string]interface{}
+}
+
+func (f *fakeV2Executor) ProcessMessageEvent(context.Context, models.IncomingMessage) {}
+func (f *fakeV2Executor) ProcessAppMentionEvent(models.IncomingMessage)               {}
+func (f *fakeV2Executor) RestoreSessions(context.Context) error                       { return nil }
+func (f *fakeV2Executor) CheckIdleSessions(context.Context)                           {}
+func (f *fakeV2Executor) Users() usermanager.UserList                                 { return nil }
+
+func (f *fakeV2Executor) ExecuteV2Command(_ context.Context,
+	req *pgaiv2sdk.DispatchRequest) (map[string]interface{}, error) {
+	if f.requests != nil {
+		f.requests <- req
+	}
+
+	return f.result, nil
+}
+
+func TestHandleV2Command(t *testing.T) {
+	const (
+		signingSecret = "test-secret"
+		channelID     = "ProductionDB"
+	)
+
+	signBody := func(body []byte) string {
+		mac := hmac.New(sha256.New, []byte(signingSecret))
+		mac.Write([]byte(bodyPrefix))
+		mac.Write(body)
+
+		return signaturePrefix + hex.EncodeToString(mac.Sum(nil))
+	}
+
+	dispatchBody := func(replyURL string) []byte {
+		body, err := json.Marshal(map[string]interface{}{
+			"schema_version": pgaiv2sdk.SchemaVersion,
+			"command_id":     "42",
+			"command":        pgaiv2sdk.CommandReset,
+			"command_string": "reset",
+			"session_id":     "31",
+			"nonce":          "test-nonce",
+			"reply_url":      replyURL,
+		})
+		assert.NoError(t, err)
+
+		return body
+	}
+
+	newAssistant := func(enabled bool, executor connection.MessageProcessor) *Assistant {
+		return &Assistant{
+			credentialsCfg: &config.Credentials{SigningSecret: signingSecret},
+			appCfg: &config.Config{
+				APIV2: config.APIV2{Enabled: enabled},
+				ChannelMapping: &config.ChannelMapping{
+					CommunicationTypes: map[string][]config.Workspace{
+						CommunicationType: {{Channels: []config.Channel{{ChannelID: channelID}}}},
+					},
+				},
+			},
+			msgProcessors: map[string]connection.MessageProcessor{channelID: executor},
+		}
+	}
+
+	// post routes the body through the inbound HMAC verifier and the shared
+	// command endpoint — the same path a platform dispatch takes.
+	post := func(assistant *Assistant, body []byte, signature string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, "/webui/command", strings.NewReader(string(body)))
+		request.Header.Set(VerificationSignatureKey, signature)
+
+		recorder := httptest.NewRecorder()
+		NewVerifier([]byte(signingSecret)).Handler(assistant.commandHandler)(recorder, request)
+
+		return recorder
+	}
+
+	t.Run("apiV2 disabled rejected with 400", func(t *testing.T) {
+		body := dispatchBody("http://reply.invalid")
+		recorder := post(newAssistant(false, &fakeV2Executor{}), body, signBody(body))
+		assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	})
+
+	t.Run("invalid inbound HMAC rejected before dispatch", func(t *testing.T) {
+		body := dispatchBody("http://reply.invalid")
+		recorder := post(newAssistant(true, &fakeV2Executor{}), body, "v0=deadbeef")
+		assert.Equal(t, http.StatusForbidden, recorder.Code)
+	})
+
+	t.Run("invalid envelope rejected with 400", func(t *testing.T) {
+		body := []byte(`{"schema_version":2,"command":"reset"}`)
+		recorder := post(newAssistant(true, &fakeV2Executor{}), body, signBody(body))
+		assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	})
+
+	t.Run("valid dispatch acked and signed reply delivered", func(t *testing.T) {
+		type capturedReply struct {
+			signature string
+			body      []byte
+		}
+
+		replies := make(chan capturedReply, 1)
+
+		replyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			replyBody, err := io.ReadAll(r.Body)
+			assert.NoError(t, err)
+
+			replies <- capturedReply{signature: r.Header.Get(pgaiv2sdk.SignatureHeader), body: replyBody}
+
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer replyServer.Close()
+
+		executor := &fakeV2Executor{
+			requests: make(chan *pgaiv2sdk.DispatchRequest, 1),
+			result:   map[string]interface{}{"reset": true},
+		}
+
+		body := dispatchBody(replyServer.URL)
+		recorder := post(newAssistant(true, executor), body, signBody(body))
+
+		assert.Equal(t, http.StatusOK, recorder.Code)
+		assert.JSONEq(t, `{"accepted": true}`, recorder.Body.String())
+
+		select {
+		case req := <-executor.requests:
+			assert.Equal(t, "42", req.CommandID)
+			assert.Equal(t, "31", req.SessionID)
+		case <-time.After(5 * time.Second):
+			t.Fatal("the dispatch was not executed")
+		}
+
+		select {
+		case reply := <-replies:
+			// Recompute the signature the way the platform verifies it:
+			// from the delivered body bytes, per the locked contract.
+			payload, err := pgaiv2sdk.DecodeJSON(reply.body)
+			assert.NoError(t, err)
+
+			canonical, err := pgaiv2sdk.CanonicalResult(payload, pgaiv2sdk.CommandReset)
+			assert.NoError(t, err)
+
+			expected := pgaiv2sdk.SignReplyMessage("42", "test-nonce", pgaiv2sdk.StatusDone,
+				pgaiv2sdk.CommandReset, canonical, "", "", []byte(signingSecret))
+			assert.Equal(t, expected, reply.signature)
+
+			assert.Contains(t, string(reply.body), `"status":"done"`)
+			assert.Contains(t, string(reply.body), `"command_id":"42"`)
+		case <-time.After(5 * time.Second):
+			t.Fatal("the signed reply was not delivered")
+		}
 	})
 }
 
