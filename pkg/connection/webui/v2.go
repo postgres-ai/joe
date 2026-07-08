@@ -45,6 +45,12 @@ const (
 
 	// v2ReplyTimeout bounds a single reply POST.
 	v2ReplyTimeout = 60 * time.Second
+
+	// v2ReplyDeliveryTimeout bounds the WHOLE reply delivery (grace + every
+	// attempt + backoff). The reply runs on its own budget, independent of
+	// the execution context: a command that consumed its full execution
+	// timeout must not be starved of its (cheap) reply-delivery window.
+	v2ReplyDeliveryTimeout = v2ReplyGrace + v2ReplyAttempts*(v2ReplyTimeout+v2ReplyRetryBackoff)
 )
 
 // v2CommandExecutor runs a Joe API v2 command on a Database Lab clone.
@@ -150,7 +156,13 @@ func (a *Assistant) processV2Command(executor v2CommandExecutor, request *pgaiv2
 		reply = pgaiv2sdk.NewDoneReply(request, result)
 	}
 
-	if err := a.postV2Reply(ctx, request.ReplyURL, reply); err != nil {
+	// Deliver the reply on a fresh context: the execution ctx may be
+	// (nearly) exhausted by a long command, and a late signed reply is
+	// still accepted by the platform (timed_out -> done).
+	replyCtx, cancelReply := context.WithTimeout(context.Background(), v2ReplyDeliveryTimeout)
+	defer cancelReply()
+
+	if err := a.postV2Reply(replyCtx, request.ReplyURL, reply); err != nil {
 		log.Err(fmt.Sprintf("v2: command_id=%s reply delivery failed: %v", request.CommandID, err))
 		return
 	}
