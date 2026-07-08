@@ -5,12 +5,18 @@
 package msgproc
 
 import (
+	"context"
 	"encoding/json"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
+
+	pgaiv2sdk "gitlab.com/postgres-ai/joe/pkg/pgai_v2_sdk"
+	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"
 )
 
 func TestConvertV2Value(t *testing.T) {
@@ -111,6 +117,137 @@ func TestNoticeRecorder(t *testing.T) {
 	t.Run("empty capture returns empty slice", func(t *testing.T) {
 		recorder.start(conn)
 		assert.Equal(t, []string{}, recorder.stop(conn))
+	})
+
+	t.Run("capture is capped at v2NoticesCap", func(t *testing.T) {
+		recorder.start(conn)
+
+		for i := 0; i < v2NoticesCap+10; i++ {
+			recorder.handle(conn, &pgconn.Notice{Severity: "NOTICE", Message: strconv.Itoa(i)})
+		}
+
+		notices := recorder.stop(conn)
+		assert.Len(t, notices, v2NoticesCap)
+		assert.Equal(t, "NOTICE:  0", notices[0])
+		assert.Equal(t, "NOTICE:  "+strconv.Itoa(v2NoticesCap-1), notices[v2NoticesCap-1])
+	})
+}
+
+func TestV2Runner(t *testing.T) {
+	s := &ProcessingService{}
+
+	t.Run("every supported command routes to a runner", func(t *testing.T) {
+		supported := []string{
+			pgaiv2sdk.CommandPlan,
+			pgaiv2sdk.CommandExplain,
+			pgaiv2sdk.CommandExec,
+			pgaiv2sdk.CommandHypo,
+			pgaiv2sdk.CommandActivity,
+			pgaiv2sdk.CommandDescribe,
+			pgaiv2sdk.CommandTerminate,
+			pgaiv2sdk.CommandReset,
+		}
+
+		for _, command := range supported {
+			t.Run(command, func(t *testing.T) {
+				assert.True(t, pgaiv2sdk.IsSupportedCommand(command),
+					"the test list must mirror the dispatch validator")
+
+				runner, err := s.v2Runner(command)
+				assert.NoError(t, err)
+				assert.NotNil(t, runner)
+			})
+		}
+	})
+
+	t.Run("commands are matched case-insensitively", func(t *testing.T) {
+		runner, err := s.v2Runner("PLAN")
+		assert.NoError(t, err)
+		assert.NotNil(t, runner)
+	})
+
+	t.Run("unknown command errors", func(t *testing.T) {
+		runner, err := s.v2Runner("drop")
+		assert.Nil(t, runner)
+		assert.EqualError(t, err, `unsupported v2 command "drop"`)
+	})
+
+	t.Run("hypo runner enforces args.query", func(t *testing.T) {
+		runner, err := s.v2Runner(pgaiv2sdk.CommandHypo)
+		assert.NoError(t, err)
+
+		// runV2Hypo rejects a missing args.query before touching the session.
+		result, err := runner(context.Background(), &usermanager.User{},
+			&pgaiv2sdk.DispatchRequest{Command: pgaiv2sdk.CommandHypo})
+		assert.Nil(t, result)
+		assert.EqualError(t, err, "hypo dispatch carried no args.query")
+	})
+}
+
+func TestExecuteV2CommandUnknownCommand(t *testing.T) {
+	// A zero service suffices: an unsupported command must fail BEFORE any
+	// session preparation (UserManager is nil here and must not be touched).
+	s := &ProcessingService{}
+
+	result, err := s.ExecuteV2Command(context.Background(), &pgaiv2sdk.DispatchRequest{
+		SchemaVersion: pgaiv2sdk.SchemaVersion,
+		CommandID:     "1",
+		Command:       "vacuum",
+		SessionID:     "31",
+		Nonce:         "nonce",
+		ReplyURL:      "http://reply.invalid",
+	})
+
+	assert.Nil(t, result)
+	assert.EqualError(t, err, `unsupported v2 command "vacuum"`)
+}
+
+func TestLockV2Session(t *testing.T) {
+	s := &ProcessingService{}
+
+	t.Run("same session serializes", func(t *testing.T) {
+		first := s.lockV2Session("31")
+
+		acquired := make(chan struct{})
+
+		go func() {
+			second := s.lockV2Session("31")
+			close(acquired)
+			second()
+		}()
+
+		select {
+		case <-acquired:
+			t.Fatal("the second lock must block until the first unlock")
+		case <-time.After(50 * time.Millisecond):
+		}
+
+		first()
+
+		select {
+		case <-acquired:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the second lock was not acquired after the first unlock")
+		}
+	})
+
+	t.Run("distinct sessions do not block each other", func(t *testing.T) {
+		first := s.lockV2Session("31")
+		defer first()
+
+		acquired := make(chan struct{})
+
+		go func() {
+			other := s.lockV2Session("32")
+			close(acquired)
+			other()
+		}()
+
+		select {
+		case <-acquired:
+		case <-time.After(5 * time.Second):
+			t.Fatal("a lock for a distinct session must not block")
+		}
 	})
 }
 

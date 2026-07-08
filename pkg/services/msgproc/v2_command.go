@@ -46,6 +46,10 @@ const (
 const (
 	v2ResultRowsCap   = 1000
 	v2ActivityRowsCap = 200
+	// v2NoticesCap bounds the notices captured per exec command: a statement
+	// can RAISE arbitrarily many, and the capture must not be an unbounded
+	// memory path.
+	v2NoticesCap = 1000
 )
 
 // v2UserPrefix and v2ClonePrefix namespace per-session v2 resources.
@@ -69,6 +73,13 @@ func v2CloneID(sessionID string) string {
 // concurrently on their own clones.
 func (s *ProcessingService) ExecuteV2Command(ctx context.Context,
 	req *pgaiv2sdk.DispatchRequest) (map[string]interface{}, error) {
+	// Resolve the runner up front: an unsupported command must not create
+	// a clone session.
+	runner, err := s.v2Runner(req.Command)
+	if err != nil {
+		return nil, err
+	}
+
 	unlock := s.lockV2Session(req.SessionID)
 	defer unlock()
 
@@ -83,33 +94,67 @@ func (s *ProcessingService) ExecuteV2Command(ctx context.Context,
 
 	user.Session.LastActionTs = time.Now()
 
-	switch strings.ToLower(req.Command) {
+	return runner(ctx, user, req)
+}
+
+// v2CommandRunner executes one dispatched v2 command on a prepared session.
+type v2CommandRunner func(ctx context.Context, user *usermanager.User,
+	req *pgaiv2sdk.DispatchRequest) (map[string]interface{}, error)
+
+// v2Runner routes a dispatch command to its runner. It must cover every
+// command the dispatch validator (pgaiv2sdk.IsSupportedCommand) accepts.
+func (s *ProcessingService) v2Runner(command string) (v2CommandRunner, error) {
+	switch strings.ToLower(command) {
 	case pgaiv2sdk.CommandPlan:
-		return s.runV2Plan(ctx, user, req.CommandString)
+		return func(ctx context.Context, user *usermanager.User,
+			req *pgaiv2sdk.DispatchRequest) (map[string]interface{}, error) {
+			return s.runV2Plan(ctx, user, req.CommandString)
+		}, nil
 
 	case pgaiv2sdk.CommandExplain:
-		return s.runV2Explain(ctx, user, req.CommandString)
+		return func(ctx context.Context, user *usermanager.User,
+			req *pgaiv2sdk.DispatchRequest) (map[string]interface{}, error) {
+			return s.runV2Explain(ctx, user, req.CommandString)
+		}, nil
 
 	case pgaiv2sdk.CommandExec:
-		return s.runV2Exec(ctx, user, req.CommandString)
+		return func(ctx context.Context, user *usermanager.User,
+			req *pgaiv2sdk.DispatchRequest) (map[string]interface{}, error) {
+			return s.runV2Exec(ctx, user, req.CommandString)
+		}, nil
 
 	case pgaiv2sdk.CommandHypo:
-		return s.runV2Hypo(ctx, user, req.CommandString, req.Args["query"])
+		return func(ctx context.Context, user *usermanager.User,
+			req *pgaiv2sdk.DispatchRequest) (map[string]interface{}, error) {
+			return s.runV2Hypo(ctx, user, req.CommandString, req.Args["query"])
+		}, nil
 
 	case pgaiv2sdk.CommandActivity:
-		return s.runV2Activity(ctx, user, req.CommandString)
+		return func(ctx context.Context, user *usermanager.User,
+			req *pgaiv2sdk.DispatchRequest) (map[string]interface{}, error) {
+			return s.runV2Activity(ctx, user, req.CommandString)
+		}, nil
 
 	case pgaiv2sdk.CommandDescribe:
-		return s.runV2Describe(user, req.CommandString)
+		return func(_ context.Context, user *usermanager.User,
+			req *pgaiv2sdk.DispatchRequest) (map[string]interface{}, error) {
+			return s.runV2Describe(user, req.CommandString)
+		}, nil
 
 	case pgaiv2sdk.CommandTerminate:
-		return s.runV2Terminate(ctx, user, req.CommandString)
+		return func(ctx context.Context, user *usermanager.User,
+			req *pgaiv2sdk.DispatchRequest) (map[string]interface{}, error) {
+			return s.runV2Terminate(ctx, user, req.CommandString)
+		}, nil
 
 	case pgaiv2sdk.CommandReset:
-		return s.runV2Reset(ctx, user)
+		return func(ctx context.Context, user *usermanager.User,
+			_ *pgaiv2sdk.DispatchRequest) (map[string]interface{}, error) {
+			return s.runV2Reset(ctx, user)
+		}, nil
 	}
 
-	return nil, errors.Errorf("unsupported v2 command %q", req.Command)
+	return nil, errors.Errorf("unsupported v2 command %q", command)
 }
 
 // lockV2Session serializes command execution within one platform session.
@@ -133,10 +178,30 @@ func (s *ProcessingService) ensureV2Session(ctx context.Context, user *usermanag
 			}
 
 			// The clone is up but the cached connection died (e.g. its
-			// backend was terminated); re-acquire a fresh one.
+			// backend was terminated); close the dead connection and
+			// re-acquire a validated fresh one. On any failure fall
+			// through to the full session rebuild below.
+			if conn := user.Session.CloneConnection; conn != nil {
+				if err := conn.Close(ctx); err != nil {
+					log.Dbg("v2: failed to close the dead clone connection:", err)
+				}
+
+				user.Session.CloneConnection = nil
+			}
+
 			if cloneConn, err := user.Session.Pool.Acquire(ctx); err == nil {
-				user.Session.CloneConnection = cloneConn.Conn()
-				return nil
+				if cloneConn.Conn().Ping(ctx) == nil {
+					user.Session.CloneConnection = cloneConn.Conn()
+					return nil
+				}
+
+				// The pool handed out another dead connection: return it
+				// closed (the pool destroys it) and rebuild from scratch.
+				if err := cloneConn.Conn().Close(ctx); err != nil {
+					log.Dbg("v2: failed to close the re-acquired dead connection:", err)
+				}
+
+				cloneConn.Release()
 			}
 		}
 
@@ -588,16 +653,18 @@ func newNoticeRecorder() *noticeRecorder {
 	return &noticeRecorder{sinks: make(map[*pgconn.PgConn][]string)}
 }
 
-// handle is the pgconn OnNotice hook.
+// handle is the pgconn OnNotice hook. Capture is capped at v2NoticesCap
+// notices per connection; further notices are dropped.
 func (r *noticeRecorder) handle(conn *pgconn.PgConn, notice *pgconn.Notice) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, ok := r.sinks[conn]; !ok {
+	sink, ok := r.sinks[conn]
+	if !ok || len(sink) >= v2NoticesCap {
 		return
 	}
 
-	r.sinks[conn] = append(r.sinks[conn], formatV2Notice(notice))
+	r.sinks[conn] = append(sink, formatV2Notice(notice))
 }
 
 // start begins capturing notices for a connection.

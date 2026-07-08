@@ -108,7 +108,9 @@ type ProcessingService struct {
 	config           ProcessingConfig
 
 	// v2SessionLocks serializes Joe API v2 command execution per platform
-	// session (sessionID -> *sync.Mutex).
+	// session (sessionID -> *sync.Mutex). Entries are never deleted: the
+	// map is bounded by the number of distinct platform sessions seen over
+	// the process lifetime, one small mutex each.
 	v2SessionLocks sync.Map
 
 	// TODO (akartasov): Add specific services.
