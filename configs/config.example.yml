@@ -58,6 +58,9 @@ apiV2:
   # Secret used to sign v2 replies. Leave empty to use the webui workspace's
   # signingSecret (the instance verify token) — the standard setup, since the
   # Platform verifies replies with the same instance token.
+  # A custom value only works when the Platform is configured to verify
+  # replies with this same secret (it must be mirrored there); otherwise
+  # replies fail verification. Leave empty to reuse the instance verify token.
   # replySecret: "${JOE_API_V2_REPLY_SECRET}"
 
 # Register the application on the Platform.
