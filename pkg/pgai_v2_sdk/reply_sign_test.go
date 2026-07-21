@@ -21,9 +21,11 @@ const (
 )
 
 // TestFrozenSigningVector reproduces test_joe_callback_signing_vector
-// byte-for-byte: the canonical 5th field AND the final HMAC of all three
-// fixtures (plan / exec / activity). If this test fails, every genuine reply
-// PT401s in production — do not "fix" the expectations; fix the code.
+// byte-for-byte: the canonical 5th field AND the final HMAC of ALL TEN
+// platform fixtures (4711-4720: plan / exec / activity / hypo true / hypo
+// false / describe escaping / terminate-with-null / reset-absent /
+// exec-explicit-null / exec-absent). If this test fails, every genuine
+// reply PT401s in production — do not "fix" the expectations; fix the code.
 func TestFrozenSigningVector(t *testing.T) {
 	cases := []struct {
 		name              string
@@ -64,6 +66,62 @@ func TestFrozenSigningVector(t *testing.T) {
 			expectedCanonical: `{"backends":[{"pid":12345,"query":"select 1","state":"active"}],` +
 				`"captured_at":"2026-07-07T00:00:00Z"}`,
 			expectedHMAC: "v0=6c21d3b05199a9f2667401f5dc3782cf6e0aaeede0e5090979a5656b179933a8",
+		},
+		{
+			name:              "hypo true (object + boolean)",
+			commandID:         "4714",
+			command:           "hypo",
+			payload:           `{"hypo_plan":{"Plan":"Index Scan"},"hypo_used":true}`,
+			expectedCanonical: "{\"Plan\":\"Index Scan\"}\ntrue",
+			expectedHMAC:      "v0=255931b1f289cf44fb475288eb45c1238d05c574fd374b42a89ddb323a982cfe",
+		},
+		{
+			name:              "hypo false",
+			commandID:         "4715",
+			command:           "hypo",
+			payload:           `{"hypo_plan":{"Plan":"Seq Scan"},"hypo_used":false}`,
+			expectedCanonical: "{\"Plan\":\"Seq Scan\"}\nfalse",
+			expectedHMAC:      "v0=ecadbae8f8609cb8957f998f17e25c0971ef93fd375af73009ca426f22970012",
+		},
+		{
+			name:              "describe (quote, backslash, control-char, unicode escaping)",
+			commandID:         "4716",
+			command:           "describe",
+			payload:           `{"snapshot":{"note":"quote \" slash \\ newline\n tab\t café"}}`,
+			expectedCanonical: `{"note":"quote \" slash \\ newline\n tab\t café"}`,
+			expectedHMAC:      "v0=8ea058cee60ec4b09f36e5666fb025bd8380fd5053a21c018da08319d124f1d5",
+		},
+		{
+			name:              "terminate (false + explicit JSON null)",
+			commandID:         "4717",
+			command:           "terminate",
+			payload:           `{"terminated":false,"pid":null}`,
+			expectedCanonical: "false\nnull",
+			expectedHMAC:      "v0=ddc7c4469b9732177fc17304bf305aa30abc85c0759db2f0193e59f090c168ad",
+		},
+		{
+			name:              "reset (absent field -> empty canonical value)",
+			commandID:         "4718",
+			command:           "reset",
+			payload:           `{}`,
+			expectedCanonical: "",
+			expectedHMAC:      "v0=a9eeb630e163ffefedea200adb6e46fb069a33a60798f72dc42e6df673b9b89f",
+		},
+		{
+			name:              "exec explicit null",
+			commandID:         "4719",
+			command:           "exec",
+			payload:           `{"result_rows":[],"row_count":0,"notices":null}`,
+			expectedCanonical: "[]\n0\nnull",
+			expectedHMAC:      "v0=f19128e940a16ca4644aadb3c2432b02a2c8b87740d11e7d5282626c88f29420",
+		},
+		{
+			name:              "exec absent",
+			commandID:         "4720",
+			command:           "exec",
+			payload:           `{"result_rows":[],"row_count":0}`,
+			expectedCanonical: "[]\n0\n",
+			expectedHMAC:      "v0=a477423803abf84b56f1a3132af40e4fb29a34b7624a90cc4215e45b5a11aa15",
 		},
 	}
 

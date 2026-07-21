@@ -183,6 +183,18 @@ func TestCanonicalResult(t *testing.T) {
 			expected: "true\n66",
 		},
 		{
+			name:     "hypo (object keys canonicalized + boolean)",
+			payload:  `{"hypo_used":true,"hypo_plan":{"Plan":{"Total Cost":0.10,"Node Type":"Index Scan"}}}`,
+			command:  "hypo",
+			expected: "{\"Plan\":{\"Node Type\":\"Index Scan\",\"Total Cost\":0.1}}\ntrue",
+		},
+		{
+			name:     "hypo with absent hypo_used",
+			payload:  `{"hypo_plan":{"Plan":"Index Scan"}}`,
+			command:  "hypo",
+			expected: "{\"Plan\":\"Index Scan\"}\n",
+		},
+		{
 			name:     "reset",
 			payload:  `{"reset":true}`,
 			command:  "reset",
