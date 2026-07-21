@@ -141,7 +141,8 @@ func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.Us
 	user.Session.ConnParams = dblabClone
 	user.Session.Clone = clone
 	user.Session.Pool = db
-	user.Session.CloneConnection = userConn
+	user.Session.ClonePoolConn = userConn
+	user.Session.CloneConnection = userConn.Conn()
 	user.Session.LastActionTs = time.Now()
 	user.Session.ChannelID = incomingMessage.ChannelID
 	user.Session.DBVersion = fwData.DBVersionNum
@@ -176,7 +177,10 @@ func (s *ProcessingService) buildDBLabCloneConn(dbParams dblabmodels.Database) m
 	}
 }
 
-func initConn(ctx context.Context, dblabClone models.Clone) (*pgxpool.Pool, *pgx.Conn, error) {
+// initConn builds the session pool and acquires its long-lived connection.
+// Callers must keep the returned *pgxpool.Conn wrapper and Release() it when
+// the connection is retired — discarding it leaks the pool slot (M2).
+func initConn(ctx context.Context, dblabClone models.Clone) (*pgxpool.Pool, *pgxpool.Conn, error) {
 	connectionConfig, err := pgxpool.ParseConfig(dblabClone.ConnectionString())
 	if err != nil {
 		log.Err("Failed to parse connection config:", err)
@@ -204,7 +208,7 @@ func initConn(ctx context.Context, dblabClone models.Clone) (*pgxpool.Pool, *pgx
 		return nil, nil, err
 	}
 
-	return pool, connection.Conn(), nil
+	return pool, connection, nil
 }
 
 // createDBLabClone creates a new clone.

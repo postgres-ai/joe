@@ -36,9 +36,13 @@ type UserSession struct {
 	LastActionTs time.Time
 	IdleInterval uint
 
-	Clone           *dblabmodels.Clone
-	ConnParams      models.Clone
-	Pool            *pgxpool.Pool `json:"-"`
+	Clone      *dblabmodels.Clone
+	ConnParams models.Clone
+	Pool       *pgxpool.Pool `json:"-"`
+	// ClonePoolConn is the pool wrapper CloneConnection was acquired
+	// through; it must be Release()d when the connection is retired, or its
+	// pool slot leaks permanently (M2).
+	ClonePoolConn   *pgxpool.Conn `json:"-"`
 	CloneConnection *pgx.Conn     `json:"-"`
 	DBVersion       int           `json:"-"`
 }

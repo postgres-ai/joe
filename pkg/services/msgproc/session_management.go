@@ -142,7 +142,8 @@ func (s *ProcessingService) RestoreSessions(ctx context.Context) error {
 
 		user.Session.Clone = clone
 		user.Session.Pool = pool
-		user.Session.CloneConnection = userConn
+		user.Session.ClonePoolConn = userConn
+		user.Session.CloneConnection = userConn.Conn()
 
 		if user.Session.Direct {
 			directToNotify = append(directToNotify, getSessionID(user))
@@ -278,7 +279,19 @@ func (s *ProcessingService) stopSession(ctx context.Context, user *usermanager.U
 		}
 	}
 
+	// Release the pool wrapper of the closed connection so its slot is
+	// reclaimed (M2), then close the pool itself instead of leaking it.
+	// Close waits for outstanding conns, so run it off the hot path.
+	if user.Session.ClonePoolConn != nil {
+		user.Session.ClonePoolConn.Release()
+	}
+
+	if pool := user.Session.Pool; pool != nil {
+		go pool.Close()
+	}
+
 	user.Session.CloneConnection = nil
+	user.Session.ClonePoolConn = nil
 	user.Session.Pool = nil
 }
 

@@ -40,6 +40,15 @@ func ResetSession(ctx context.Context, cmd *platform.Command, msg *models.Messag
 		if err := session.CloneConnection.Close(ctx); err != nil {
 			log.Err("Failed to close user connection:", err)
 		}
+
+		session.CloneConnection = nil
+	}
+
+	// Release the retired connection's pool wrapper so its slot is reclaimed
+	// before re-acquiring (M2).
+	if session.ClonePoolConn != nil {
+		session.ClonePoolConn.Release()
+		session.ClonePoolConn = nil
 	}
 
 	allIdleConnections := session.Pool.AcquireAllIdle(ctx)
@@ -57,6 +66,7 @@ func ResetSession(ctx context.Context, cmd *platform.Command, msg *models.Messag
 	}
 
 	if cloneConn != nil {
+		session.ClonePoolConn = cloneConn
 		session.CloneConnection = cloneConn.Conn()
 	}
 

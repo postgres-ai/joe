@@ -219,9 +219,18 @@ func (s *ProcessingService) ensureV2Session(ctx context.Context, user *usermanag
 				user.Session.CloneConnection = nil
 			}
 
+			// Release the dead connection's pool wrapper so the slot is
+			// reclaimed before re-acquiring (M2).
+			if wrapper := user.Session.ClonePoolConn; wrapper != nil {
+				wrapper.Release()
+				user.Session.ClonePoolConn = nil
+			}
+
 			if cloneConn, err := user.Session.Pool.Acquire(ctx); err == nil {
 				if cloneConn.Conn().Ping(ctx) == nil {
+					user.Session.ClonePoolConn = cloneConn
 					user.Session.CloneConnection = cloneConn.Conn()
+
 					return nil
 				}
 
@@ -249,20 +258,39 @@ func (s *ProcessingService) ensureV2Session(ctx context.Context, user *usermanag
 	// runs arbitrary SQL either way).
 	clone, err := s.createDBLabClone(ctx, user, v2CloneID(sessionID), false)
 	if err != nil {
-		return errors.Wrap(err, "failed to create a Database Lab clone")
+		// Clone IDs are deterministic per session, so a stale clone left by
+		// an earlier partial setup blocks re-creation forever ("clone with
+		// such ID already exists"). It is ours by construction: destroy it
+		// and retry once (M1).
+		if delErr := s.DBLab.DestroyClone(ctx, v2CloneID(sessionID)); delErr != nil {
+			log.Dbg("v2: failed to destroy a possible stale clone:", delErr)
+		} else {
+			clone, err = s.createDBLabClone(ctx, user, v2CloneID(sessionID), false)
+		}
+
+		if err != nil {
+			return errors.Wrap(err, "failed to create a Database Lab clone")
+		}
 	}
 
 	dblabClone := s.buildDBLabCloneConn(clone.DB)
 
 	pool, userConn, err := initConn(ctx, dblabClone)
 	if err != nil {
+		// Destroy the just-created clone: leaving it alive would wedge every
+		// retry on the deterministic clone ID and leak the clone (M1).
+		if delErr := s.DBLab.DestroyClone(ctx, clone.ID); delErr != nil {
+			log.Dbg("v2: failed to destroy the clone after a connection failure:", delErr)
+		}
+
 		return errors.Wrap(err, "failed to init database connection")
 	}
 
 	user.Session.ConnParams = dblabClone
 	user.Session.Clone = clone
 	user.Session.Pool = pool
-	user.Session.CloneConnection = userConn
+	user.Session.ClonePoolConn = userConn
+	user.Session.CloneConnection = userConn.Conn()
 	user.Session.PlatformSessionID = sessionID
 	user.Session.Direct = true
 	user.Session.LastActionTs = time.Now()
@@ -599,6 +627,15 @@ func (s *ProcessingService) runV2Reset(ctx context.Context, user *usermanager.Us
 		if err := user.Session.CloneConnection.Close(ctx); err != nil {
 			log.Dbg("failed to close user connection after reset:", err)
 		}
+
+		user.Session.CloneConnection = nil
+	}
+
+	// Release the retired connection's pool wrapper so its slot is
+	// reclaimed before re-acquiring (M2).
+	if wrapper := user.Session.ClonePoolConn; wrapper != nil {
+		wrapper.Release()
+		user.Session.ClonePoolConn = nil
 	}
 
 	for _, idleConnection := range user.Session.Pool.AcquireAllIdle(ctx) {
@@ -614,6 +651,7 @@ func (s *ProcessingService) runV2Reset(ctx context.Context, user *usermanager.Us
 		return nil, errors.Wrap(err, "failed to acquire database connection after reset")
 	}
 
+	user.Session.ClonePoolConn = cloneConn
 	user.Session.CloneConnection = cloneConn.Conn()
 
 	return map[string]interface{}{"reset": true}, nil
