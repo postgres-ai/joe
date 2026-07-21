@@ -26,10 +26,12 @@ import (
 
 // Joe API v2 processing constants.
 const (
-	// v2ExecutionTimeout caps a single command execution. The platform
-	// sweeps its own (shorter) per-command timeout; a late reply is still
-	// accepted (timed_out -> done), so this is only a leak guard.
-	v2ExecutionTimeout = 10 * time.Minute
+	// v2ProcessTimeout is the overall leak guard around one dispatch. The
+	// real budgets live in msgproc (lock wait + execution, each 10 min,
+	// with the execution budget starting only after the session lock —
+	// L1); this outer bound only catches bugs, so it must exceed their
+	// sum.
+	v2ProcessTimeout = 21 * time.Minute
 
 	// v2ReplyGrace delays the reply POST slightly: the dispatch POST happens
 	// inside the platform's consume transaction, and the reply row lock
@@ -214,7 +216,7 @@ func (a *Assistant) getV2Executor() (v2CommandExecutor, error) {
 
 // processV2Command executes the command and delivers the signed reply.
 func (a *Assistant) processV2Command(executor v2CommandExecutor, request *pgaiv2sdk.DispatchRequest) {
-	ctx, cancel := context.WithTimeout(context.Background(), v2ExecutionTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), v2ProcessTimeout)
 	defer cancel()
 
 	log.Dbg(fmt.Sprintf("v2: processing command_id=%s command=%s session=%s",
@@ -272,13 +274,19 @@ func (a *Assistant) postV2Reply(ctx context.Context, replyURL string, reply *pga
 		return errors.Wrap(err, "failed to sign the reply")
 	}
 
-	time.Sleep(v2ReplyGrace)
+	// L2: every wait selects against ctx so an expired delivery budget
+	// stops the loop instead of sleeping into doomed POSTs.
+	if err := v2Sleep(ctx, v2ReplyGrace); err != nil {
+		return err
+	}
 
 	var lastErr error
 
 	for attempt := 1; attempt <= v2ReplyAttempts; attempt++ {
 		if attempt > 1 {
-			time.Sleep(v2ReplyRetryBackoff)
+			if err := v2Sleep(ctx, v2ReplyRetryBackoff); err != nil {
+				return lastErr
+			}
 		}
 
 		retriable, err := a.deliverV2Reply(ctx, replyURL, body, signature)
@@ -315,6 +323,12 @@ func (a *Assistant) deliverV2Reply(ctx context.Context, replyURL string, body []
 
 	response, err := a.v2ReplyHTTPClient().Do(request)
 	if err != nil {
+		// A dead delivery budget is not retriable (L2) — only transient
+		// network failures are.
+		if ctx.Err() != nil {
+			return false, errors.Wrap(err, "reply delivery budget exhausted")
+		}
+
 		return true, errors.Wrap(err, "reply POST failed")
 	}
 
@@ -376,6 +390,19 @@ func (a *Assistant) v2ReplySecret() []byte {
 	}
 
 	return []byte(a.credentialsCfg.SigningSecret)
+}
+
+// v2Sleep waits for the duration or until ctx is done, whichever is first.
+func v2Sleep(ctx context.Context, duration time.Duration) error {
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // truncateV2Error caps the error text at v2ErrorMaxBytes without splitting a

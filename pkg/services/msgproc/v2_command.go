@@ -58,6 +58,21 @@ const (
 	v2ClonePrefix = "v2-"
 )
 
+// Execution budgets. The execution budget starts only AFTER the session
+// lock is acquired (L1): a command queued behind a long one must not arrive
+// at the database with an already-exhausted deadline.
+const (
+	// v2LockWaitTimeout bounds waiting for the per-session lock; a session
+	// wedged longer than this fails fast with a "busy" error.
+	v2LockWaitTimeout = 10 * time.Minute
+
+	// v2ExecutionTimeout caps a single command execution, measured from
+	// lock acquisition. The platform sweeps its own (shorter) per-command
+	// timeout; a late reply is still accepted (timed_out -> done), so this
+	// is only a leak guard.
+	v2ExecutionTimeout = 10 * time.Minute
+)
+
 // v2TerminatePIDRe extracts the backend pid from the dispatcher-composed
 // terminate command string.
 var v2TerminatePIDRe = regexp.MustCompile(`pg_terminate_backend\((\d+)\)`)
@@ -80,11 +95,20 @@ func (s *ProcessingService) ExecuteV2Command(ctx context.Context,
 		return nil, err
 	}
 
-	unlock, err := s.lockV2Session(ctx, req.SessionID)
+	lockCtx, cancelLockWait := context.WithTimeout(ctx, v2LockWaitTimeout)
+
+	unlock, err := s.lockV2Session(lockCtx, req.SessionID)
+
+	cancelLockWait()
+
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
+
+	// The execution budget starts here, after the lock (L1).
+	ctx, cancelExecution := context.WithTimeout(ctx, v2ExecutionTimeout)
+	defer cancelExecution()
 
 	user, err := s.UserManager.CreateUser(v2UserPrefix + req.SessionID)
 	if err != nil {

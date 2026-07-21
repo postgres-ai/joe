@@ -184,6 +184,27 @@ func TestPostV2Reply(t *testing.T) {
 		assert.EqualValues(t, 1, hits.Load())
 	})
 
+	t.Run("expired delivery budget stops retrying immediately (L2)", func(t *testing.T) {
+		var hits atomic.Int32
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			hits.Add(1)
+			http.Error(w, "temporary", http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		expired, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		start := time.Now()
+		err := assistant.postV2Reply(expired, server.URL, reply)
+
+		assert.Error(t, err)
+		assert.Less(t, time.Since(start), v2ReplyRetryBackoff,
+			"a dead budget must not sleep through grace/backoff")
+		assert.EqualValues(t, 0, hits.Load())
+	})
+
 	t.Run("5xx retried exactly v2ReplyAttempts times", func(t *testing.T) {
 		var hits atomic.Int32
 
