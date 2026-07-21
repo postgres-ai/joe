@@ -8,6 +8,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -88,6 +89,77 @@ func TestCheckIdleSessionsStopsIdleV2Session(t *testing.T) {
 	unlock, ok := s.tryLockV2Session("32")
 	require.True(t, ok, "the session lock must be free after reaping")
 	unlock()
+}
+
+// TestCheckIdleSessionsDoesNotRaceV2Rebuild locks the H2 residual: the
+// reaper must never read Session.Clone (v2-vs-v1 classification, the nil
+// guard) WITHOUT the session lock while an in-flight command's
+// ensureV2Session rebuilds the session — the rebuild transiently nils
+// Session.Clone under the lock, so an unlocked read can misclassify a v2
+// user as v1 and nil-deref Clone.Metadata in the reaper goroutine (which has
+// no panic recovery). Run with -race: the pre-fix reaper classified via
+// Session.Clone.ID unlocked, and this test makes that race observable.
+func TestCheckIdleSessionsDoesNotRaceV2Rebuild(t *testing.T) {
+	// DLE stub: the clone is gone (404), so a reaper tick that wins the lock
+	// takes the full stopSession path.
+	dle := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"code":"NOT_FOUND"}`, http.StatusNotFound)
+	}))
+	defer dle.Close()
+
+	dbLabClient, err := dblabapi.NewClient(dblabapi.Options{Host: dle.URL, VerificationToken: "t"})
+	require.NoError(t, err)
+
+	user := newV2ReaperUser("34", time.Now().Add(-2*time.Hour))
+	um := usermanager.NewUserManager(nil, definition.Quota{}, usermanager.UserList{
+		v2UserPrefix + "34": user,
+	})
+
+	s := &ProcessingService{UserManager: um, DBLab: dbLabClient}
+
+	stop := make(chan struct{})
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+
+	// Simulate ensureV2Session's rebuild path: under the session lock the
+	// clone is transiently nil'ed (destroySession -> stopSession) and then
+	// reassigned, exactly like a session rebuild during an in-flight command.
+	go func() {
+		defer wg.Done()
+
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+
+			unlock, ok := s.tryLockV2Session("34")
+			if !ok {
+				continue
+			}
+
+			user.Session.Clone = nil
+			user.Session.PlatformSessionID = ""
+			user.Session.Clone = &dblabmodels.Clone{
+				ID:       v2CloneID("34"),
+				Metadata: dblabmodels.CloneMetadata{MaxIdleMinutes: 60},
+			}
+			user.Session.PlatformSessionID = "34"
+			user.Session.LastActionTs = time.Now().Add(-2 * time.Hour)
+
+			unlock()
+		}
+	}()
+
+	for i := 0; i < 200; i++ {
+		s.CheckIdleSessions(context.Background())
+	}
+
+	close(stop)
+	wg.Wait()
 }
 
 // TestRestoreSessionsSkipsV2Users locks the restart half of H2: v2 sessions
