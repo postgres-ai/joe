@@ -489,6 +489,40 @@ func TestProcessV2CommandRecoversPanic(t *testing.T) {
 	}
 }
 
+// panickyTransport simulates a runtime bug inside the reply delivery path.
+type panickyTransport struct{}
+
+func (panickyTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	panic("simulated reply transport bug")
+}
+
+// TestProcessV2CommandRecoversReplyPathPanic locks the H3 residual: the
+// recovery must sit at the ROOT of the dispatch goroutine, so a panic in
+// reply construction or delivery (signing, POSTing) — not only inside
+// executor.ExecuteV2Command — cannot crash the whole Joe process.
+func TestProcessV2CommandRecoversReplyPathPanic(t *testing.T) {
+	assistant := &Assistant{
+		credentialsCfg:   &config.Credentials{SigningSecret: "test-secret"},
+		appCfg:           &config.Config{APIV2: config.APIV2{Enabled: true, ReplyHost: "127.0.0.1"}},
+		v2ReplyTransport: panickyTransport{},
+	}
+
+	request := &pgaiv2sdk.DispatchRequest{
+		SchemaVersion: pgaiv2sdk.SchemaVersion,
+		CommandID:     "52",
+		Command:       pgaiv2sdk.CommandReset,
+		SessionID:     "31",
+		Nonce:         "panic-nonce",
+		ReplyURL:      "https://127.0.0.1/rpc/joe_command_reply",
+	}
+
+	// Direct call (not via goroutine) so a non-recovered panic fails THIS
+	// test instead of tearing down the process at a distance.
+	assert.NotPanics(t, func() {
+		assistant.processV2Command(&fakeV2Executor{result: map[string]interface{}{"reset": true}}, request)
+	})
+}
+
 func TestV2CommandDeduper(t *testing.T) {
 	deduper := &v2CommandDeduper{}
 	base := time.Now()
