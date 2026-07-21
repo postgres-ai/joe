@@ -115,6 +115,12 @@ func validateReplyURL(rawURL string) error {
 // callback hosts (SSRF allowlist, pinned to the platform callback host). The
 // comparison is a case-insensitive hostname match; an empty allowlist fails
 // closed.
+//
+// Only the HOST is pinned — deliberately not the port or path: deployments
+// serve the platform callback on non-443 https ports (and the test harness
+// on ephemeral ones), so any https port on an allowlisted host is trusted.
+// The exposure is same-host only: a forged reply_url can at worst deliver
+// the signed reply to another https service on the pinned platform host.
 func ValidateReplyURLHost(rawURL string, allowedHosts []string) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {

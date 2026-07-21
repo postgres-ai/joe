@@ -194,6 +194,16 @@ func (a *Assistant) handleV2Command(w http.ResponseWriter, body []byte) {
 	// Replay protection (M3): a command_id seen within the TTL is acked
 	// (the platform already owns this command's lifecycle) but NOT
 	// re-executed — replays of exec/terminate/reset must have no effect.
+	//
+	// Accepted narrow window: the command_id is marked seen BEFORE
+	// execution, so if the dispatch goroutine's work is lost mid-flight
+	// without a process restart, a platform retry within the TTL is acked
+	// as a duplicate and the command resolves only via the platform-side
+	// timeout. The window is narrow because the goroutine-root recover
+	// (H3) still posts an error reply on panic, and a restart clears this
+	// in-memory cache, so post-restart retries re-execute. Marking seen
+	// after a terminal reply was rejected: it would let a replayed
+	// side-effecting command re-execute while the first run is in flight.
 	if a.v2SeenCommands.markSeen(request.CommandID, time.Now()) {
 		log.Msg("v2: duplicate dispatch ignored, command_id:", request.CommandID)
 		writeV2Ack(w)
