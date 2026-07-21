@@ -378,6 +378,65 @@ func TestHandleV2Command(t *testing.T) {
 	})
 }
 
+// panickyV2Executor simulates a runtime bug inside command execution.
+type panickyV2Executor struct {
+	fakeV2Executor
+}
+
+func (p *panickyV2Executor) ExecuteV2Command(context.Context,
+	*pgaiv2sdk.DispatchRequest) (map[string]interface{}, error) {
+	panic("simulated executor bug")
+}
+
+// TestProcessV2CommandRecoversPanic locks H3: a panic inside command
+// execution must not crash the Joe process (processV2Command runs in a bare
+// goroutine), and the platform must still receive a signed error reply.
+func TestProcessV2CommandRecoversPanic(t *testing.T) {
+	replies := make(chan []byte, 1)
+
+	replyServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		assert.NoError(t, err)
+
+		replies <- body
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer replyServer.Close()
+
+	assistant := &Assistant{
+		credentialsCfg:   &config.Credentials{SigningSecret: "test-secret"},
+		appCfg:           &config.Config{APIV2: config.APIV2{Enabled: true, ReplyHost: "127.0.0.1"}},
+		v2ReplyTransport: replyServer.Client().Transport,
+	}
+
+	request := &pgaiv2sdk.DispatchRequest{
+		SchemaVersion: pgaiv2sdk.SchemaVersion,
+		CommandID:     "51",
+		Command:       pgaiv2sdk.CommandReset,
+		SessionID:     "31",
+		Nonce:         "panic-nonce",
+		ReplyURL:      replyServer.URL,
+	}
+
+	// Direct call (not via goroutine) so a non-recovered panic fails THIS
+	// test instead of tearing down the process at a distance.
+	assistant.processV2Command(&panickyV2Executor{}, request)
+
+	select {
+	case body := <-replies:
+		payload, err := pgaiv2sdk.DecodeJSON(body)
+		assert.NoError(t, err)
+		assert.Equal(t, pgaiv2sdk.StatusError, payload["status"])
+		assert.Equal(t, "51", payload["command_id"])
+		errText, _ := payload["error"].(string)
+		assert.NotContains(t, errText, "simulated executor bug",
+			"the panic value must not leak into the platform-facing reply")
+	case <-time.After(5 * time.Second):
+		t.Fatal("no error reply was delivered after the executor panic")
+	}
+}
+
 func TestV2AllowedReplyHosts(t *testing.T) {
 	assistant := &Assistant{appCfg: &config.Config{}}
 
