@@ -29,20 +29,26 @@ func (s *ProcessingService) CheckIdleSessions(ctx context.Context) {
 
 	// TODO(akartasov): Fix data races (v1 sessions; v2 sessions are handled
 	// under their per-session lock in checkIdleV2Session).
-	for _, user := range s.UserManager.Users() {
+	for name, user := range s.UserManager.Users() {
 		if ctx.Err() != nil {
 			return
 		}
 
-		if user == nil || user.Session.Clone == nil {
+		if user == nil {
 			continue
 		}
 
-		// v2 sessions are reaped under their session lock so cleanup can
-		// never race a running command (H2), and they get no chat
-		// notifications.
-		if isV2Session(user) {
-			s.checkIdleV2Session(ctx, user)
+		// v2 sessions are classified by the immutable user-manager key —
+		// NOT by Session.Clone, which an in-flight command's ensureV2Session
+		// may be rebuilding concurrently — and reaped under their session
+		// lock so cleanup can never race a running command (H2). They get
+		// no chat notifications.
+		if isV2SessionUser(name) {
+			s.checkIdleV2Session(ctx, v2SessionIDFromUserKey(name), user)
+			continue
+		}
+
+		if user.Session.Clone == nil {
 			continue
 		}
 
@@ -90,19 +96,24 @@ func (s *ProcessingService) RestoreSessions(ctx context.Context) error {
 	// List of sessionIDs.
 	directToNotify := make([]string, 0)
 
-	for _, user := range s.UserManager.Users() {
+	for name, user := range s.UserManager.Users() {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 
-		if user == nil || user.Session.Clone == nil {
+		if user == nil {
 			continue
 		}
 
 		// v2 sessions are rebuilt lazily by ensureV2Session on the next
 		// dispatch; the v1 restore path must not reconnect them or post
-		// chat notifications for them (H2).
-		if isV2Session(user) {
+		// chat notifications for them (H2). Classified by the immutable
+		// user-manager key, never by racy Session.Clone reads.
+		if isV2SessionUser(name) {
+			continue
+		}
+
+		if user.Session.Clone == nil {
 			continue
 		}
 
@@ -166,20 +177,28 @@ func (s *ProcessingService) RestoreSessions(ctx context.Context) error {
 	return nil
 }
 
-// isV2Session reports whether the user's session belongs to the Joe API v2
-// pipeline (per-platform-session clones with the fixed v2 clone ID prefix).
-func isV2Session(user *usermanager.User) bool {
-	return user.Session.Clone != nil && strings.HasPrefix(user.Session.Clone.ID, v2ClonePrefix)
+// isV2SessionUser reports whether a user-manager key belongs to the Joe API
+// v2 pipeline. The key is immutable, unlike Session.Clone, which an
+// in-flight command's ensureV2Session may be rebuilding (transiently nil)
+// under the session lock — classification must never read Session fields
+// without that lock (H2).
+func isV2SessionUser(userKey string) bool {
+	return strings.HasPrefix(userKey, v2UserPrefix)
+}
+
+// v2SessionIDFromUserKey derives the platform session ID back out of the
+// immutable user-manager key (the inverse of v2UserPrefix + sessionID).
+func v2SessionIDFromUserKey(userKey string) string {
+	return strings.TrimPrefix(userKey, v2UserPrefix)
 }
 
 // checkIdleV2Session reaps one idle v2 session under its session lock, so
-// cleanup can never race a running command (H2). A busy session is skipped:
-// the running command refreshes LastActionTs anyway. Mirroring the v1
-// policy, Joe-side state is cleaned once Database Lab reports the clone
-// inactive (DLE itself destroys idle clones via MaxIdleMinutes, so clones
-// do not leak).
-func (s *ProcessingService) checkIdleV2Session(ctx context.Context, user *usermanager.User) {
-	sessionID := user.Session.PlatformSessionID
+// cleanup can never race a running command (H2); every Session field is read
+// only after the lock is held. A busy session is skipped: the running
+// command refreshes LastActionTs anyway. Mirroring the v1 policy, Joe-side
+// state is cleaned once Database Lab reports the clone inactive (DLE itself
+// destroys idle clones via MaxIdleMinutes, so clones do not leak).
+func (s *ProcessingService) checkIdleV2Session(ctx context.Context, sessionID string, user *usermanager.User) {
 	if sessionID == "" {
 		return
 	}
@@ -191,8 +210,8 @@ func (s *ProcessingService) checkIdleV2Session(ctx context.Context, user *userma
 	}
 	defer unlock()
 
-	// Re-check under the lock: a command may have finished and stopped or
-	// rebuilt the session in the meantime.
+	// Under the lock: a command may have stopped or be rebuilding the
+	// session; a stopped session has nothing to reap.
 	if user.Session.Clone == nil {
 		return
 	}
