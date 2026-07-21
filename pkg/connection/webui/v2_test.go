@@ -313,6 +313,37 @@ func TestHandleV2Command(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, recorder.Code)
 	})
 
+	t.Run("replayed dispatch acked but not re-executed", func(t *testing.T) {
+		// M3: a captured HMAC-valid dispatch replayed to the endpoint must
+		// not re-execute side-effecting commands (exec/terminate/reset).
+		executor := &fakeV2Executor{
+			requests: make(chan *pgaiv2sdk.DispatchRequest, 2),
+			result:   map[string]interface{}{"reset": true},
+		}
+		assistant := newAssistant(true, executor)
+		assistant.appCfg.APIV2.ReplyHost = "reply.example.com"
+
+		body := dispatchBody("https://reply.example.com/rpc/joe_command_reply")
+
+		first := post(assistant, body, signBody(body))
+		assert.Equal(t, http.StatusOK, first.Code)
+
+		select {
+		case <-executor.requests:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the first dispatch was not executed")
+		}
+
+		replay := post(assistant, body, signBody(body))
+		assert.Equal(t, http.StatusOK, replay.Code, "a replay is acked (the platform already owns the command state)")
+
+		select {
+		case <-executor.requests:
+			t.Fatal("a replayed command_id must not re-execute")
+		case <-time.After(200 * time.Millisecond):
+		}
+	})
+
 	t.Run("valid dispatch acked and signed reply delivered", func(t *testing.T) {
 		type capturedReply struct {
 			signature string
