@@ -64,6 +64,12 @@ type APIV2 struct {
 	// signingSecret (the instance verify token — the secret the Platform
 	// uses for reply verification) is used, which is the standard setup.
 	ReplySecret string `yaml:"replySecret" env:"JOE_API_V2_REPLY_SECRET"`
+
+	// ReplyHost pins the reply_url callback hostname (SSRF allowlist): a
+	// dispatch whose reply_url points anywhere else is rejected. When
+	// empty, the hostname of platform.url is used, which is the standard
+	// setup.
+	ReplyHost string `yaml:"replyHost" env:"JOE_API_V2_REPLY_HOST"`
 }
 
 // Registration describes configuration parameters to register an application on the Platform.

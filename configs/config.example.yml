@@ -63,6 +63,12 @@ apiV2:
   # replies fail verification. Leave empty to reuse the instance verify token.
   # replySecret: "${JOE_API_V2_REPLY_SECRET}"
 
+  # Hostname allowed as the reply_url callback target (SSRF allowlist).
+  # Leave empty to pin replies to the hostname of platform.url — the
+  # standard setup. Only set this when the reply callback is served from a
+  # different host than the platform API.
+  # replyHost: "postgres.ai"
+
 # Register the application on the Platform.
 registration:
   # Enable automatic registration. Default: false.

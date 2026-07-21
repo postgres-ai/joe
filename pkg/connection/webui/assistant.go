@@ -45,6 +45,10 @@ type Assistant struct {
 	meta           meta
 
 	sessionStorage storage.SessionStorage
+
+	// v2ReplyTransport overrides the reply-delivery HTTP transport in tests
+	// (e.g. to trust an httptest TLS certificate). nil = http.DefaultTransport.
+	v2ReplyTransport http.RoundTripper
 }
 
 // meta contains meta information about an assistant service.

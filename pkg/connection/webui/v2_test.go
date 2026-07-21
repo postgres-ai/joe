@@ -321,7 +321,9 @@ func TestHandleV2Command(t *testing.T) {
 
 		replies := make(chan capturedReply, 1)
 
-		replyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// TLS + the transport seam: reply_url validation demands https and
+		// an allowlisted host, exactly like production.
+		replyServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			replyBody, err := io.ReadAll(r.Body)
 			assert.NoError(t, err)
 
@@ -336,8 +338,12 @@ func TestHandleV2Command(t *testing.T) {
 			result:   map[string]interface{}{"reset": true},
 		}
 
+		assistant := newAssistant(true, executor)
+		assistant.appCfg.APIV2.ReplyHost = "127.0.0.1"
+		assistant.v2ReplyTransport = replyServer.Client().Transport
+
 		body := dispatchBody(replyServer.URL)
-		recorder := post(newAssistant(true, executor), body, signBody(body))
+		recorder := post(assistant, body, signBody(body))
 
 		assert.Equal(t, http.StatusOK, recorder.Code)
 		assert.JSONEq(t, `{"accepted": true}`, recorder.Body.String())
@@ -369,6 +375,25 @@ func TestHandleV2Command(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatal("the signed reply was not delivered")
 		}
+	})
+}
+
+func TestV2AllowedReplyHosts(t *testing.T) {
+	assistant := &Assistant{appCfg: &config.Config{}}
+
+	t.Run("empty config fails closed", func(t *testing.T) {
+		assert.Empty(t, assistant.v2AllowedReplyHosts())
+		assert.Error(t, pgaiv2sdk.ValidateReplyURLHost("https://anywhere.example.com/x", assistant.v2AllowedReplyHosts()))
+	})
+
+	t.Run("derived from platform.url", func(t *testing.T) {
+		assistant.appCfg.Platform.URL = "https://platform.example.com/api/general"
+		assert.Equal(t, []string{"platform.example.com"}, assistant.v2AllowedReplyHosts())
+	})
+
+	t.Run("dedicated replyHost wins", func(t *testing.T) {
+		assistant.appCfg.APIV2.ReplyHost = "callback.example.com"
+		assert.Equal(t, []string{"callback.example.com"}, assistant.v2AllowedReplyHosts())
 	})
 }
 

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 	"unicode/utf8"
 
@@ -90,6 +91,15 @@ func (a *Assistant) handleV2Command(w http.ResponseWriter, body []byte) {
 	request, err := pgaiv2sdk.ParseDispatchRequest(body)
 	if err != nil {
 		log.Err("Failed to parse the v2 dispatch request:", err)
+		w.WriteHeader(http.StatusBadRequest)
+
+		return
+	}
+
+	// SSRF hardening: the signed reply (query results, plans) may only be
+	// POSTed to the pinned platform callback host.
+	if err := pgaiv2sdk.ValidateReplyURLHost(request.ReplyURL, a.v2AllowedReplyHosts()); err != nil {
+		log.Err("Rejected the v2 dispatch reply_url:", err)
 		w.WriteHeader(http.StatusBadRequest)
 
 		return
@@ -219,7 +229,7 @@ func (a *Assistant) deliverV2Reply(ctx context.Context, replyURL string, body []
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set(pgaiv2sdk.SignatureHeader, signature)
 
-	response, err := http.DefaultClient.Do(request)
+	response, err := a.v2ReplyHTTPClient().Do(request)
 	if err != nil {
 		return true, errors.Wrap(err, "reply POST failed")
 	}
@@ -238,6 +248,39 @@ func (a *Assistant) deliverV2Reply(ctx context.Context, replyURL string, body []
 
 	return response.StatusCode >= http.StatusInternalServerError,
 		errors.Errorf("reply POST returned %d: %s", response.StatusCode, string(preview))
+}
+
+// v2AllowedReplyHosts resolves the reply callback host allowlist: the
+// dedicated apiV2.replyHost when configured, else the hostname of the
+// platform API URL. An empty result fails closed in ValidateReplyURLHost.
+func (a *Assistant) v2AllowedReplyHosts() []string {
+	if host := a.appCfg.APIV2.ReplyHost; host != "" {
+		return []string{host}
+	}
+
+	platformURL, err := url.Parse(a.appCfg.Platform.URL)
+	if err != nil || platformURL.Hostname() == "" {
+		return nil
+	}
+
+	return []string{platformURL.Hostname()}
+}
+
+// v2ReplyHTTPClient builds the hardened client for reply delivery: it never
+// follows redirects, so a validated callback host cannot bounce the signed
+// reply to another address (SSRF). The transport is injectable for tests.
+func (a *Assistant) v2ReplyHTTPClient() *http.Client {
+	transport := a.v2ReplyTransport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+
+	return &http.Client{
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+			return errors.Errorf("v2 reply redirect to %q refused", req.URL.Redacted())
+		},
+	}
 }
 
 // v2ReplySecret resolves the reply signing secret: the dedicated replySecret

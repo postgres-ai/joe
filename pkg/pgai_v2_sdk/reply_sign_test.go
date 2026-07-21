@@ -272,7 +272,8 @@ func TestParseDispatchRequest(t *testing.T) {
 
 	t.Run("hypo with args.query", func(t *testing.T) {
 		body := `{"schema_version":2,"command_id":"1","command":"hypo","command_string":"create index on t (a)",` +
-			`"session_id":"1","nonce":"n","reply_url":"u","args":{"query":"select * from t where a = 1"}}`
+			`"session_id":"1","nonce":"n","reply_url":"https://api.example.com/rpc/joe_command_reply",` +
+			`"args":{"query":"select * from t where a = 1"}}`
 		req, err := ParseDispatchRequest([]byte(body))
 		require.NoError(t, err)
 		assert.Equal(t, "select * from t where a = 1", req.Args["query"])

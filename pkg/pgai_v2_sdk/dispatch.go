@@ -6,6 +6,8 @@ package pgaiv2sdk
 
 import (
 	"encoding/json"
+	"net/url"
+	"strings"
 
 	"github.com/pkg/errors"
 )
@@ -77,9 +79,55 @@ func (r *DispatchRequest) Validate() error {
 		return errors.New("reply_url must not be empty")
 	}
 
+	if err := validateReplyURL(r.ReplyURL); err != nil {
+		return errors.Wrap(err, "invalid reply_url")
+	}
+
 	if r.Command == CommandHypo && r.Args["query"] == "" {
 		return errors.New("hypo requires args.query")
 	}
 
 	return nil
+}
+
+// validateReplyURL enforces the https-only reply callback scheme (SSRF
+// hardening): the signed reply carries query results and plans, so it must
+// never be POSTed over plaintext, to a non-HTTP scheme, or to a host-less
+// (opaque/relative) URL.
+func validateReplyURL(rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return err
+	}
+
+	if parsed.Scheme != "https" {
+		return errors.Errorf("scheme %q is not allowed (https only)", parsed.Scheme)
+	}
+
+	if parsed.Hostname() == "" {
+		return errors.New("host must not be empty")
+	}
+
+	return nil
+}
+
+// ValidateReplyURLHost verifies the reply_url points at one of the allowed
+// callback hosts (SSRF allowlist, pinned to the platform callback host). The
+// comparison is a case-insensitive hostname match; an empty allowlist fails
+// closed.
+func ValidateReplyURLHost(rawURL string, allowedHosts []string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return errors.Wrap(err, "invalid reply_url")
+	}
+
+	host := strings.ToLower(parsed.Hostname())
+
+	for _, allowed := range allowedHosts {
+		if allowed != "" && strings.ToLower(allowed) == host {
+			return nil
+		}
+	}
+
+	return errors.Errorf("reply_url host %q is not in the callback host allowlist", parsed.Hostname())
 }
