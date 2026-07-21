@@ -55,12 +55,12 @@ func v2EnsureSingleStatement(sql string) error {
 			return errors.New("multi-statement SQL is not allowed for this v2 command")
 		}
 
-		switch {
-		case c == '\'':
+		switch c {
+		case '\'':
 			i = skipV2QuotedRun(sql, i, '\'')
-		case c == '"':
+		case '"':
 			i = skipV2QuotedRun(sql, i, '"')
-		case c == '$':
+		case '$':
 			if end, ok := skipV2DollarQuote(sql, i); ok {
 				i = end
 			} else {

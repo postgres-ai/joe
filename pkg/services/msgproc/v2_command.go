@@ -104,6 +104,7 @@ func (s *ProcessingService) ExecuteV2Command(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+
 	defer unlock()
 
 	// The execution budget starts here, after the lock (L1).
@@ -247,6 +248,7 @@ func (s *ProcessingService) ensureV2Session(ctx context.Context, user *usermanag
 			// reclaimed before re-acquiring (M2).
 			if wrapper := user.Session.ClonePoolConn; wrapper != nil {
 				wrapper.Release()
+
 				user.Session.ClonePoolConn = nil
 			}
 
@@ -659,6 +661,7 @@ func (s *ProcessingService) runV2Reset(ctx context.Context, user *usermanager.Us
 	// reclaimed before re-acquiring (M2).
 	if wrapper := user.Session.ClonePoolConn; wrapper != nil {
 		wrapper.Release()
+
 		user.Session.ClonePoolConn = nil
 	}
 
