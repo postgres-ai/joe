@@ -111,6 +111,25 @@ func TestDeliverV2Reply(t *testing.T) {
 		assert.True(t, retriable)
 	})
 
+	t.Run("redirects refused, target never contacted", func(t *testing.T) {
+		// SSRF hardening (SB1): a validated reply host must not be able to
+		// bounce the signed reply (with query results) to another address.
+		var targetHits atomic.Int32
+
+		target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			targetHits.Add(1)
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer target.Close()
+
+		redirector := httptest.NewServer(http.RedirectHandler(target.URL, http.StatusFound))
+		defer redirector.Close()
+
+		_, err := assistant.deliverV2Reply(ctx, redirector.URL, []byte(`{}`), "v0=sig")
+		assert.Error(t, err)
+		assert.EqualValues(t, 0, targetHits.Load(), "the redirect target must never receive the reply")
+	})
+
 	t.Run("connection refused retriable", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
@@ -267,6 +286,25 @@ func TestHandleV2Command(t *testing.T) {
 		body := dispatchBody("http://reply.invalid")
 		recorder := post(newAssistant(true, &fakeV2Executor{}), body, "v0=deadbeef")
 		assert.Equal(t, http.StatusForbidden, recorder.Code)
+	})
+
+	t.Run("reply_url host outside the allowlist rejected with 400", func(t *testing.T) {
+		// SSRF hardening (SB1): the reply host is pinned to the platform
+		// callback host — an HMAC-valid dispatch must not be able to point
+		// the signed reply (query results) at an arbitrary address.
+		executor := &fakeV2Executor{requests: make(chan *pgaiv2sdk.DispatchRequest, 1)}
+		assistant := newAssistant(true, executor)
+		assistant.appCfg.Platform.URL = "https://platform.example.com/api/general"
+
+		body := dispatchBody("https://evil.example.com/rpc/joe_command_reply")
+		recorder := post(assistant, body, signBody(body))
+		assert.Equal(t, http.StatusBadRequest, recorder.Code)
+
+		select {
+		case <-executor.requests:
+			t.Fatal("a dispatch with a non-allowlisted reply_url must not execute")
+		case <-time.After(100 * time.Millisecond):
+		}
 	})
 
 	t.Run("invalid envelope rejected with 400", func(t *testing.T) {

@@ -228,7 +228,7 @@ func TestReplyBodyJSONShape(t *testing.T) {
 func TestParseDispatchRequest(t *testing.T) {
 	valid := `{"schema_version":2,"command_id":"12","command":"plan",` +
 		`"command_string":"explain (format json, costs on, buffers off, analyze off, timing off) select 1",` +
-		`"session_id":"3","nonce":"abcd","reply_url":"http://api.example.com/rpc/joe_command_reply",` +
+		`"session_id":"3","nonce":"abcd","reply_url":"https://api.example.com/rpc/joe_command_reply",` +
 		`"reply_signature_recipe":{"alg":"hmac-sha256"},"conformance_digest_expected":""}`
 
 	t.Run("valid", func(t *testing.T) {
@@ -251,6 +251,16 @@ func TestParseDispatchRequest(t *testing.T) {
 		{"missing session_id", `{"schema_version":2,"command_id":"1","command":"plan","nonce":"n","reply_url":"u"}`},
 		{"hypo without args.query", `{"schema_version":2,"command_id":"1","command":"hypo","session_id":"1","nonce":"n","reply_url":"u"}`},
 		{"not json", `nope`},
+		// SSRF hardening (SB1): the signed reply carries query results and
+		// must only ever be POSTed to an https reply_url with a real host.
+		{"http reply_url rejected", `{"schema_version":2,"command_id":"1","command":"plan","session_id":"1","nonce":"n",` +
+			`"reply_url":"http://api.example.com/rpc/joe_command_reply"}`},
+		{"non-http scheme rejected", `{"schema_version":2,"command_id":"1","command":"plan","session_id":"1","nonce":"n",` +
+			`"reply_url":"gopher://api.example.com/rpc/joe_command_reply"}`},
+		{"reply_url without host rejected", `{"schema_version":2,"command_id":"1","command":"plan","session_id":"1","nonce":"n",` +
+			`"reply_url":"https:///rpc/joe_command_reply"}`},
+		{"opaque reply_url rejected", `{"schema_version":2,"command_id":"1","command":"plan","session_id":"1","nonce":"n",` +
+			`"reply_url":"mailto:attacker@example.com"}`},
 	}
 
 	for _, tc := range invalid {
