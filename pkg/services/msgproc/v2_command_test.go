@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	pgaiv2sdk "gitlab.com/postgres-ai/joe/pkg/pgai_v2_sdk"
 	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"
@@ -200,14 +201,24 @@ func TestExecuteV2CommandUnknownCommand(t *testing.T) {
 
 func TestLockV2Session(t *testing.T) {
 	s := &ProcessingService{}
+	ctx := context.Background()
+
+	mustLock := func(t *testing.T, sessionID string) func() {
+		t.Helper()
+
+		unlock, err := s.lockV2Session(ctx, sessionID)
+		require.NoError(t, err)
+
+		return unlock
+	}
 
 	t.Run("same session serializes", func(t *testing.T) {
-		first := s.lockV2Session("31")
+		first := mustLock(t, "31")
 
 		acquired := make(chan struct{})
 
 		go func() {
-			second := s.lockV2Session("31")
+			second := mustLock(t, "31")
 			close(acquired)
 			second()
 		}()
@@ -228,13 +239,13 @@ func TestLockV2Session(t *testing.T) {
 	})
 
 	t.Run("distinct sessions do not block each other", func(t *testing.T) {
-		first := s.lockV2Session("31")
+		first := mustLock(t, "31")
 		defer first()
 
 		acquired := make(chan struct{})
 
 		go func() {
-			other := s.lockV2Session("32")
+			other := mustLock(t, "32")
 			close(acquired)
 			other()
 		}()
@@ -244,6 +255,42 @@ func TestLockV2Session(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatal("a lock for a distinct session must not block")
 		}
+	})
+
+	t.Run("waiting is cancellable (H1)", func(t *testing.T) {
+		first := mustLock(t, "33")
+		defer first()
+
+		cancelCtx, cancel := context.WithCancel(context.Background())
+
+		errCh := make(chan error, 1)
+
+		go func() {
+			_, err := s.lockV2Session(cancelCtx, "33")
+			errCh <- err
+		}()
+
+		cancel()
+
+		select {
+		case err := <-errCh:
+			require.Error(t, err, "a cancelled wait must not report a lock")
+		case <-time.After(5 * time.Second):
+			t.Fatal("the lock wait did not observe cancellation — goroutine leak")
+		}
+	})
+
+	t.Run("try-lock skips a busy session, acquires a free one", func(t *testing.T) {
+		first := mustLock(t, "34")
+
+		_, ok := s.tryLockV2Session("34")
+		assert.False(t, ok, "try-lock must not acquire a busy session")
+
+		first()
+
+		unlock, ok := s.tryLockV2Session("34")
+		require.True(t, ok, "try-lock must acquire a free session")
+		unlock()
 	})
 }
 

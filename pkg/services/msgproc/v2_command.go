@@ -80,7 +80,10 @@ func (s *ProcessingService) ExecuteV2Command(ctx context.Context,
 		return nil, err
 	}
 
-	unlock := s.lockV2Session(req.SessionID)
+	unlock, err := s.lockV2Session(ctx, req.SessionID)
+	if err != nil {
+		return nil, err
+	}
 	defer unlock()
 
 	user, err := s.UserManager.CreateUser(v2UserPrefix + req.SessionID)
@@ -136,9 +139,9 @@ func (s *ProcessingService) v2Runner(command string) (v2CommandRunner, error) {
 		}, nil
 
 	case pgaiv2sdk.CommandDescribe:
-		return func(_ context.Context, user *usermanager.User,
+		return func(ctx context.Context, user *usermanager.User,
 			req *pgaiv2sdk.DispatchRequest) (map[string]interface{}, error) {
-			return s.runV2Describe(user, req.CommandString)
+			return s.runV2Describe(ctx, user, req.CommandString)
 		}, nil
 
 	case pgaiv2sdk.CommandTerminate:
@@ -158,12 +161,37 @@ func (s *ProcessingService) v2Runner(command string) (v2CommandRunner, error) {
 }
 
 // lockV2Session serializes command execution within one platform session.
-func (s *ProcessingService) lockV2Session(sessionID string) func() {
-	muIface, _ := s.v2SessionLocks.LoadOrStore(sessionID, &sync.Mutex{})
-	mu := muIface.(*sync.Mutex)
-	mu.Lock()
+// The wait is cancellable (H1): a session wedged by a hung command must not
+// leak a goroutine per queued dispatch until process restart.
+func (s *ProcessingService) lockV2Session(ctx context.Context, sessionID string) (func(), error) {
+	sem := s.v2SessionSemaphore(sessionID)
 
-	return mu.Unlock
+	select {
+	case sem <- struct{}{}:
+		return func() { <-sem }, nil
+	case <-ctx.Done():
+		return nil, errors.Wrapf(ctx.Err(), "gave up waiting for session %q (busy)", sessionID)
+	}
+}
+
+// tryLockV2Session acquires the session lock only when it is free — the
+// reaper uses it so idle cleanup can never race a running command (H2).
+func (s *ProcessingService) tryLockV2Session(sessionID string) (func(), bool) {
+	sem := s.v2SessionSemaphore(sessionID)
+
+	select {
+	case sem <- struct{}{}:
+		return func() { <-sem }, true
+	default:
+		return nil, false
+	}
+}
+
+// v2SessionSemaphore resolves the per-session binary semaphore.
+func (s *ProcessingService) v2SessionSemaphore(sessionID string) chan struct{} {
+	semIface, _ := s.v2SessionLocks.LoadOrStore(sessionID, make(chan struct{}, 1))
+
+	return semIface.(chan struct{})
 }
 
 // ensureV2Session provides the user with a running clone session, creating a
@@ -519,11 +547,13 @@ func (s *ProcessingService) runV2Activity(ctx context.Context, user *usermanager
 }
 
 // runV2Describe transmits the psql meta-command through the existing psql
-// transmission runner.
-func (s *ProcessingService) runV2Describe(user *usermanager.User, commandString string) (map[string]interface{}, error) {
+// transmission runner. The context bounds the psql process (H1): a hung
+// psql must not hold the session lock forever.
+func (s *ProcessingService) runV2Describe(ctx context.Context, user *usermanager.User,
+	commandString string) (map[string]interface{}, error) {
 	runner := pgtransmission.NewPgTransmitter(user.Session.ConnParams, pgtransmission.LogsEnabledDefault)
 
-	output, err := runner.Run(commandString)
+	output, err := runner.RunWithContext(ctx, commandString)
 	if err != nil {
 		return nil, err
 	}

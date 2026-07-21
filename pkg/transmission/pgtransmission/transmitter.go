@@ -7,10 +7,12 @@ package pgtransmission
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/pkg/errors"
 
@@ -38,12 +40,19 @@ func NewPgTransmitter(clone models.Clone, logEnabled bool) *Transmitter {
 }
 
 func (tr Transmitter) Run(commandParam string) (string, error) {
+	return tr.RunWithContext(context.Background(), commandParam)
+}
+
+// RunWithContext transmits the command like Run, but kills a hung psql when
+// ctx is done, so a black-holed clone connection cannot wedge the caller
+// forever.
+func (tr Transmitter) RunWithContext(ctx context.Context, commandParam string) (string, error) {
 	cmdStr, err := prepareCommandParam(commandParam)
 	if err != nil {
 		return "", errors.Wrapf(err, "failed to prepare command")
 	}
 
-	out, err := tr.runPsql(cmdStr)
+	out, err := tr.runPsql(ctx, cmdStr)
 	if err != nil {
 		if runnerError, ok := err.(runners.RunnerError); ok {
 			if runnerError.ExitStatus == 0 {
@@ -66,7 +75,7 @@ func (tr Transmitter) Run(commandParam string) (string, error) {
 	return outFormatted, nil
 }
 
-func (tr Transmitter) runPsql(command string) ([]byte, error) {
+func (tr Transmitter) runPsql(ctx context.Context, command string) ([]byte, error) {
 	tempFile, err := os.CreateTemp("", "psql-query-*")
 	if err != nil {
 		return nil, errors.WithStack(err)
@@ -90,7 +99,7 @@ func (tr Transmitter) runPsql(command string) ([]byte, error) {
 	cmdStr := fmt.Sprintf("%s psql %s -X -f %s",
 		commandEnvString(tr.clone), commandConnString(tr.clone), tempFile.Name())
 
-	return executeCommand(cmdStr)
+	return executeCommandContext(ctx, cmdStr)
 }
 
 // format formats output.
@@ -147,13 +156,18 @@ func commandConnString(clone models.Clone) string {
 		clone.Host, clone.Port, clone.Username, clone.Name)
 }
 
-func executeCommand(cmdStr string) ([]byte, error) {
+// commandKillGrace bounds how long Wait may linger after the process is
+// killed on ctx cancellation (e.g. on inherited pipes held by children).
+const commandKillGrace = 5 * time.Second
+
+func executeCommandContext(ctx context.Context, cmdStr string) ([]byte, error) {
 	log.Dbg(fmt.Sprintf(`SQLRun: "%s"`, cmdStr))
 
 	var out bytes.Buffer
 	var stderr bytes.Buffer
 
-	cmd := exec.Command("/bin/bash", "-c", cmdStr)
+	cmd := exec.CommandContext(ctx, "/bin/bash", "-c", cmdStr)
+	cmd.WaitDelay = commandKillGrace
 
 	cmd.Stdout = &out
 	cmd.Stderr = &stderr
