@@ -241,19 +241,30 @@ func (s *ProcessingService) ensureV2Session(ctx context.Context, user *usermanag
 }
 
 // runV2Plan executes the fixed EXPLAIN (FORMAT JSON, no ANALYZE) envelope and
-// a companion text EXPLAIN of the bare statement.
+// a companion text EXPLAIN of the bare statement, inside an explicitly
+// read-only, rolled-back transaction (SB3: plan never executes the statement,
+// so read-only is safe and blocks any write escape).
 func (s *ProcessingService) runV2Plan(ctx context.Context, user *usermanager.User,
 	commandString string) (map[string]interface{}, error) {
-	conn := user.Session.CloneConnection
+	sql := strings.TrimPrefix(commandString, v2PlanEnvelopePrefix)
 
-	planJSON, err := queryV2TextLines(ctx, conn, commandString)
-	if err != nil {
+	if err := v2EnsureSingleStatement(sql); err != nil {
 		return nil, err
 	}
 
-	sql := strings.TrimPrefix(commandString, v2PlanEnvelopePrefix)
+	var planJSON, planText string
 
-	planText, err := queryV2TextLines(ctx, conn, v2PlanTextQuery+sql)
+	err := s.inRolledBackV2Tx(ctx, user, pgx.TxOptions{AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
+		var txErr error
+
+		if planJSON, txErr = queryV2TextLines(ctx, tx, commandString); txErr != nil {
+			return txErr
+		}
+
+		planText, txErr = queryV2TextLines(ctx, tx, v2PlanTextQuery+sql)
+
+		return txErr
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -272,9 +283,18 @@ func (s *ProcessingService) runV2Explain(ctx context.Context, user *usermanager.
 	sql := strings.TrimPrefix(commandString, v2ExplainEnvelopePrefix)
 	sql = strings.TrimSuffix(sql, v2ExplainEnvelopeSuffix)
 
+	if err := v2EnsureSingleStatement(sql); err != nil {
+		return nil, err
+	}
+
 	var planJSON, planText string
 
-	err := s.inRolledBackV2Tx(ctx, user, func(tx pgx.Tx) error {
+	// NOT AccessMode ReadOnly: EXPLAIN ANALYZE actually executes the
+	// statement, and explaining DML (UPDATE/DELETE/INSERT) on the clone is a
+	// core Joe feature — a read-only transaction would reject it. The
+	// no-commit invariant is upheld by the unconditional rollback plus the
+	// single-statement guard above (no `commit;` escape).
+	err := s.inRolledBackV2Tx(ctx, user, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		var txErr error
 
 		if planJSON, txErr = queryV2TextLines(ctx, tx, v2ExplainJSONQuery+sql); txErr != nil {
@@ -422,12 +442,23 @@ func (s *ProcessingService) runV2Hypo(ctx context.Context, user *usermanager.Use
 		return nil, errors.New("hypo dispatch carried no args.query")
 	}
 
+	if err := v2EnsureSingleStatement(commandString); err != nil {
+		return nil, err
+	}
+
+	if err := v2EnsureSingleStatement(targetQuery); err != nil {
+		return nil, err
+	}
+
 	var (
 		hypoPlan  string
 		hypoNames []string
 	)
 
-	err := s.inRolledBackV2Tx(ctx, user, func(tx pgx.Tx) error {
+	// NOT AccessMode ReadOnly: `create extension if not exists hypopg` and
+	// hypopg_create_index need a writable transaction; everything is rolled
+	// back and the single-statement guard blocks any `commit;` escape.
+	err := s.inRolledBackV2Tx(ctx, user, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		if _, txErr := tx.Exec(ctx, "create extension if not exists hypopg"); txErr != nil {
 			return errors.Wrap(txErr, "failed to init the HypoPG extension")
 		}
@@ -558,14 +589,15 @@ func (s *ProcessingService) runV2Reset(ctx context.Context, user *usermanager.Us
 
 // inRolledBackV2Tx runs fn inside a transaction on a dedicated pool
 // connection and ALWAYS rolls it back.
-func (s *ProcessingService) inRolledBackV2Tx(ctx context.Context, user *usermanager.User, fn func(tx pgx.Tx) error) error {
+func (s *ProcessingService) inRolledBackV2Tx(ctx context.Context, user *usermanager.User,
+	txOptions pgx.TxOptions, fn func(tx pgx.Tx) error) error {
 	serviceConn, err := user.Session.Pool.Acquire(ctx)
 	if err != nil {
 		return errors.Wrap(err, "failed to acquire connection")
 	}
 	defer serviceConn.Release()
 
-	tx, err := serviceConn.BeginTx(ctx, pgx.TxOptions{})
+	tx, err := serviceConn.BeginTx(ctx, txOptions)
 	if err != nil {
 		return errors.Wrap(err, "failed to begin transaction")
 	}

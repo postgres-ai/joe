@@ -14,6 +14,52 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"
 )
 
+func TestV2EnsureSingleStatement(t *testing.T) {
+	valid := []struct {
+		name string
+		sql  string
+	}{
+		{"plain select", "select * from users where id = 1"},
+		{"trailing semicolon", "select 1;"},
+		{"trailing semicolon and whitespace", "select 1 ;  \n\t"},
+		{"trailing semicolon and comment", "select 1; -- done"},
+		{"trailing semicolon and block comment", "select 1; /* done */"},
+		{"semicolon inside a string literal", "select * from t where name = 'a;b'"},
+		{"doubled quote inside a string", "select 'it''s; fine'"},
+		{"semicolon inside a quoted identifier", `select "col;umn" from t`},
+		{"semicolon inside a dollar-quoted body", "select $$a; b$$"},
+		{"semicolon inside a tagged dollar quote", "select $fn$begin; end$fn$"},
+		{"dollar parameter placeholder", "select * from t where id = $1"},
+		{"semicolon inside a line comment", "select 1 -- ; drop table t\n"},
+		{"semicolon inside a block comment", "select 1 /* ; drop table t */"},
+		{"semicolon inside a nested block comment", "select 1 /* a /* ; */ b */"},
+	}
+
+	for _, tc := range valid {
+		t.Run("valid: "+tc.name, func(t *testing.T) {
+			assert.NoError(t, v2EnsureSingleStatement(tc.sql))
+		})
+	}
+
+	invalid := []struct {
+		name string
+		sql  string
+	}{
+		{"two statements", "select 1; select 2"},
+		{"commit escape", "select 1; commit; delete from users"},
+		{"statement after trailing comment", "select 1; -- x\n delete from users"},
+		{"string after semicolon", "select 1; 'x'"},
+		{"unterminated string hiding nothing", "select 1; delete from t where a = 'x"},
+		{"backslash does not escape a quote", `select 'a\'; delete from users --'`},
+	}
+
+	for _, tc := range invalid {
+		t.Run("invalid: "+tc.name, func(t *testing.T) {
+			assert.Error(t, v2EnsureSingleStatement(tc.sql))
+		})
+	}
+}
+
 // The v2 plan/explain/hypo runners execute over the simple protocol, where a
 // semicolon-bearing command string runs as a multi-statement batch: a
 // trailing `commit; <dml>` would escape the rolled-back transaction and
