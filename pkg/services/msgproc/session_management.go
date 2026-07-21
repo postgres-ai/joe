@@ -27,13 +27,22 @@ func (s *ProcessingService) CheckIdleSessions(ctx context.Context) {
 	// List of sessionIDs.
 	directToNotify := make([]string, 0)
 
-	// TODO(akartasov): Fix data races.
+	// TODO(akartasov): Fix data races (v1 sessions; v2 sessions are handled
+	// under their per-session lock in checkIdleV2Session).
 	for _, user := range s.UserManager.Users() {
 		if ctx.Err() != nil {
 			return
 		}
 
 		if user == nil || user.Session.Clone == nil {
+			continue
+		}
+
+		// v2 sessions are reaped under their session lock so cleanup can
+		// never race a running command (H2), and they get no chat
+		// notifications.
+		if isV2Session(user) {
+			s.checkIdleV2Session(ctx, user)
 			continue
 		}
 
@@ -87,6 +96,13 @@ func (s *ProcessingService) RestoreSessions(ctx context.Context) error {
 		}
 
 		if user == nil || user.Session.Clone == nil {
+			continue
+		}
+
+		// v2 sessions are rebuilt lazily by ensureV2Session on the next
+		// dispatch; the v1 restore path must not reconnect them or post
+		// chat notifications for them (H2).
+		if isV2Session(user) {
 			continue
 		}
 
@@ -147,6 +163,49 @@ func (s *ProcessingService) RestoreSessions(ctx context.Context) error {
 	})
 
 	return nil
+}
+
+// isV2Session reports whether the user's session belongs to the Joe API v2
+// pipeline (per-platform-session clones with the fixed v2 clone ID prefix).
+func isV2Session(user *usermanager.User) bool {
+	return user.Session.Clone != nil && strings.HasPrefix(user.Session.Clone.ID, v2ClonePrefix)
+}
+
+// checkIdleV2Session reaps one idle v2 session under its session lock, so
+// cleanup can never race a running command (H2). A busy session is skipped:
+// the running command refreshes LastActionTs anyway. Mirroring the v1
+// policy, Joe-side state is cleaned once Database Lab reports the clone
+// inactive (DLE itself destroys idle clones via MaxIdleMinutes, so clones
+// do not leak).
+func (s *ProcessingService) checkIdleV2Session(ctx context.Context, user *usermanager.User) {
+	sessionID := user.Session.PlatformSessionID
+	if sessionID == "" {
+		return
+	}
+
+	unlock, ok := s.tryLockV2Session(sessionID)
+	if !ok {
+		// A command is in flight — not idle.
+		return
+	}
+	defer unlock()
+
+	// Re-check under the lock: a command may have finished and stopped or
+	// rebuilt the session in the meantime.
+	if user.Session.Clone == nil {
+		return
+	}
+
+	if util.MinutesAgo(user.Session.LastActionTs) < user.Session.Clone.Metadata.MaxIdleMinutes {
+		return
+	}
+
+	if s.isActiveSession(ctx, user.Session.Clone.ID) {
+		return
+	}
+
+	log.Dbg("v2: stopping idle session: ", sessionID)
+	s.stopSession(ctx, user)
 }
 
 // notifyChannelsRestartSession publishes messages in every channel with a list of users.

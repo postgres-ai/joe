@@ -200,7 +200,9 @@ func (s *ProcessingService) v2SessionSemaphore(sessionID string) chan struct{} {
 // platform's command lifecycle, not chat messages.
 func (s *ProcessingService) ensureV2Session(ctx context.Context, user *usermanager.User, sessionID string) error {
 	if user.Session.Clone != nil {
-		if s.isActiveSession(ctx, user.Session.Clone.ID) {
+		// Pool == nil happens after a process restart (connections are not
+		// persisted): fall through to the full rebuild below.
+		if user.Session.Pool != nil && s.isActiveSession(ctx, user.Session.Clone.ID) {
 			if conn := user.Session.CloneConnection; conn != nil && conn.Ping(ctx) == nil {
 				return nil
 			}
