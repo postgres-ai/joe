@@ -214,8 +214,21 @@ func (a *Assistant) getV2Executor() (v2CommandExecutor, error) {
 	return executor, nil
 }
 
-// processV2Command executes the command and delivers the signed reply.
+// processV2Command executes the command and delivers the signed reply. The
+// recover here sits at the ROOT of the dispatch goroutine (H3): execution
+// panics are already converted into error replies by executeV2Command, but a
+// panic in reply construction or delivery would otherwise escape the bare
+// goroutine and crash the whole Joe process.
 func (a *Assistant) processV2Command(executor v2CommandExecutor, request *pgaiv2sdk.DispatchRequest) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			log.Err(fmt.Sprintf("v2: panic while processing command_id=%s: %v\n%s",
+				request.CommandID, recovered, debug.Stack()))
+
+			a.postV2GenericErrorReply(request)
+		}
+	}()
+
 	ctx, cancel := context.WithTimeout(context.Background(), v2ProcessTimeout)
 	defer cancel()
 
@@ -264,6 +277,28 @@ func (a *Assistant) executeV2Command(ctx context.Context, executor v2CommandExec
 	}()
 
 	return executor.ExecuteV2Command(ctx, request)
+}
+
+// postV2GenericErrorReply best-effort delivers a generic error reply from
+// the goroutine-root panic handler. It must never panic itself: the panic
+// may have originated in this very delivery path, so a second panic here
+// would escape the already-consumed root recover.
+func (a *Assistant) postV2GenericErrorReply(request *pgaiv2sdk.DispatchRequest) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			log.Err(fmt.Sprintf("v2: panic while delivering the fallback error reply for command_id=%s: %v",
+				request.CommandID, recovered))
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), v2ReplyDeliveryTimeout)
+	defer cancel()
+
+	reply := pgaiv2sdk.NewErrorReply(request, "internal error while executing the command")
+
+	if err := a.postV2Reply(ctx, request.ReplyURL, reply); err != nil {
+		log.Err(fmt.Sprintf("v2: command_id=%s fallback error reply delivery failed: %v", request.CommandID, err))
+	}
 }
 
 // postV2Reply signs the reply per the locked contract and POSTs it to the
