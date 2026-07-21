@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"runtime/debug"
 	"time"
 	"unicode/utf8"
 
@@ -157,7 +158,7 @@ func (a *Assistant) processV2Command(executor v2CommandExecutor, request *pgaiv2
 
 	var reply *pgaiv2sdk.Reply
 
-	result, err := executor.ExecuteV2Command(ctx, request)
+	result, err := a.executeV2Command(ctx, executor, request)
 	if err != nil {
 		log.Err(fmt.Sprintf("v2: command_id=%s failed: %v", request.CommandID, err))
 
@@ -178,6 +179,25 @@ func (a *Assistant) processV2Command(executor v2CommandExecutor, request *pgaiv2
 	}
 
 	log.Dbg(fmt.Sprintf("v2: command_id=%s replied status=%s", request.CommandID, reply.Status))
+}
+
+// executeV2Command runs the executor with panic recovery (H3): a panic in
+// command execution must fail THIS command with a generic error reply — it
+// runs in a bare goroutine, so without recovery it would kill the whole Joe
+// process and every in-flight session. The panic value stays in the log; it
+// must not leak into the platform-facing reply.
+func (a *Assistant) executeV2Command(ctx context.Context, executor v2CommandExecutor,
+	request *pgaiv2sdk.DispatchRequest) (result map[string]interface{}, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			log.Err(fmt.Sprintf("v2: panic while executing command_id=%s: %v\n%s",
+				request.CommandID, recovered, debug.Stack()))
+
+			result, err = nil, errors.New("internal error while executing the command")
+		}
+	}()
+
+	return executor.ExecuteV2Command(ctx, request)
 }
 
 // postV2Reply signs the reply per the locked contract and POSTs it to the
