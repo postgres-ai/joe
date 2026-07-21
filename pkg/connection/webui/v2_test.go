@@ -468,6 +468,17 @@ func TestProcessV2CommandRecoversPanic(t *testing.T) {
 	}
 }
 
+func TestV2CommandDeduper(t *testing.T) {
+	deduper := &v2CommandDeduper{}
+	base := time.Now()
+
+	assert.False(t, deduper.markSeen("1", base), "first sighting is not a duplicate")
+	assert.True(t, deduper.markSeen("1", base.Add(time.Minute)), "within the TTL is a duplicate")
+	assert.False(t, deduper.markSeen("2", base.Add(time.Minute)), "distinct command IDs are independent")
+	assert.False(t, deduper.markSeen("1", base.Add(v2SeenCommandTTL+2*time.Minute)),
+		"after the TTL the command_id is forgotten (bounded cache)")
+}
+
 func TestV2AllowedReplyHosts(t *testing.T) {
 	assistant := &Assistant{appCfg: &config.Config{}}
 

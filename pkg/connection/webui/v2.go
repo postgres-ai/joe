@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"runtime/debug"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -53,7 +54,55 @@ const (
 	// the execution context: a command that consumed its full execution
 	// timeout must not be starved of its (cheap) reply-delivery window.
 	v2ReplyDeliveryTimeout = v2ReplyGrace + v2ReplyAttempts*(v2ReplyTimeout+v2ReplyRetryBackoff)
+
+	// v2SeenCommandTTL bounds the replay-protection window (M3): a
+	// command_id observed within the TTL is acked but not re-executed. The
+	// window comfortably exceeds the platform's per-command lifecycle.
+	v2SeenCommandTTL = 30 * time.Minute
+
+	// v2SeenCommandCap hard-bounds the dedup cache size; at the cap, new
+	// command IDs are rejected (fail closed — the platform retries later)
+	// rather than silently dropping replay protection.
+	v2SeenCommandCap = 100000
 )
+
+// v2CommandDeduper is a bounded-TTL seen-command_id cache (M3 replay
+// protection). The zero value is ready to use.
+type v2CommandDeduper struct {
+	mu   sync.Mutex
+	seen map[string]time.Time
+}
+
+// markSeen records the command_id and reports whether the dispatch must be
+// treated as a duplicate (already seen within the TTL, or the cache is at
+// its hard cap).
+func (d *v2CommandDeduper) markSeen(commandID string, now time.Time) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.seen == nil {
+		d.seen = make(map[string]time.Time)
+	}
+
+	for id, seenAt := range d.seen {
+		if now.Sub(seenAt) > v2SeenCommandTTL {
+			delete(d.seen, id)
+		}
+	}
+
+	if _, ok := d.seen[commandID]; ok {
+		return true
+	}
+
+	if len(d.seen) >= v2SeenCommandCap {
+		log.Err("v2: the seen-command cache is full; treating the dispatch as a duplicate (fail closed)")
+		return true
+	}
+
+	d.seen[commandID] = now
+
+	return false
+}
 
 // v2CommandExecutor runs a Joe API v2 command on a Database Lab clone.
 // Implemented by *msgproc.ProcessingService.
@@ -114,8 +163,23 @@ func (a *Assistant) handleV2Command(w http.ResponseWriter, body []byte) {
 		return
 	}
 
+	// Replay protection (M3): a command_id seen within the TTL is acked
+	// (the platform already owns this command's lifecycle) but NOT
+	// re-executed — replays of exec/terminate/reset must have no effect.
+	if a.v2SeenCommands.markSeen(request.CommandID, time.Now()) {
+		log.Msg("v2: duplicate dispatch ignored, command_id:", request.CommandID)
+		writeV2Ack(w)
+
+		return
+	}
+
 	go a.processV2Command(executor, request)
 
+	writeV2Ack(w)
+}
+
+// writeV2Ack writes the synchronous dispatch acknowledgement.
+func writeV2Ack(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
 	if err := json.NewEncoder(w).Encode(map[string]bool{"accepted": true}); err != nil {

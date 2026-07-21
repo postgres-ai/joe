@@ -49,6 +49,9 @@ type Assistant struct {
 	// v2ReplyTransport overrides the reply-delivery HTTP transport in tests
 	// (e.g. to trust an httptest TLS certificate). nil = http.DefaultTransport.
 	v2ReplyTransport http.RoundTripper
+
+	// v2SeenCommands is the bounded-TTL replay-protection cache (M3).
+	v2SeenCommands v2CommandDeduper
 }
 
 // meta contains meta information about an assistant service.
