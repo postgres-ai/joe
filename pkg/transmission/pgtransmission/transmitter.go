@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/pkg/errors"
@@ -168,6 +169,22 @@ func executeCommandContext(ctx context.Context, cmdStr string) ([]byte, error) {
 
 	cmd := exec.CommandContext(ctx, "/bin/bash", "-c", cmdStr)
 	cmd.WaitDelay = commandKillGrace
+
+	// H1: on ctx cancellation kill the WHOLE process group, not just the
+	// direct bash child. Bash exec-optimizes the lone psql command into the
+	// same PID, but any forked descendant (a compound command, or a child
+	// psql spawns itself) would otherwise be orphaned and keep running —
+	// along with its server-side backend — after the caller returns.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		if err == syscall.ESRCH {
+			// The group is already gone.
+			return os.ErrProcessDone
+		}
+
+		return err
+	}
 
 	cmd.Stdout = &out
 	cmd.Stderr = &stderr
