@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -532,6 +533,21 @@ func TestV2CommandDeduper(t *testing.T) {
 	assert.False(t, deduper.markSeen("2", base.Add(time.Minute)), "distinct command IDs are independent")
 	assert.False(t, deduper.markSeen("1", base.Add(v2SeenCommandTTL+2*time.Minute)),
 		"after the TTL the command_id is forgotten (bounded cache)")
+}
+
+func TestV2CommandDeduperCap(t *testing.T) {
+	deduper := &v2CommandDeduper{}
+	base := time.Now()
+
+	for i := 0; i < v2SeenCommandCap; i++ {
+		deduper.markSeen(fmt.Sprintf("cap-%d", i), base)
+	}
+
+	assert.True(t, deduper.markSeen("overflow", base.Add(time.Second)),
+		"at the cap with live entries a new command_id fails closed")
+
+	assert.False(t, deduper.markSeen("after-ttl", base.Add(v2SeenCommandTTL+time.Minute)),
+		"expired entries are swept, so the cap does not wedge the cache forever")
 }
 
 func TestV2AllowedReplyHosts(t *testing.T) {

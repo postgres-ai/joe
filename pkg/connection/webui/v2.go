@@ -66,13 +66,20 @@ const (
 	// command IDs are rejected (fail closed — the platform retries later)
 	// rather than silently dropping replay protection.
 	v2SeenCommandCap = 100000
+
+	// v2SeenSweepInterval bounds how often markSeen performs a full TTL
+	// sweep of the cache: a whole-map scan per dispatch is O(cap) under the
+	// mutex on the dispatch hot path, so eviction is amortized (and also
+	// triggered when the cap is reached).
+	v2SeenSweepInterval = time.Minute
 )
 
 // v2CommandDeduper is a bounded-TTL seen-command_id cache (M3 replay
 // protection). The zero value is ready to use.
 type v2CommandDeduper struct {
-	mu   sync.Mutex
-	seen map[string]time.Time
+	mu        sync.Mutex
+	seen      map[string]time.Time
+	lastSweep time.Time
 }
 
 // markSeen records the command_id and reports whether the dispatch must be
@@ -84,16 +91,24 @@ func (d *v2CommandDeduper) markSeen(commandID string, now time.Time) bool {
 
 	if d.seen == nil {
 		d.seen = make(map[string]time.Time)
+		d.lastSweep = now
 	}
 
-	for id, seenAt := range d.seen {
-		if now.Sub(seenAt) > v2SeenCommandTTL {
-			delete(d.seen, id)
-		}
+	// Amortized eviction: a full sweep per dispatch would cost O(cap) under
+	// the mutex; the lookup below checks the TTL itself, so expiry stays
+	// time-exact regardless of when the sweep last ran.
+	if now.Sub(d.lastSweep) >= v2SeenSweepInterval {
+		d.sweep(now)
 	}
 
-	if _, ok := d.seen[commandID]; ok {
+	if seenAt, ok := d.seen[commandID]; ok && now.Sub(seenAt) <= v2SeenCommandTTL {
 		return true
+	}
+
+	if len(d.seen) >= v2SeenCommandCap {
+		// Last-ditch sweep before failing closed: the cap may be consumed
+		// by expired entries the amortized sweep has not evicted yet.
+		d.sweep(now)
 	}
 
 	if len(d.seen) >= v2SeenCommandCap {
@@ -104,6 +119,17 @@ func (d *v2CommandDeduper) markSeen(commandID string, now time.Time) bool {
 	d.seen[commandID] = now
 
 	return false
+}
+
+// sweep evicts entries older than the TTL. Callers must hold d.mu.
+func (d *v2CommandDeduper) sweep(now time.Time) {
+	for id, seenAt := range d.seen {
+		if now.Sub(seenAt) > v2SeenCommandTTL {
+			delete(d.seen, id)
+		}
+	}
+
+	d.lastSweep = now
 }
 
 // v2CommandExecutor runs a Joe API v2 command on a Database Lab clone.
