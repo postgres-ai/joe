@@ -296,14 +296,16 @@ func (s *ProcessingService) runV2Explain(ctx context.Context, user *usermanager.
 }
 
 // runV2Exec executes the statement(s) on the session's persistent clone
-// connection, collecting the last result set, the row count, and notices.
+// connection, streaming the last result set (capped at v2ResultRowsCap) plus
+// the row count and notices.
 func (s *ProcessingService) runV2Exec(ctx context.Context, user *usermanager.User,
 	commandString string) (map[string]interface{}, error) {
 	pgConn := user.Session.CloneConnection.PgConn()
 
 	v2Notices.start(pgConn)
 
-	results, err := pgConn.Exec(ctx, commandString).ReadAll()
+	resultRows, rowCount, err := collectV2ExecResult(
+		&pgconnResultStream{mrr: pgConn.Exec(ctx, commandString)}, v2ResultRowsCap)
 
 	notices := v2Notices.stop(pgConn)
 	if notices == nil {
@@ -314,25 +316,102 @@ func (s *ProcessingService) runV2Exec(ctx context.Context, user *usermanager.Use
 		return nil, err
 	}
 
-	resultRows := []interface{}{}
-	rowCount := 0
-
-	if len(results) > 0 {
-		last := results[len(results)-1]
-
-		if len(last.FieldDescriptions) > 0 {
-			rowCount = len(last.Rows)
-			resultRows = convertV2ResultRows(last.FieldDescriptions, last.Rows, v2ResultRowsCap)
-		} else if affected := last.CommandTag.RowsAffected(); affected > 0 {
-			rowCount = int(affected)
-		}
-	}
-
 	return map[string]interface{}{
 		"result_rows": resultRows,
 		"row_count":   json.Number(strconv.Itoa(rowCount)),
 		"notices":     stringsToInterfaces(notices),
 	}, nil
+}
+
+// v2RowStream is one result set's row stream (*pgconn.ResultReader).
+type v2RowStream interface {
+	NextRow() bool
+	FieldDescriptions() []pgconn.FieldDescription
+	Values() [][]byte
+	Close() (pgconn.CommandTag, error)
+}
+
+// v2ResultStream is a multi-statement result stream
+// (*pgconn.MultiResultReader via pgconnResultStream).
+type v2ResultStream interface {
+	NextResult() bool
+	ResultReader() v2RowStream
+	Close() error
+}
+
+// pgconnResultStream adapts *pgconn.MultiResultReader to v2ResultStream.
+type pgconnResultStream struct {
+	mrr *pgconn.MultiResultReader
+}
+
+func (s *pgconnResultStream) NextResult() bool { return s.mrr.NextResult() }
+
+func (s *pgconnResultStream) ResultReader() v2RowStream { return s.mrr.ResultReader() }
+
+func (s *pgconnResultStream) Close() error { return s.mrr.Close() }
+
+// collectV2ExecResult streams every result set of a (possibly
+// multi-statement) exec, keeping only the LAST result set's data: up to
+// limit converted rows plus the total row count. Rows beyond the cap are
+// drained and counted but never retained, so an oversized result cannot
+// materialize in memory (SB2: `select * from big_table` must not OOM Joe).
+// Values are converted row-by-row because the reader's raw values live in a
+// reused wire buffer.
+func collectV2ExecResult(results v2ResultStream, limit int) ([]interface{}, int, error) {
+	resultRows := []interface{}{}
+	rowCount := 0
+
+	for results.NextResult() {
+		reader := results.ResultReader()
+		fields := reader.FieldDescriptions()
+
+		rows := []interface{}{}
+		count := 0
+
+		for reader.NextRow() {
+			count++
+
+			if len(rows) >= limit {
+				// Drain to keep the count accurate; never retain the row.
+				continue
+			}
+
+			rawValues := reader.Values()
+			row := make(map[string]interface{}, len(fields))
+
+			for i, field := range fields {
+				var raw []byte
+				if i < len(rawValues) {
+					raw = rawValues[i]
+				}
+
+				row[field.Name] = convertV2Value(field.DataTypeOID, raw)
+			}
+
+			rows = append(rows, row)
+		}
+
+		commandTag, err := reader.Close()
+		if err != nil {
+			_ = results.Close()
+
+			return nil, 0, err
+		}
+
+		// The last result set wins — mirroring the pre-streaming semantics.
+		if len(fields) > 0 {
+			resultRows, rowCount = rows, count
+		} else {
+			resultRows = []interface{}{}
+			rowCount = int(commandTag.RowsAffected())
+		}
+	}
+
+	if err := results.Close(); err != nil {
+		return nil, 0, err
+	}
+
+	return resultRows, rowCount, nil
 }
 
 // runV2Hypo creates the hypothetical index (rolled back afterwards) and
@@ -561,33 +640,6 @@ func queryV2Snapshot(ctx context.Context, db querier.Querier, sql string, limit 
 	}
 
 	return snapshot, nil
-}
-
-// convertV2ResultRows converts raw text-format rows into JSON-ready objects,
-// capped at limit rows.
-func convertV2ResultRows(fields []pgconn.FieldDescription, rows [][][]byte, limit int) []interface{} {
-	converted := make([]interface{}, 0, min(len(rows), limit))
-
-	for _, rawRow := range rows {
-		if len(converted) >= limit {
-			break
-		}
-
-		row := make(map[string]interface{}, len(fields))
-
-		for i, field := range fields {
-			var raw []byte
-			if i < len(rawRow) {
-				raw = rawRow[i]
-			}
-
-			row[field.Name] = convertV2Value(field.DataTypeOID, raw)
-		}
-
-		converted = append(converted, row)
-	}
-
-	return converted
 }
 
 // v2JSONNumberRe matches the JSON number grammar — the only server texts safe

@@ -47,29 +47,25 @@ func TestConvertV2Value(t *testing.T) {
 	}
 }
 
-func TestConvertV2ResultRows(t *testing.T) {
-	fields := []pgconn.FieldDescription{
-		{Name: "id", DataTypeOID: pgtype.Int4OID},
-		{Name: "name", DataTypeOID: pgtype.TextOID},
-	}
-	rows := [][][]byte{
-		{[]byte("1"), []byte("alice")},
-		{[]byte("2"), []byte("bob")},
-		{[]byte("3"), nil},
-	}
-
-	t.Run("converted with names and types", func(t *testing.T) {
-		converted := convertV2ResultRows(fields, rows, 10)
-		assert.Equal(t, []interface{}{
-			map[string]interface{}{"id": json.Number("1"), "name": "alice"},
-			map[string]interface{}{"id": json.Number("2"), "name": "bob"},
-			map[string]interface{}{"id": json.Number("3"), "name": nil},
-		}, converted)
-	})
-
-	t.Run("capped", func(t *testing.T) {
-		assert.Len(t, convertV2ResultRows(fields, rows, 2), 2)
-	})
+func TestCollectV2ExecResultConvertsNamesAndNulls(t *testing.T) {
+	// Field-name/type/null conversion through the streaming collector
+	// (successor of the materializing convertV2ResultRows).
+	stream := &fakeResultStream{results: []*fakeRowStream{{
+		fields: []pgconn.FieldDescription{
+			{Name: "id", DataTypeOID: pgtype.Int4OID},
+			{Name: "name", DataTypeOID: pgtype.TextOID},
+		},
+		total: 1,
+	}}}
+	stream.results[0].buf = [][]byte{[]byte("7"), nil}
+	// Single-column fake counter would overwrite buf[0]; pre-set total=1 and
+	// let NextRow refresh only the first column.
+	rows, rowCount, err := collectV2ExecResult(stream, 10)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, rowCount)
+	assert.Equal(t, []interface{}{
+		map[string]interface{}{"id": json.Number("1"), "name": nil},
+	}, rows)
 }
 
 func TestExtractV2TerminatePID(t *testing.T) {
