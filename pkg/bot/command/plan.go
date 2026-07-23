@@ -28,15 +28,18 @@ type PlanCmd struct {
 	command   *platform.Command
 	message   *models.Message
 	userConn  *pgx.Conn
+	dbVersion int
 	messenger connection.Messenger
 }
 
 // NewPlan return a new plan command.
-func NewPlan(cmd *platform.Command, msg *models.Message, db *pgx.Conn, messengerSvc connection.Messenger) *PlanCmd {
+func NewPlan(cmd *platform.Command, msg *models.Message, db *pgx.Conn, dbVersion int,
+	messengerSvc connection.Messenger) *PlanCmd {
 	return &PlanCmd{
 		command:   cmd,
 		message:   msg,
 		userConn:  db,
+		dbVersion: dbVersion,
 		messenger: messengerSvc,
 	}
 }
@@ -59,7 +62,7 @@ func (cmd PlanCmd) Execute(ctx context.Context) error {
 // explainWithoutExecution runs explain without execution.
 func (cmd *PlanCmd) explainWithoutExecution(ctx context.Context) (string, error) {
 	// Explain request and show.
-	explainResult, err := querier.DBQueryWithResponse(ctx, cmd.userConn, queryExplain+cmd.command.Query)
+	explainResult, err := querier.DBQueryWithResponse(ctx, cmd.userConn, planPrefix(cmd.dbVersion)+cmd.command.Query)
 	if err != nil {
 		return "", err
 	}
@@ -146,7 +149,7 @@ func (cmd *PlanCmd) runQueryWithoutHypo(ctx context.Context) (string, error) {
 		return "", errors.Wrap(err, "failed to disable a hypopg setting")
 	}
 
-	queryWithoutHypo := fmt.Sprintf(`%s %s`, queryExplain, strings.Trim(cmd.command.Query, ";"))
+	queryWithoutHypo := fmt.Sprintf(`%s %s`, planPrefix(cmd.dbVersion), strings.Trim(cmd.command.Query, ";"))
 
 	rows, err := tx.Query(ctx, queryWithoutHypo)
 	if err != nil {
@@ -175,4 +178,12 @@ func (cmd *PlanCmd) runQueryWithoutHypo(ctx context.Context) (string, error) {
 	}
 
 	return explainResultWithoutHypo.String(), tx.Commit(ctx)
+}
+
+func planPrefix(dbVersionNum int) string {
+	if (dbVersionNum / postgresNumDiv) >= pgVersion16 {
+		return "EXPLAIN (GENERIC_PLAN, FORMAT TEXT) "
+	}
+
+	return queryExplain
 }

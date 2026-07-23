@@ -37,6 +37,7 @@ const (
 	postgresNumDiv = 10000 // Divider to get version from server_version_num.
 	pgVersion12    = 12    // Explain Settings are available starting with Postgres 12.
 	pgVersion13    = 13    // Explain WAL are available starting with Postgres 13.
+	pgVersion16    = 16    // Explain GENERIC_PLAN is available starting with Postgres 16.
 
 	// locksTitle shows locks for a single query analyzed with EXPLAIN.
 	// locksTitle = "*Query heavy locks:*\n".
@@ -81,7 +82,9 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 		return err
 	}
 
-	cmd := NewPlan(command, msg, session.CloneConnection, msgSvc)
+	// Keep the preliminary plan for the execution-oriented command unchanged.
+	// GENERIC_PLAN support belongs to the standalone, non-executing plan command.
+	cmd := NewPlan(command, msg, session.CloneConnection, 0, msgSvc)
 
 	msgInitText, err := cmd.explainWithoutExecution(ctx)
 	if err != nil {
