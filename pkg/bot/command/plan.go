@@ -20,34 +20,58 @@ import (
 	"gitlab.com/postgres-ai/joe/pkg/util/text"
 )
 
-// MsgPlanOptionReq describes an explain without execution error.
-const MsgPlanOptionReq = "Use `plan` to see the query's plan without execution, e.g. `plan select 1`"
+const (
+	// MsgPlanOptionReq describes an explain without execution error.
+	MsgPlanOptionReq = "Use `plan` to see the query's plan without execution, e.g. `plan select 1`"
+	// MsgGenericPlanOptionReq describes a generic plan without execution error.
+	MsgGenericPlanOptionReq = "Use `generic-plan` to see a generic plan without execution, e.g. `generic-plan select * from t where id = $1`"
+	// MsgGenericPlanVersionReq describes the minimum PostgreSQL version for generic plans.
+	MsgGenericPlanVersionReq = "`generic-plan` requires PostgreSQL 16 or newer"
+
+	queryGenericPlan = "EXPLAIN (GENERIC_PLAN, FORMAT TEXT) "
+)
 
 // PlanCmd defines the plan command.
 type PlanCmd struct {
 	command   *platform.Command
 	message   *models.Message
 	userConn  *pgx.Conn
+	generic   bool
 	dbVersion int
 	messenger connection.Messenger
 }
 
-// NewPlan return a new plan command.
-func NewPlan(cmd *platform.Command, msg *models.Message, db *pgx.Conn, dbVersion int,
-	messengerSvc connection.Messenger) *PlanCmd {
+// NewPlan returns a new plan command.
+func NewPlan(cmd *platform.Command, msg *models.Message, db *pgx.Conn, messengerSvc connection.Messenger) *PlanCmd {
 	return &PlanCmd{
 		command:   cmd,
 		message:   msg,
 		userConn:  db,
-		dbVersion: dbVersion,
 		messenger: messengerSvc,
 	}
+}
+
+// NewGenericPlan returns a new generic plan command.
+func NewGenericPlan(cmd *platform.Command, msg *models.Message, db *pgx.Conn, dbVersion int,
+	messengerSvc connection.Messenger) *PlanCmd {
+	planCmd := NewPlan(cmd, msg, db, messengerSvc)
+	planCmd.generic = true
+	planCmd.dbVersion = dbVersion
+
+	return planCmd
 }
 
 // Execute runs the plan command.
 func (cmd PlanCmd) Execute(ctx context.Context) error {
 	if cmd.command.Query == "" {
+		if cmd.generic {
+			return errors.New(MsgGenericPlanOptionReq)
+		}
+
 		return errors.New(MsgPlanOptionReq)
+	}
+	if cmd.generic && (cmd.dbVersion/postgresNumDiv) < pgVersion16 {
+		return errors.New(MsgGenericPlanVersionReq)
 	}
 
 	if _, err := cmd.explainWithoutExecution(ctx); err != nil {
@@ -62,7 +86,7 @@ func (cmd PlanCmd) Execute(ctx context.Context) error {
 // explainWithoutExecution runs explain without execution.
 func (cmd *PlanCmd) explainWithoutExecution(ctx context.Context) (string, error) {
 	// Explain request and show.
-	explainResult, err := querier.DBQueryWithResponse(ctx, cmd.userConn, planPrefix(cmd.dbVersion)+cmd.command.Query)
+	explainResult, err := querier.DBQueryWithResponse(ctx, cmd.userConn, cmd.planPrefix()+cmd.command.Query)
 	if err != nil {
 		return "", err
 	}
@@ -73,7 +97,11 @@ func (cmd *PlanCmd) explainWithoutExecution(ctx context.Context) (string, error)
 	msgInitText := cmd.message.Text
 
 	includeHypoPG := false
+	planTitle := "Plan"
 	explainPlanTitle := ""
+	if cmd.generic {
+		planTitle = "Generic plan"
+	}
 
 	if hypoIndexes, err := listHypoIndexes(ctx, cmd.userConn); err == nil && len(hypoIndexes) > 0 {
 		if isHypoIndexInvolved(explainResult, hypoIndexes) {
@@ -82,7 +110,7 @@ func (cmd *PlanCmd) explainWithoutExecution(ctx context.Context) (string, error)
 		}
 	}
 
-	cmd.message.AppendText(fmt.Sprintf("*Plan%s:*\n```%s```", explainPlanTitle, planPreview))
+	cmd.message.AppendText(fmt.Sprintf("*%s%s:*\n```%s```", planTitle, explainPlanTitle, planPreview))
 
 	if err := cmd.messenger.UpdateText(cmd.message); err != nil {
 		log.Err("Show plan: ", err)
@@ -101,7 +129,7 @@ func (cmd *PlanCmd) explainWithoutExecution(ctx context.Context) (string, error)
 		if explainResultWithoutHypo, err := cmd.runQueryWithoutHypo(ctx); err == nil {
 			planPreview, isTruncated = text.CutText(explainResultWithoutHypo, PlanSize, SeparatorPlan)
 
-			cmd.message.AppendText(fmt.Sprintf("*Plan without HypoPG indexes:*\n```%s```", planPreview))
+			cmd.message.AppendText(fmt.Sprintf("*%s without HypoPG indexes:*\n```%s```", planTitle, planPreview))
 			if err := cmd.messenger.UpdateText(cmd.message); err != nil {
 				log.Err("Show plan: ", err)
 				return "", err
@@ -124,7 +152,7 @@ func (cmd *PlanCmd) explainWithoutExecution(ctx context.Context) (string, error)
 		detailsText = " " + CutText
 	}
 
-	cmd.message.AppendText(fmt.Sprintf("<%s|Full plan (w/o execution)>%s", permalink, detailsText))
+	cmd.message.AppendText(fmt.Sprintf("<%s|Full %s (w/o execution)>%s", permalink, strings.ToLower(planTitle), detailsText))
 	err = cmd.messenger.UpdateText(cmd.message)
 	if err != nil {
 		log.Err("File: ", err)
@@ -149,7 +177,7 @@ func (cmd *PlanCmd) runQueryWithoutHypo(ctx context.Context) (string, error) {
 		return "", errors.Wrap(err, "failed to disable a hypopg setting")
 	}
 
-	queryWithoutHypo := fmt.Sprintf(`%s %s`, planPrefix(cmd.dbVersion), strings.Trim(cmd.command.Query, ";"))
+	queryWithoutHypo := fmt.Sprintf(`%s %s`, cmd.planPrefix(), strings.Trim(cmd.command.Query, ";"))
 
 	rows, err := tx.Query(ctx, queryWithoutHypo)
 	if err != nil {
@@ -180,9 +208,9 @@ func (cmd *PlanCmd) runQueryWithoutHypo(ctx context.Context) (string, error) {
 	return explainResultWithoutHypo.String(), tx.Commit(ctx)
 }
 
-func planPrefix(dbVersionNum int) string {
-	if (dbVersionNum / postgresNumDiv) >= pgVersion16 {
-		return "EXPLAIN (GENERIC_PLAN, FORMAT TEXT) "
+func (cmd PlanCmd) planPrefix() string {
+	if cmd.generic {
+		return queryGenericPlan
 	}
 
 	return queryExplain

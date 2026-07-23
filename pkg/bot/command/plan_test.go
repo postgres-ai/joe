@@ -1,42 +1,48 @@
 package command
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 )
 
 func TestPlanPrefix(t *testing.T) {
 	testCases := []struct {
 		name           string
-		dbVersion      int
+		generic        bool
 		expectedPrefix string
 	}{
 		{
-			name:           "unknown version",
-			dbVersion:      0,
+			name:           "normal plan",
 			expectedPrefix: queryExplain,
 		},
 		{
-			name:           "PostgreSQL 15",
-			dbVersion:      150000,
-			expectedPrefix: queryExplain,
-		},
-		{
-			name:           "PostgreSQL 16",
-			dbVersion:      160000,
-			expectedPrefix: "EXPLAIN (GENERIC_PLAN, FORMAT TEXT) ",
-		},
-		{
-			name:           "PostgreSQL 19 beta",
-			dbVersion:      190000,
-			expectedPrefix: "EXPLAIN (GENERIC_PLAN, FORMAT TEXT) ",
+			name:           "generic plan",
+			generic:        true,
+			expectedPrefix: queryGenericPlan,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.expectedPrefix, planPrefix(tc.dbVersion))
+			cmd := PlanCmd{generic: tc.generic}
+			assert.Equal(t, tc.expectedPrefix, cmd.planPrefix())
 		})
 	}
+}
+
+func TestGenericPlanRequiresPostgres16(t *testing.T) {
+	cmd := NewGenericPlan(
+		&platform.Command{Query: "select * from t where id = $1"},
+		nil,
+		nil,
+		150000,
+		nil,
+	)
+
+	err := cmd.Execute(context.Background())
+	assert.EqualError(t, err, MsgGenericPlanVersionReq)
 }

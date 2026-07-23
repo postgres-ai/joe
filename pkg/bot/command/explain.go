@@ -82,9 +82,7 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 		return err
 	}
 
-	// Keep the preliminary plan for the execution-oriented command unchanged.
-	// GENERIC_PLAN support belongs to the standalone, non-executing plan command.
-	cmd := NewPlan(command, msg, session.CloneConnection, 0, msgSvc)
+	cmd := NewPlan(command, msg, session.CloneConnection, msgSvc)
 
 	msgInitText, err := cmd.explainWithoutExecution(ctx)
 	if err != nil {

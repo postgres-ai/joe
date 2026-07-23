@@ -30,6 +30,12 @@ func TestParsingMessage(t *testing.T) {
 			expectedQuery:   "select 1",
 		},
 		{
+			caseName:        "generic plan",
+			incomingMessage: "generic-plan select * from t where id = $1",
+			expectedCommand: CommandGenericPlan,
+			expectedQuery:   "select * from t where id = $1",
+		},
+		{
 			caseName:        "multibyte encoding",
 			incomingMessage: "хлеб бородинский",
 			expectedCommand: "хлеб",

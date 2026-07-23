@@ -35,14 +35,15 @@ import (
 
 // Constants declare supported commands.
 const (
-	CommandExplain   = "explain"
-	CommandExec      = "exec"
-	CommandReset     = "reset"
-	CommandHelp      = "help"
-	CommandHypo      = "hypo"
-	CommandActivity  = "activity"
-	CommandTerminate = "terminate"
-	CommandPlan      = "plan"
+	CommandExplain     = "explain"
+	CommandExec        = "exec"
+	CommandReset       = "reset"
+	CommandHelp        = "help"
+	CommandHypo        = "hypo"
+	CommandActivity    = "activity"
+	CommandTerminate   = "terminate"
+	CommandPlan        = "plan"
+	CommandGenericPlan = "generic-plan"
 
 	CommandPsqlD   = `\d`
 	CommandPsqlDP  = `\d+`
@@ -61,6 +62,7 @@ const (
 var supportedCommands = []string{
 	CommandExplain,
 	CommandPlan,
+	CommandGenericPlan,
 	CommandHypo,
 	CommandExec,
 	CommandReset,
@@ -292,7 +294,11 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 		err = command.Explain(ctx, s.messenger, platformCmd, msg, user.Session)
 
 	case receivedCommand == CommandPlan:
-		planCmd := command.NewPlan(platformCmd, msg, user.Session.CloneConnection, user.Session.DBVersion, s.messenger)
+		planCmd := command.NewPlan(platformCmd, msg, user.Session.CloneConnection, s.messenger)
+		err = planCmd.Execute(ctx)
+
+	case receivedCommand == CommandGenericPlan:
+		planCmd := command.NewGenericPlan(platformCmd, msg, user.Session.CloneConnection, user.Session.DBVersion, s.messenger)
 		err = planCmd.Execute(ctx)
 
 	case receivedCommand == CommandExec:

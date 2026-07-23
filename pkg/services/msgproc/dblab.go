@@ -30,6 +30,7 @@ import (
 // HelpMessage defines available commands provided with the help message.
 const HelpMessage = "\n• `explain` — analyze your query (SELECT, INSERT, DELETE, UPDATE or WITH) and generate recommendations\n" +
 	"• `plan` — analyze your query (SELECT, INSERT, DELETE, UPDATE or WITH) without execution\n" +
+	"• `generic-plan` — show a generic plan for a parameterized query without execution (PostgreSQL 16+)\n" +
 	"• `exec` — execute any query (for example, CREATE INDEX)\n" +
 	"• `activity` — show currently running sessions in Postgres (states: `active`, `idle in transaction`, `disabled`)\n" +
 	"• `terminate [pid]` — terminate Postgres backend that has the specified PID.\n" +
