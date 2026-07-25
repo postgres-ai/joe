@@ -37,6 +37,14 @@ channelMapping:
             dblabParams:
               dbname: postgres
               sslmode: prefer
+enterprise:
+  quota:
+    limit: ${EE_TEST_QUOTA_LIMIT}
+    interval: ${EE_TEST_QUOTA_INTERVAL}
+  audit:
+    enabled: ${EE_TEST_AUDIT_ENABLED}
+  dblab:
+    instanceLimit: ${EE_TEST_DBLAB_LIMIT}
 `
 
 func setupTestEnv(t *testing.T) {
@@ -46,6 +54,10 @@ func setupTestEnv(t *testing.T) {
 	t.Setenv("DBLAB_SECRET_TOKEN", "dblab-secret")
 	t.Setenv("SLACK_ACCESS_TOKEN", "xoxb-test")
 	t.Setenv("SLACK_SIGNING_SECRET", "signing-secret")
+	t.Setenv("EE_TEST_QUOTA_LIMIT", "20")
+	t.Setenv("EE_TEST_QUOTA_INTERVAL", "120")
+	t.Setenv("EE_TEST_AUDIT_ENABLED", "true")
+	t.Setenv("EE_TEST_DBLAB_LIMIT", "3")
 }
 
 func TestLoadAppConfigExpandsEnvironmentVariables(t *testing.T) {
@@ -63,6 +75,25 @@ func TestLoadAppConfigExpandsEnvironmentVariables(t *testing.T) {
 	require.Len(t, cfg.ChannelMapping.CommunicationTypes["slack"], 1)
 	require.Equal(t, "xoxb-test", cfg.ChannelMapping.CommunicationTypes["slack"][0].Credentials.AccessToken)
 	require.Equal(t, "signing-secret", cfg.ChannelMapping.CommunicationTypes["slack"][0].Credentials.SigningSecret)
+}
+
+// TestLoadAppConfigAcceptsTypedEnterprisePlaceholders covers the enterprise
+// subtree, which config.Config skips (`yaml:"-"`) and the option provider
+// re-parses from the expanded bytes. Its settings are all numbers and booleans,
+// so under `-tags ee` an unquoted placeholder there used to abort startup after
+// LoadFile had already succeeded. The resolved values are asserted in
+// pkg/config's ParseYAML test; what matters here is that the wiring holds in
+// both editions.
+func TestLoadAppConfigAcceptsTypedEnterprisePlaceholders(t *testing.T) {
+	setupTestEnv(t)
+
+	configPath := filepath.Join(t.TempDir(), "joe.yml")
+	require.NoError(t, os.WriteFile(configPath, []byte(testConfigYAML), 0600))
+
+	cfg, err := loadAppConfig(configPath)
+	require.NoError(t, err)
+	require.NotZero(t, cfg.Enterprise.Quota.Limit)
+	require.NotZero(t, cfg.Enterprise.DBLab.InstanceLimit)
 }
 
 // TestLoadAppConfigUsesProductionPath exercises the same path.Join(...) that
@@ -95,6 +126,11 @@ func TestValidateConfig(t *testing.T) {
 		{
 			name:   "no platform integration, empty token is fine",
 			mutate: func(c *config.Config) { c.Platform.Token = "" },
+		},
+		{
+			name:    "missing channel mapping is rejected",
+			mutate:  func(c *config.Config) { c.ChannelMapping = nil },
+			wantErr: "channelMapping",
 		},
 		{
 			name: "history enabled requires token",
@@ -134,7 +170,9 @@ func TestValidateConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := config.Config{}
+			// A configured channel mapping is the baseline every other case
+			// builds on; the case that drops it asserts the opposite.
+			cfg := config.Config{ChannelMapping: &config.ChannelMapping{}}
 			tt.mutate(&cfg)
 			err := validateConfig(&cfg)
 			if tt.wantErr == "" {

@@ -9,6 +9,14 @@
 # resolved values may safely contain any characters (quotes, backslashes,
 # colons, newlines); placeholders are typically written inside double-quoted
 # scalars for readability.
+#
+# Quoting decides the resulting type. A quoted placeholder is always a string,
+# which is what secrets want. A placeholder standing alone without quotes is
+# re-typed from the value it resolves to, so it can also fill in the numeric,
+# boolean, and duration settings below:
+#
+#   port: ${JOE_PORT}          # unquoted: becomes a number
+#   token: "${JOE_TOKEN}"      # quoted: stays a string
 
 app:
   # HTTP server IP address or host.

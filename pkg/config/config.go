@@ -36,11 +36,11 @@ type Config struct {
 
 // App defines a general application configuration.
 type App struct {
-	Version           string
-	Host              string        `env:"JOE_APP_HOST"`
-	Port              uint          `env:"JOE_APP_PORT" env-default:"2400"`
-	MinNotifyDuration time.Duration `env:"JOE_APP_MIN_NOTIFY_DURATION" env-default:"60s"`
-	Debug             bool          `env:"JOE_APP_DEBUG"`
+	Version           string        `yaml:"-"`
+	Host              string        `yaml:"host" env:"JOE_APP_HOST"`
+	Port              uint          `yaml:"port" env:"JOE_APP_PORT" env-default:"2400"`
+	MinNotifyDuration time.Duration `yaml:"minNotifyDuration" env:"JOE_APP_MIN_NOTIFY_DURATION" env-default:"60s"`
+	Debug             bool          `yaml:"debug" env:"JOE_APP_DEBUG"`
 }
 
 // Platform describes configuration parameters of a Postgres.ai platform.
@@ -65,16 +65,16 @@ type ChannelMapping struct {
 
 // DBLabInstance contains Database Lab config.
 type DBLabInstance struct {
-	URL            string
-	Token          string
-	RequestTimeout time.Duration
+	URL            string        `yaml:"url"`
+	Token          string        `yaml:"token"`
+	RequestTimeout time.Duration `yaml:"requestTimeout"`
 }
 
 // Workspace defines a connection space.
 type Workspace struct {
-	Name        string
-	Credentials Credentials
-	Channels    []Channel
+	Name        string      `yaml:"name"`
+	Credentials Credentials `yaml:"credentials"`
+	Channels    []Channel   `yaml:"channels"`
 }
 
 // Credentials defines connection space credentials.
