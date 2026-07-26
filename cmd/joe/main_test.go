@@ -81,24 +81,18 @@ func TestLoadAppConfigExpandsEnvironmentVariables(t *testing.T) {
 // subtree, which config.Config skips (`yaml:"-"`) and the option provider
 // re-parses from the expanded bytes. Its settings are all numbers and booleans,
 // so under `-tags ee` an unquoted placeholder there used to abort startup after
-// LoadFile had already succeeded.
-//
-// The expected values are edition-specific: the enterprise provider resolves
-// what setupTestEnv exported, while the community provider ignores the config
-// and hands back fixed defaults. Asserting the enterprise numbers in both
-// editions would fail `make test`, so each edition carries its own constants.
+// LoadFile had already succeeded — which is what this asserts, and all it can:
+// the community provider returns fixed defaults without reading the config, so
+// only the enterprise run reaches the code that used to fail. The resolved
+// values are asserted under the tag in enterprise_ee_test.go.
 func TestLoadAppConfigAcceptsTypedEnterprisePlaceholders(t *testing.T) {
 	setupTestEnv(t)
 
 	configPath := filepath.Join(t.TempDir(), "joe.yml")
 	require.NoError(t, os.WriteFile(configPath, []byte(testConfigYAML), 0600))
 
-	cfg, err := loadAppConfig(configPath)
+	_, err := loadAppConfig(configPath)
 	require.NoError(t, err)
-	require.Equal(t, uint(wantQuotaLimit), cfg.Enterprise.Quota.Limit)
-	require.Equal(t, uint(wantQuotaInterval), cfg.Enterprise.Quota.Interval)
-	require.Equal(t, wantAuditEnabled, cfg.Enterprise.Audit.Enabled)
-	require.Equal(t, uint(wantDBLabLimit), cfg.Enterprise.DBLab.InstanceLimit)
 }
 
 // TestLoadAppConfigRejectsConfigWithoutChannelMapping runs the file -> nil ->
