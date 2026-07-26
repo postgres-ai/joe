@@ -34,6 +34,7 @@ install-lint:
 
 run-lint:
 	golangci-lint run
+	golangci-lint run --build-tags ee
 
 lint: install-lint run-lint
 

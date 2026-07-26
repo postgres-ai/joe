@@ -81,9 +81,12 @@ func TestLoadAppConfigExpandsEnvironmentVariables(t *testing.T) {
 // subtree, which config.Config skips (`yaml:"-"`) and the option provider
 // re-parses from the expanded bytes. Its settings are all numbers and booleans,
 // so under `-tags ee` an unquoted placeholder there used to abort startup after
-// LoadFile had already succeeded. The resolved values are asserted in
-// pkg/config's ParseYAML test; what matters here is that the wiring holds in
-// both editions.
+// LoadFile had already succeeded.
+//
+// The expected values are edition-specific: the enterprise provider resolves
+// what setupTestEnv exported, while the community provider ignores the config
+// and hands back fixed defaults. Asserting the enterprise numbers in both
+// editions would fail `make test`, so each edition carries its own constants.
 func TestLoadAppConfigAcceptsTypedEnterprisePlaceholders(t *testing.T) {
 	setupTestEnv(t)
 
@@ -92,8 +95,32 @@ func TestLoadAppConfigAcceptsTypedEnterprisePlaceholders(t *testing.T) {
 
 	cfg, err := loadAppConfig(configPath)
 	require.NoError(t, err)
-	require.NotZero(t, cfg.Enterprise.Quota.Limit)
-	require.NotZero(t, cfg.Enterprise.DBLab.InstanceLimit)
+	require.Equal(t, uint(wantQuotaLimit), cfg.Enterprise.Quota.Limit)
+	require.Equal(t, uint(wantQuotaInterval), cfg.Enterprise.Quota.Interval)
+	require.Equal(t, wantAuditEnabled, cfg.Enterprise.Audit.Enabled)
+	require.Equal(t, uint(wantDBLabLimit), cfg.Enterprise.DBLab.InstanceLimit)
+}
+
+// TestLoadAppConfigRejectsConfigWithoutChannelMapping runs the file -> nil ->
+// error chain end to end, so a refactor of ChannelMapping to a value type or a
+// reordering of loadAppConfig cannot quietly restore the nil dereference that
+// pkg/bot/bot.go hits while wiring up instances.
+func TestLoadAppConfigRejectsConfigWithoutChannelMapping(t *testing.T) {
+	setupTestEnv(t)
+
+	const body = `app:
+  debug: false
+platform:
+  url: "https://postgres.ai/api/general"
+  token: "${PLATFORM_SECRET_TOKEN}"
+`
+
+	configPath := filepath.Join(t.TempDir(), "joe.yml")
+	require.NoError(t, os.WriteFile(configPath, []byte(body), 0600))
+
+	_, err := loadAppConfig(configPath)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "channelMapping")
 }
 
 // TestLoadAppConfigUsesProductionPath exercises the same path.Join(...) that
@@ -133,6 +160,16 @@ func TestValidateConfig(t *testing.T) {
 			wantErr: "channelMapping",
 		},
 		{
+			name:    "empty channel mapping is rejected",
+			mutate:  func(c *config.Config) { *c.ChannelMapping = config.ChannelMapping{} },
+			wantErr: "channelMapping.dblabServers",
+		},
+		{
+			name:    "channel mapping without communication types is rejected",
+			mutate:  func(c *config.Config) { c.ChannelMapping.CommunicationTypes = nil },
+			wantErr: "channelMapping.communicationTypes",
+		},
+		{
 			name: "history enabled requires token",
 			mutate: func(c *config.Config) {
 				c.Platform.Token = ""
@@ -170,9 +207,12 @@ func TestValidateConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// A configured channel mapping is the baseline every other case
-			// builds on; the case that drops it asserts the opposite.
-			cfg := config.Config{ChannelMapping: &config.ChannelMapping{}}
+			// A populated channel mapping is the baseline every other case
+			// builds on; the cases that empty it assert the opposite.
+			cfg := config.Config{ChannelMapping: &config.ChannelMapping{
+				DBLabInstances:     map[string]config.DBLabInstance{"prod1": {URL: "https://dblab.example.com"}},
+				CommunicationTypes: map[string][]config.Workspace{"slack": {{Name: "Workspace"}}},
+			}}
 			tt.mutate(&cfg)
 			err := validateConfig(&cfg)
 			if tt.wantErr == "" {

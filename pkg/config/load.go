@@ -135,7 +135,12 @@ func expandNodes(n *yaml.Node, isKey bool) error {
 		// decode into a uint, bool, or duration field. Quoted scalars keep their
 		// string tag, and keys stay strings so an all-digit key cannot become an
 		// int and break the surrounding map.
-		if n.Style == 0 && !isKey {
+		//
+		// A value that re-resolves to !!null is left tagged too: the decoder
+		// short-circuits on a null scalar, so dropping the tag there would zero
+		// a string field and drop a map entry whose key resolved to "null"
+		// instead of storing the literal text.
+		if n.Style == 0 && !isKey && !isNullLiteral(n.Value) {
 			n.Tag = ""
 		}
 	}
@@ -155,6 +160,19 @@ const (
 )
 
 func isStringTag(tag string) bool { return tag == "" || tag == strTag }
+
+// isNullLiteral reports whether an expanded value would re-resolve to !!null.
+// The empty string is included: yaml resolves it to null as well, and keeping
+// the string tag turns an empty variable in a typed field into a decode error
+// rather than a silent zero that the env-default then overwrites.
+func isNullLiteral(value string) bool {
+	switch value {
+	case "", "~", "null", "Null", "NULL":
+		return true
+	}
+
+	return false
+}
 
 const placeholderOpen = "${"
 

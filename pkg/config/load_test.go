@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func writeConfig(t *testing.T, body string) string {
@@ -16,6 +17,22 @@ func writeConfig(t *testing.T, body string) string {
 	path := filepath.Join(t.TempDir(), "joe.yml")
 	require.NoError(t, os.WriteFile(path, []byte(body), 0600))
 	return path
+}
+
+// decodeSection re-parses the bytes LoadFile returns into loosely-typed values
+// and hands back one top-level section. Config coerces every scalar to the
+// field's type, which hides the tag a scalar actually ended up with; this keeps
+// that visible so a test can assert on it.
+func decodeSection(t *testing.T, expanded []byte, name string) map[string]interface{} {
+	t.Helper()
+
+	var doc map[string]interface{}
+	require.NoError(t, yaml.Unmarshal(expanded, &doc))
+
+	section, ok := doc[name].(map[string]interface{})
+	require.True(t, ok, "section %q missing from the expanded config", name)
+
+	return section
 }
 
 func TestLoadFile_ExpandsPlaceholders(t *testing.T) {
@@ -155,29 +172,107 @@ func TestLoadFile_UnquotedPlaceholderTakesValueType(t *testing.T) {
 // TestLoadFile_QuotedPlaceholderStaysString pins the other half of the rule: a
 // quoted placeholder is a string whatever it resolves to, so a token that
 // happens to be all digits does not silently become a number.
+//
+// The assertion runs against the expanded bytes rather than the decoded Config.
+// yaml sets a Go string field from the scalar's literal text whichever type the
+// tag resolved to, so a Config-level assertion passes either way and would not
+// notice the carve-out disappearing.
 func TestLoadFile_QuotedPlaceholderStaysString(t *testing.T) {
 	t.Setenv("JOE_TEST_NUMERIC_TOKEN", "12345")
 
 	var cfg Config
 
-	_, err := LoadFile(writeConfig(t, `platform: {token: "${JOE_TEST_NUMERIC_TOKEN}"}`), &cfg)
+	expanded, err := LoadFile(writeConfig(t,
+		"platform:\n  token: \"${JOE_TEST_NUMERIC_TOKEN}\"\n  project: ${JOE_TEST_NUMERIC_TOKEN}\n"), &cfg)
 	require.NoError(t, err)
 	assert.Equal(t, "12345", cfg.Platform.Token)
+
+	platform := decodeSection(t, expanded, "platform")
+	assert.IsType(t, "", platform["token"], "quoted placeholder must stay a string")
+	assert.IsType(t, 0, platform["project"], "unquoted placeholder must take the resolved type")
 }
 
-// TestLoadFile_MappingKeysStayStrings guards the carve-out for key position:
-// re-typing a key would turn an all-digit Database Lab alias into an int and
-// break the map it lives in.
-func TestLoadFile_MappingKeysStayStrings(t *testing.T) {
-	t.Setenv("JOE_TEST_ALIAS", "1234")
+// TestLoadFile_ExplicitTagWins covers the same gate from the other side. yaml
+// already treats a quoted scalar as a string whatever tag it carries, so the
+// style check earns its keep on the tagged form instead: an explicit !!str is
+// not plain, keeps its tag through expansion, and beats the resolved value.
+func TestLoadFile_ExplicitTagWins(t *testing.T) {
+	t.Setenv("JOE_TEST_TAGGED_PORT", "2500")
 
 	var cfg Config
 
-	body := "channelMapping:\n  dblabServers:\n    ${JOE_TEST_ALIAS}:\n      url: https://dblab.example.com\n"
+	_, err := LoadFile(writeConfig(t, "app:\n  port: !!str ${JOE_TEST_TAGGED_PORT}\n"), &cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "into uint")
+}
+
+// TestLoadFile_MappingKeysStayStrings guards the carve-out for key position:
+// re-typing a key would turn a Database Lab alias into a non-string and break
+// the map it lives in. An alias resolving to a null literal is what makes the
+// carve-out observable — an all-digit alias survives either way, because the
+// decoder falls back to the key's literal text for a map[string]... .
+func TestLoadFile_MappingKeysStayStrings(t *testing.T) {
+	for _, alias := range []string{"1234", "0123", "null", "~"} {
+		t.Run(alias, func(t *testing.T) {
+			t.Setenv("JOE_TEST_ALIAS", alias)
+
+			var cfg Config
+
+			body := "channelMapping:\n  dblabServers:\n    ${JOE_TEST_ALIAS}:\n      url: https://dblab.example.com\n"
+
+			_, err := LoadFile(writeConfig(t, body), &cfg)
+			require.NoError(t, err)
+			require.Contains(t, cfg.ChannelMapping.DBLabInstances, alias)
+		})
+	}
+}
+
+// TestLoadFile_KeyResolvingToMergeIndicator is the sharpest case for the key
+// carve-out: "<<" only means "merge this map" while it is untagged, so dropping
+// the tag on a key would let the value of an environment variable rewrite the
+// document's structure instead of one of its values.
+func TestLoadFile_KeyResolvingToMergeIndicator(t *testing.T) {
+	t.Setenv("JOE_TEST_ALIAS", "<<")
+
+	var cfg Config
+
+	body := "defaults: &d\n  url: https://dblab.example.com\n" +
+		"channelMapping:\n  dblabServers:\n    ${JOE_TEST_ALIAS}: *d\n"
 
 	_, err := LoadFile(writeConfig(t, body), &cfg)
 	require.NoError(t, err)
-	require.Contains(t, cfg.ChannelMapping.DBLabInstances, "1234")
+	require.Contains(t, cfg.ChannelMapping.DBLabInstances, "<<")
+}
+
+// TestLoadFile_NullResolvingPlaceholder covers the one value a re-typed scalar
+// cannot represent: yaml resolves the null literals to nil, and the decoder
+// short-circuits on nil before it reaches the string case, so dropping the tag
+// would zero the field instead of storing the text that came back.
+func TestLoadFile_NullResolvingPlaceholder(t *testing.T) {
+	for _, value := range []string{"null", "Null", "NULL", "~"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("JOE_TEST_NULLISH", value)
+
+			var cfg Config
+
+			_, err := LoadFile(writeConfig(t, "platform:\n  project: ${JOE_TEST_NULLISH}\n"), &cfg)
+			require.NoError(t, err)
+			assert.Equal(t, value, cfg.Platform.Project)
+		})
+	}
+}
+
+// TestLoadFile_EmptyValueInTypedField keeps an empty variable from passing for
+// a number: the scalar keeps its string tag, so the field fails to decode
+// instead of staying zero and picking up the env-default afterwards.
+func TestLoadFile_EmptyValueInTypedField(t *testing.T) {
+	t.Setenv("JOE_TEST_BLANK", "")
+
+	var cfg Config
+
+	_, err := LoadFile(writeConfig(t, "app:\n  port: ${JOE_TEST_BLANK}\n"), &cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "into uint")
 }
 
 // TestLoadFile_CamelCaseKeysAreHonoured pins the two keys that the shipped
@@ -196,15 +291,35 @@ func TestLoadFile_CamelCaseKeysAreHonoured(t *testing.T) {
 }
 
 // TestLoadFile_UnsetErrorNamesEscape checks that a literal "$" in a password or
-// token points the operator at the escape instead of leaving them to guess.
+// token points the operator at the escape instead of leaving them to guess, and
+// that the reported name is the one they can act on. os.Expand also reads the
+// shell special variables as names, so a "$" followed by any of * # $ @ ! ? -
+// or a digit names something nobody wrote — which is exactly where the hint has
+// to carry the whole message.
 func TestLoadFile_UnsetErrorNamesEscape(t *testing.T) {
-	var cfg Config
+	tests := []struct {
+		name     string
+		value    string
+		wantName string
+	}{
+		{"identifier after dollar", "P@ss$w0rd!", "w0rd"},
+		{"digit after dollar", "cost$1k", "1"},
+		{"hash after dollar", "a$#b", "#"},
+		{"dash after dollar", "pa$-word", "-"},
+		{"star after dollar", "pa$*word", "*"},
+	}
 
-	_, err := LoadFile(writeConfig(t, `platform: {token: "P@ss$w0rd!"}`), &cfg)
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrUnsetEnv))
-	assert.Contains(t, err.Error(), "w0rd")
-	assert.Contains(t, err.Error(), `"$$"`)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cfg Config
+
+			_, err := LoadFile(writeConfig(t, "platform:\n  token: \""+tt.value+"\"\n"), &cfg)
+			require.Error(t, err)
+			assert.True(t, errors.Is(err, ErrUnsetEnv))
+			assert.Contains(t, err.Error(), ErrUnsetEnv.Error()+": "+tt.wantName+" ")
+			assert.Contains(t, err.Error(), escapeHint)
+		})
+	}
 }
 
 func TestLoadFile_RejectsDocumentWithoutSettings(t *testing.T) {
@@ -222,6 +337,18 @@ func TestLoadFile_RejectsDocumentWithoutSettings(t *testing.T) {
 			assert.True(t, errors.Is(err, ErrEmptyConfig))
 		})
 	}
+}
+
+// TestLoadFile_ScalarDocumentIsNotEmpty is the negative complement: only a null
+// document counts as empty. A bare scalar is a malformed config and has to fail
+// as a decode error, so widening the check from the null tag to "any scalar
+// document" cannot slip through.
+func TestLoadFile_ScalarDocumentIsNotEmpty(t *testing.T) {
+	var cfg Config
+
+	_, err := LoadFile(writeConfig(t, "42\n"), &cfg)
+	require.Error(t, err)
+	assert.False(t, errors.Is(err, ErrEmptyConfig))
 }
 
 // TestLoadFile_ShippedExampleConfig loads the file every operator copies, so a
