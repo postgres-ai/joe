@@ -34,6 +34,7 @@ install-lint:
 
 run-lint:
 	golangci-lint run
+	golangci-lint run --build-tags ee
 
 lint: install-lint run-lint
 
@@ -49,8 +50,14 @@ build-explainrender:
 test:
 	go test ./pkg/... ./cmd/...
 
+# The enterprise build swaps in a different option provider that re-parses the
+# config, so the config path has to be exercised under the tag as well.
+test-ee:
+	go test -tags ee ./pkg/... ./cmd/...
+
 vet:
 	go vet ./...
+	go vet -tags ee ./...
 
 fmt:
 	go fmt $$(go list ./... | grep -v /vendor/)

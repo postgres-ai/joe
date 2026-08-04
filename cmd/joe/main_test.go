@@ -37,6 +37,14 @@ channelMapping:
             dblabParams:
               dbname: postgres
               sslmode: prefer
+enterprise:
+  quota:
+    limit: ${EE_TEST_QUOTA_LIMIT}
+    interval: ${EE_TEST_QUOTA_INTERVAL}
+  audit:
+    enabled: ${EE_TEST_AUDIT_ENABLED}
+  dblab:
+    instanceLimit: ${EE_TEST_DBLAB_LIMIT}
 `
 
 func setupTestEnv(t *testing.T) {
@@ -46,6 +54,10 @@ func setupTestEnv(t *testing.T) {
 	t.Setenv("DBLAB_SECRET_TOKEN", "dblab-secret")
 	t.Setenv("SLACK_ACCESS_TOKEN", "xoxb-test")
 	t.Setenv("SLACK_SIGNING_SECRET", "signing-secret")
+	t.Setenv("EE_TEST_QUOTA_LIMIT", "20")
+	t.Setenv("EE_TEST_QUOTA_INTERVAL", "120")
+	t.Setenv("EE_TEST_AUDIT_ENABLED", "true")
+	t.Setenv("EE_TEST_DBLAB_LIMIT", "3")
 }
 
 func TestLoadAppConfigExpandsEnvironmentVariables(t *testing.T) {
@@ -63,6 +75,46 @@ func TestLoadAppConfigExpandsEnvironmentVariables(t *testing.T) {
 	require.Len(t, cfg.ChannelMapping.CommunicationTypes["slack"], 1)
 	require.Equal(t, "xoxb-test", cfg.ChannelMapping.CommunicationTypes["slack"][0].Credentials.AccessToken)
 	require.Equal(t, "signing-secret", cfg.ChannelMapping.CommunicationTypes["slack"][0].Credentials.SigningSecret)
+}
+
+// TestLoadAppConfigAcceptsTypedEnterprisePlaceholders covers the enterprise
+// subtree, which config.Config skips (`yaml:"-"`) and the option provider
+// re-parses from the expanded bytes. Its settings are all numbers and booleans,
+// so under `-tags ee` an unquoted placeholder there used to abort startup after
+// LoadFile had already succeeded — which is what this asserts, and all it can:
+// the community provider returns fixed defaults without reading the config, so
+// only the enterprise run reaches the code that used to fail. The resolved
+// values are asserted under the tag in enterprise_ee_test.go.
+func TestLoadAppConfigAcceptsTypedEnterprisePlaceholders(t *testing.T) {
+	setupTestEnv(t)
+
+	configPath := filepath.Join(t.TempDir(), "joe.yml")
+	require.NoError(t, os.WriteFile(configPath, []byte(testConfigYAML), 0600))
+
+	_, err := loadAppConfig(configPath)
+	require.NoError(t, err)
+}
+
+// TestLoadAppConfigRejectsConfigWithoutChannelMapping runs the file -> nil ->
+// error chain end to end, so a refactor of ChannelMapping to a value type or a
+// reordering of loadAppConfig cannot quietly restore the nil dereference that
+// pkg/bot/bot.go hits while wiring up instances.
+func TestLoadAppConfigRejectsConfigWithoutChannelMapping(t *testing.T) {
+	setupTestEnv(t)
+
+	const body = `app:
+  debug: false
+platform:
+  url: "https://postgres.ai/api/general"
+  token: "${PLATFORM_SECRET_TOKEN}"
+`
+
+	configPath := filepath.Join(t.TempDir(), "joe.yml")
+	require.NoError(t, os.WriteFile(configPath, []byte(body), 0600))
+
+	_, err := loadAppConfig(configPath)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "channelMapping")
 }
 
 // TestLoadAppConfigUsesProductionPath exercises the same path.Join(...) that
@@ -95,6 +147,21 @@ func TestValidateConfig(t *testing.T) {
 		{
 			name:   "no platform integration, empty token is fine",
 			mutate: func(c *config.Config) { c.Platform.Token = "" },
+		},
+		{
+			name:    "missing channel mapping is rejected",
+			mutate:  func(c *config.Config) { c.ChannelMapping = nil },
+			wantErr: "channelMapping",
+		},
+		{
+			name:    "empty channel mapping is rejected",
+			mutate:  func(c *config.Config) { *c.ChannelMapping = config.ChannelMapping{} },
+			wantErr: "channelMapping.dblabServers",
+		},
+		{
+			name:    "channel mapping without communication types is rejected",
+			mutate:  func(c *config.Config) { c.ChannelMapping.CommunicationTypes = nil },
+			wantErr: "channelMapping.communicationTypes",
 		},
 		{
 			name: "history enabled requires token",
@@ -134,7 +201,12 @@ func TestValidateConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := config.Config{}
+			// A populated channel mapping is the baseline every other case
+			// builds on; the cases that empty it assert the opposite.
+			cfg := config.Config{ChannelMapping: &config.ChannelMapping{
+				DBLabInstances:     map[string]config.DBLabInstance{"prod1": {URL: "https://dblab.example.com"}},
+				CommunicationTypes: map[string][]config.Workspace{"slack": {{Name: "Workspace"}}},
+			}}
 			tt.mutate(&cfg)
 			err := validateConfig(&cfg)
 			if tt.wantErr == "" {
