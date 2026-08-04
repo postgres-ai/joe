@@ -37,6 +37,7 @@ test:
   script:
     - make vet
     - make test
+    - make test-ee
 
 # Runs the HypoPG integration test (pkg/bot/command/hypo_integration_test.go,
 # guarded by the `integration` build tag) against a real Postgres with HypoPG
@@ -74,6 +75,7 @@ lint:
     - merge_requests
   script:
     - golangci-lint run
+    - golangci-lint run --build-tags ee
 
 # Run the pgexplain integration smoke test (build tag `integration`) against a
 # real Postgres service across supported majors. This is what would have caught

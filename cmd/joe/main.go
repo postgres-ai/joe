@@ -112,6 +112,22 @@ func loadAppConfig(configPath string) (*config.Config, error) {
 // app registration) — Slack-only / on-prem deployments still start without a
 // token.
 func validateConfig(cfg *config.Config) error {
+	// Without this section there is nothing for Joe to talk to, and the bot would
+	// otherwise dereference a nil ChannelMapping while wiring up its instances.
+	if cfg.ChannelMapping == nil {
+		return errors.New("channelMapping is required: configure at least one Database Lab server and communication type")
+	}
+
+	// An empty section clears the nil check but leaves the same hole: both maps
+	// are only ranged over, so Joe would start, bind its port, and serve nothing.
+	if len(cfg.ChannelMapping.DBLabInstances) == 0 {
+		return errors.New("channelMapping.dblabServers is required: configure at least one Database Lab server")
+	}
+
+	if len(cfg.ChannelMapping.CommunicationTypes) == 0 {
+		return errors.New("channelMapping.communicationTypes is required: configure at least one communication type")
+	}
+
 	if cfg.Platform.HistoryEnabled && cfg.Platform.Token == "" {
 		return errors.New("platform.token (env JOE_PLATFORM_TOKEN) is required when platform.historyEnabled is true")
 	}

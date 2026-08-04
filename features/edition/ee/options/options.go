@@ -1,3 +1,4 @@
+//go:build ee
 // +build ee
 
 /*
@@ -27,17 +28,20 @@ type Enterprise struct {
 }
 
 // Quota contains quota configuration parameters.
+//
+//nolint:lll
 type Quota struct {
-	Limit    uint `description:"limit request rates to up to 2x of this number" env-default:"10" env:"EE_QUOTA_LIMIT"`
-	Interval uint `description:"a time interval (in seconds) to apply a quota-limit" env-default:"60" env:"EE_QUOTA_INTERVAL"`
+	Limit    uint `yaml:"limit" description:"limit request rates to up to 2x of this number" env-default:"10" env:"EE_QUOTA_LIMIT"`
+	Interval uint `yaml:"interval" description:"a time interval (in seconds) to apply a quota-limit" env-default:"60" env:"EE_QUOTA_INTERVAL"`
 }
 
 // Audit contains audit configuration parameters.
 type Audit struct {
-	Enabled bool `description:"enable logging of received commands" env:"EE_AUDIT_ENABLED"`
+	Enabled bool `yaml:"enabled" description:"enable logging of received commands" env:"EE_AUDIT_ENABLED"`
 }
 
 // DBLab contains Database Lab configuration parameters.
+//
 //nolint:lll
 type DBLab struct {
 	InstanceLimit uint `yaml:"instanceLimit" env-default:"2" description:"limit of available Database Lab instances" env:"EE_DBLAB_INSTANCE_LIMIT"`

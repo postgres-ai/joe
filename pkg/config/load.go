@@ -20,11 +20,24 @@ import (
 // variable that is not set.
 var ErrUnsetEnv = errors.New("required environment variable is not set")
 
+// ErrEmptyConfig is returned when a config file parses cleanly but carries no
+// settings at all, which would otherwise surface much later as a nil map or a
+// nil pointer dereference.
+var ErrEmptyConfig = errors.New("config file has no configuration settings")
+
+// escapeHint is appended to unset-variable errors: a stray "$" in a password or
+// token reads as a placeholder, and the way out is not otherwise discoverable.
+const escapeHint = `(write "$$" for a literal "$")`
+
 // LoadFile reads path, expands ${VAR} / $VAR placeholders inside YAML string
 // scalars from the environment, decodes the result into cfg, and applies
 // env-tag overrides on top. The returned bytes are the expanded YAML so a
 // second decoder (e.g. enterprise options) can reuse them without re-reading
 // the filesystem. `$$` escapes to a literal `$`; unset variables fail.
+//
+// A placeholder written without quotes is re-typed after expansion, so it may
+// stand in for a number, boolean, or duration as well as a string. Quoted
+// placeholders always resolve to strings.
 func LoadFile(path string, cfg interface{}) ([]byte, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -40,7 +53,11 @@ func LoadFile(path string, cfg interface{}) ([]byte, error) {
 		return nil, fmt.Errorf("parse YAML: %w", err)
 	}
 
-	if err := expandNodes(&root); err != nil {
+	if isEmptyDocument(&root) {
+		return nil, fmt.Errorf("%w: %q", ErrEmptyConfig, path)
+	}
+
+	if err := expandNodes(&root, false); err != nil {
 		return nil, err
 	}
 
@@ -69,7 +86,22 @@ func ParseYAML(data []byte, cfg interface{}) error {
 	return nil
 }
 
-func expandNodes(n *yaml.Node) error {
+// isEmptyDocument reports whether the parsed stream carries no settings: a file
+// holding only comments or whitespace yields a zero node, and "null" or a bare
+// "---" yields an explicit null document.
+func isEmptyDocument(root *yaml.Node) bool {
+	if root.Kind == 0 || len(root.Content) == 0 {
+		return true
+	}
+
+	doc := root.Content[0]
+
+	return doc.Kind == yaml.ScalarNode && doc.Tag == nullTag
+}
+
+// expandNodes walks the parsed document and resolves placeholders in every
+// string scalar. isKey marks scalars sitting in a mapping's key position.
+func expandNodes(n *yaml.Node, isKey bool) error {
 	if n.Kind == yaml.ScalarNode && isStringTag(n.Tag) && strings.ContainsRune(n.Value, '$') {
 		if err := validatePlaceholders(n.Value); err != nil {
 			return fmt.Errorf("at line %d:%d: %w", n.Line, n.Column, err)
@@ -93,12 +125,28 @@ func expandNodes(n *yaml.Node) error {
 			return ""
 		})
 		if len(missing) > 0 {
-			return fmt.Errorf("at line %d:%d: %w: %s", n.Line, n.Column, ErrUnsetEnv, strings.Join(missing, ", "))
+			return fmt.Errorf("at line %d:%d: %w: %s %s",
+				n.Line, n.Column, ErrUnsetEnv, strings.Join(missing, ", "), escapeHint)
+		}
+
+		// An unquoted placeholder stands in for the whole value, so drop the tag
+		// the parser inferred from the placeholder text and let yaml re-resolve
+		// it from what came back. Without this the scalar stays !!str and cannot
+		// decode into a uint, bool, or duration field. Quoted scalars keep their
+		// string tag, and keys stay strings so an all-digit key cannot become an
+		// int and break the surrounding map.
+		//
+		// A value that re-resolves to !!null is left tagged too: the decoder
+		// short-circuits on a null scalar, so dropping the tag there would zero
+		// a string field and drop a map entry whose key resolved to "null"
+		// instead of storing the literal text.
+		if n.Style == 0 && !isKey && !isNullLiteral(n.Value) {
+			n.Tag = ""
 		}
 	}
 
-	for _, child := range n.Content {
-		if err := expandNodes(child); err != nil {
+	for i, child := range n.Content {
+		if err := expandNodes(child, n.Kind == yaml.MappingNode && i%2 == 0); err != nil {
 			return err
 		}
 	}
@@ -106,7 +154,25 @@ func expandNodes(n *yaml.Node) error {
 	return nil
 }
 
-func isStringTag(tag string) bool { return tag == "" || tag == "!!str" }
+const (
+	strTag  = "!!str"
+	nullTag = "!!null"
+)
+
+func isStringTag(tag string) bool { return tag == "" || tag == strTag }
+
+// isNullLiteral reports whether an expanded value would re-resolve to !!null.
+// The empty string is included: yaml resolves it to null as well, and keeping
+// the string tag turns an empty variable in a typed field into a decode error
+// rather than a silent zero that the env-default then overwrites.
+func isNullLiteral(value string) bool {
+	switch value {
+	case "", "~", "null", "Null", "NULL":
+		return true
+	}
+
+	return false
+}
 
 const placeholderOpen = "${"
 
