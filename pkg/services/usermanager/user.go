@@ -6,6 +6,7 @@
 package usermanager
 
 import (
+	"sync"
 	"time"
 
 	"github.com/dustin/go-humanize/english"
@@ -21,12 +22,15 @@ import (
 
 // User defines user info and session.
 type User struct {
-	UserInfo models.UserInfo
-	Session  UserSession
+	UserInfo     models.UserInfo
+	Session      UserSession
+	requestQuota *requestQuota
+	quotaOnce    sync.Once
 }
 
 // UserSession defines a user session.
 type UserSession struct {
+	ExperimentID      string
 	PlatformSessionID string
 	ChannelID         string
 	Direct            bool
@@ -43,6 +47,11 @@ type UserSession struct {
 	DBVersion       int           `json:"-"`
 }
 
+type requestQuota struct {
+	mu    sync.Mutex
+	quota Quota
+}
+
 // Quota defines a user quota for requests.
 type Quota struct {
 	ts       time.Time
@@ -56,7 +65,8 @@ func NewUser(userInfo models.UserInfo, quota Quota) *User {
 	ts := time.Now()
 
 	user := User{
-		UserInfo: userInfo,
+		UserInfo:     userInfo,
+		requestQuota: &requestQuota{quota: quota},
 		Session: UserSession{
 			Quota:        quota,
 			LastActionTs: ts,
@@ -68,22 +78,32 @@ func NewUser(userInfo models.UserInfo, quota Quota) *User {
 
 // RequestQuota checks a user request limit.
 func (u *User) RequestQuota() error {
-	limit := u.Session.Quota.limit
-	interval := u.Session.Quota.interval
-	sAgo := util.SecondsAgo(u.Session.Quota.ts)
+	u.quotaOnce.Do(func() {
+		if u.requestQuota == nil {
+			u.requestQuota = &requestQuota{quota: u.Session.Quota}
+		}
+	})
+
+	u.requestQuota.mu.Lock()
+	defer u.requestQuota.mu.Unlock()
+
+	q := &u.requestQuota.quota
+	limit := q.limit
+	interval := q.interval
+	sAgo := util.SecondsAgo(q.ts)
 
 	if sAgo < interval {
-		if u.Session.Quota.count >= limit {
+		if q.count >= limit {
 			return errors.Errorf("You have reached the limit of requests per %s (%d). Please wait before trying again",
 				english.Plural(int(interval), "second", ""), limit)
 		}
 
-		u.Session.Quota.count++
+		q.count++
 		return nil
 	}
 
-	u.Session.Quota.count = 1
-	u.Session.Quota.ts = time.Now()
+	q.count = 1
+	q.ts = time.Now()
 
 	return nil
 }

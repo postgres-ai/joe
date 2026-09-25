@@ -96,7 +96,11 @@ func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.Us
 
 	s.messenger.UpdateStatus(sMsg, models.StatusRunning)
 
-	sessionID := generateSessionID()
+	sessionID := user.Session.ExperimentID
+	if sessionID == "" {
+		sessionID = generateSessionID()
+	}
+
 	if incomingMessage.SessionID != "" {
 		sessionID = incomingMessage.SessionID
 	}

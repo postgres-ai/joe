@@ -157,7 +157,7 @@ func (a *Assistant) buildMessageProcessor(channelID string, dbLabInstance *dblab
 	}
 
 	users := a.sessionStorage.GetUsers(CommunicationType, channelID)
-	um := usermanager.NewUserManager(a.userInformer, a.appCfg.Enterprise.Quota, users)
+	um := usermanager.NewSessionUserManager(a.userInformer, a.appCfg.Enterprise.Quota, users)
 
 	return msgproc.NewProcessingService(a.messenger, MessageValidator{}, dbLabInstance.Client(), um, a.platformClient,
 		processingCfg, a.featurePack)
@@ -259,8 +259,15 @@ func (a *Assistant) channelsHandler(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
-	channels := make([]config.Channel, 0, len(work[0].Channels))
-	channels = append(channels, work[0].Channels...)
+	type channelCapabilities struct {
+		ChannelID           string `json:"channel_id"`
+		MultipleExperiments bool   `json:"multiple_experiments"`
+	}
+
+	channels := make([]channelCapabilities, 0, len(work[0].Channels))
+	for _, channel := range work[0].Channels {
+		channels = append(channels, channelCapabilities{ChannelID: channel.ChannelID, MultipleExperiments: true})
+	}
 
 	if err := json.NewEncoder(w).Encode(channels); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

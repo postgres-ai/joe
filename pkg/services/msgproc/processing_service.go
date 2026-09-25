@@ -144,7 +144,7 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 	}
 
 	// Get user or create a new one.
-	user, err := s.UserManager.CreateUser(incomingMessage.UserID)
+	user, err := s.UserManager.CreateUser(incomingMessage.UserID, incomingMessage.SessionID)
 	if err != nil {
 		log.Err(errors.Wrap(err, "failed to get user"))
 
@@ -431,7 +431,11 @@ func (s *ProcessingService) rebootSession(ctx context.Context, msg *models.Messa
 
 	s.stopSession(ctx, user)
 
-	if err := s.runSession(ctx, user, models.IncomingMessage{ChannelID: msg.ChannelID}); err != nil {
+	if err := s.runSession(ctx, user, models.IncomingMessage{
+		ChannelID: msg.ChannelID,
+		UserID:    user.UserInfo.ID,
+		SessionID: user.Session.ExperimentID,
+	}); err != nil {
 		return errors.Wrap(err, "failed to run session")
 	}
 
