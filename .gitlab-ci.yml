@@ -103,19 +103,17 @@ test-pg-matrix:
   script:
     - go test -tags integration ./pkg/pgexplain/... -run Integration -v
 
-# Same smoke test against PostgreSQL 19 (beta). Marked allow_failure because the
-# `postgres:19beta1` image tag may not yet be published and PG19 is pre-release.
+# PostgreSQL 19 release-candidate compatibility is a required gate.
 test-pg-matrix-19:
   stage: test
   image: golang:1.26
-  allow_failure: true
   only:
     - branches
     - tags
     - merge_requests
   parallel:
     matrix:
-      - PG_MAJOR: ["19beta1"]
+      - PG_MAJOR: ["19rc1-bookworm"]
   services:
     - name: postgres:$PG_MAJOR
       alias: postgres
@@ -153,19 +151,17 @@ fidelity-pg-matrix:
   script:
     - go test -tags integration ./pkg/pgexplain/... -run TestFidelityAgainstLiveServer -v
 
-# Same fidelity guard against PostgreSQL 19 (beta). allow_failure because the
-# `postgres:19beta1` image tag may not yet be published and PG19 is pre-release.
+# PostgreSQL 19 release-candidate fidelity is a required gate.
 fidelity-pg-matrix-19:
   stage: test
   image: golang:1.26
-  allow_failure: true
   only:
     - branches
     - tags
     - merge_requests
   parallel:
     matrix:
-      - PG_MAJOR: ["19beta1"]
+      - PG_MAJOR: ["19rc1-bookworm"]
   services:
     - name: postgres:$PG_MAJOR
       alias: postgres
