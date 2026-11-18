@@ -87,10 +87,9 @@ func (tr Transmitter) runPsql(command string) ([]byte, error) {
 		return nil, errors.WithStack(err)
 	}
 
-	cmdStr := fmt.Sprintf("%s psql %s -X -f %s",
-		commandEnvString(tr.clone), commandConnString(tr.clone), tempFile.Name())
+	cmdStr := fmt.Sprintf("psql %s -X -f %s", commandConnString(tr.clone), tempFile.Name())
 
-	return executeCommand(cmdStr)
+	return executeCommand(cmdStr, commandEnv(tr.clone))
 }
 
 // format formats output.
@@ -137,9 +136,10 @@ func prepareCommandParam(command string) (string, error) {
 	return command, nil
 }
 
-// commandEnvString returns a string of environment variables to use.
-func commandEnvString(clone models.Clone) string {
-	return fmt.Sprintf("PGPASSWORD=%s PGSSLMODE=%s", clone.Password, clone.SSLMode)
+// commandEnv returns the environment variables to pass to psql. They are kept out of
+// the command string because it is logged.
+func commandEnv(clone models.Clone) []string {
+	return []string{"PGPASSWORD=" + clone.Password, "PGSSLMODE=" + clone.SSLMode}
 }
 
 func commandConnString(clone models.Clone) string {
@@ -147,13 +147,15 @@ func commandConnString(clone models.Clone) string {
 		clone.Host, clone.Port, clone.Username, clone.Name)
 }
 
-func executeCommand(cmdStr string) ([]byte, error) {
+func executeCommand(cmdStr string, env []string) ([]byte, error) {
 	log.Dbg(fmt.Sprintf(`SQLRun: "%s"`, cmdStr))
 
 	var out bytes.Buffer
 	var stderr bytes.Buffer
 
 	cmd := exec.Command("/bin/bash", "-c", cmdStr)
+
+	cmd.Env = append(os.Environ(), env...)
 
 	cmd.Stdout = &out
 	cmd.Stderr = &stderr

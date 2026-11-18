@@ -219,6 +219,12 @@ func (s *ProcessingService) stopSession(ctx context.Context, user *usermanager.U
 		}
 	}
 
+	if user.Session.Pool != nil {
+		// Close blocks until every acquired connection is released; a command still
+		// running on this session must not block the caller.
+		go user.Session.Pool.Close()
+	}
+
 	user.Session.CloneConnection = nil
 	user.Session.Pool = nil
 }
