@@ -1,5 +1,10 @@
 image: golang:1.26
 
+# Run on the postgres-ai docker runners, which take tagged jobs only. Also applies to
+# the jobs from the included templates.
+default:
+  tags: [docker, hetzner-runner]
+
 include:
   - template: Security/SAST.gitlab-ci.yml
   - project: 'postgres-ai/infra'
