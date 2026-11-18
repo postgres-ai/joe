@@ -1,4 +1,4 @@
- Seq Scan on joecap.t_items  (cost=0.00..9.25 rows=150 width=8) (actual time=0.008..0.021 rows=150 loops=1)
+ Seq Scan on joecap.t_items  (cost=0.00..9.25 rows=150 width=8) (actual time=0.008..0.021 rows=150.00 loops=1)
    Filter: (t_items.val < 3)
    Rows Removed by Filter: 350
    Buffers: shared hit=3

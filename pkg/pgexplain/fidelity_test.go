@@ -58,11 +58,14 @@ var (
 
 // maskCost / maskActual blank out the per-node cost and actual-timing clauses
 // (trait 4: cost/rows/width are planner output, actual time/rows/loops are per-run
-// and differ between the two captures). The two clauses are replaced wholesale so
-// no volatile number survives, while their presence/position still anchors the line.
+// and differ between the two captures). The cost clause is replaced wholesale; the
+// actual clause keeps the form of its rows value (whole, or with decimals as on
+// PostgreSQL 18+) so a format mismatch still shows, while no volatile number survives.
 var (
 	maskCost   = regexp.MustCompile(`\(cost=[0-9]+\.[0-9]+\.\.[0-9]+\.[0-9]+ rows=[0-9]+ width=[0-9]+\)`)
 	maskActual = regexp.MustCompile(`\(actual time=[0-9]+\.[0-9]+\.\.[0-9]+\.[0-9]+ rows=[0-9]+(\.[0-9]+)? loops=[0-9]+\)`)
+	// maskNumber masks the values on the I/O Timings line.
+	maskNumber = regexp.MustCompile(`=[0-9]+(\.[0-9]+)?`)
 	// maskKB masks memory/disk sizes (trait 4): "Memory: 25kB", "Disk: 960kB",
 	// "Memory Usage: 9kB", "Maximum Storage: NkB" all carry run-variable kB values.
 	maskKB = regexp.MustCompile(`[0-9]+kB`)
@@ -163,12 +166,20 @@ func normalize(s string) string {
 
 		// trait 4: mask the run-variable numeric tokens.
 		l = maskCost.ReplaceAllString(l, "(cost)")
-		l = maskActual.ReplaceAllString(l, "(actual)")
+		l = maskActual.ReplaceAllStringFunc(l, func(clause string) string {
+			if maskActual.FindStringSubmatch(clause)[1] != "" {
+				return "(actual rows=N.NN)"
+			}
+
+			return "(actual rows=N)"
+		})
 		if strings.HasPrefix(l, "Buffers:") {
 			l = "Buffers:" // trait 4: hit/read counts differ per capture
 		}
 		if strings.HasPrefix(l, "I/O Timings:") {
-			l = "I/O Timings:" // trait 4: per-run I/O timings
+			// trait 4: per-run I/O timings. Only the values are masked: which sections
+			// appear, and whether the line appears at all, must match.
+			l = maskNumber.ReplaceAllString(l, "=N")
 		}
 		l = maskKB.ReplaceAllString(l, "NkB")
 		l = maskWorkersLaunched.ReplaceAllString(l, "Workers Launched: N")

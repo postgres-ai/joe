@@ -149,8 +149,9 @@ type Plan struct {
 	TempReadBlocks      uint64 `json:"Temp Read Blocks"`
 	TempWrittenBlocks   uint64 `json:"Temp Written Blocks"`
 
-	// IO timing. PostgreSQL 17+ replaces the aggregate fields with per-buffer-type splits;
-	// normalizeIOTiming folds the splits back into IOReadTime/IOWriteTime when those are nil.
+	// IO timing, present only with track_io_timing. PostgreSQL 13/14 report
+	// IOReadTime/IOWriteTime, 15/16 add the Temp pair, and 17+ replace the aggregate
+	// pair with the Shared/Local splits.
 	IOReadTime        *float64 `json:"I/O Read Time,omitempty"`         // ms
 	IOWriteTime       *float64 `json:"I/O Write Time,omitempty"`        // ms
 	SharedIOReadTime  *float64 `json:"Shared I/O Read Time,omitempty"`  // ms
@@ -165,6 +166,10 @@ type Plan struct {
 	ActualRows        float64 `json:"Actual Rows"` // PostgreSQL 18+ reports this as a fraction (rows averaged over loops).
 	ActualStartupTime float64 `json:"Actual Startup Time"`
 	ActualTotalTime   float64 `json:"Actual Total Time"`
+
+	// actualRowsFractional records that "Actual Rows" came with a decimal point, as
+	// PostgreSQL 18+ writes it ("1.00"); its text format then keeps two decimals.
+	actualRowsFractional bool
 
 	// Estimates.
 	PlanRows    uint64  `json:"Plan Rows"`
@@ -297,6 +302,33 @@ type Tip struct {
 	DetailsUrl  string `yaml:"detailsUrl"`
 }
 
+// UnmarshalJSON decodes a plan node and records whether "Actual Rows" was written
+// with a decimal point.
+func (plan *Plan) UnmarshalJSON(data []byte) error {
+	type planFields Plan
+
+	aux := struct {
+		*planFields
+		ActualRows json.Number `json:"Actual Rows"`
+	}{planFields: (*planFields)(plan)}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	if aux.ActualRows != "" {
+		rows, err := aux.ActualRows.Float64()
+		if err != nil {
+			return fmt.Errorf("parse Actual Rows %q: %w", aux.ActualRows, err)
+		}
+
+		plan.ActualRows = rows
+		plan.actualRowsFractional = strings.ContainsAny(string(aux.ActualRows), ".eE")
+	}
+
+	return nil
+}
+
 // Explain Processing.
 func NewExplain(explainJSON string) (*Explain, error) {
 	var explains []Explain
@@ -331,28 +363,22 @@ func (ex *Explain) RenderStats() string {
 }
 
 func (ex *Explain) processExplain() {
-	ex.Plan.normalizeIOTiming()
 	ex.calculateParams()
 
 	ex.processPlan(&ex.Plan)
 	ex.calculateOutlierNodes(&ex.Plan)
 }
 
-// normalizeIOTiming folds PostgreSQL 17+ per-buffer-type I/O timings
-// (Shared/Local/Temp) into the legacy IOReadTime/IOWriteTime fields when those
-// are absent, so downstream rendering stays version-agnostic.
-func (plan *Plan) normalizeIOTiming() {
-	if plan.IOReadTime == nil {
-		plan.IOReadTime = sumFloat64Pointers(plan.SharedIOReadTime, plan.LocalIOReadTime, plan.TempIOReadTime)
-	}
+// totalIOReadTime sums the node's read timings over every buffer type the server
+// reported: the aggregate pair (13-16) or the Shared/Local splits (17+), plus Temp
+// (15+). It is nil when track_io_timing was off.
+func (plan *Plan) totalIOReadTime() *float64 {
+	return sumFloat64Pointers(plan.IOReadTime, plan.SharedIOReadTime, plan.LocalIOReadTime, plan.TempIOReadTime)
+}
 
-	if plan.IOWriteTime == nil {
-		plan.IOWriteTime = sumFloat64Pointers(plan.SharedIOWriteTime, plan.LocalIOWriteTime, plan.TempIOWriteTime)
-	}
-
-	for index := range plan.Plans {
-		plan.Plans[index].normalizeIOTiming()
-	}
+// totalIOWriteTime is the write-side counterpart of totalIOReadTime.
+func (plan *Plan) totalIOWriteTime() *float64 {
+	return sumFloat64Pointers(plan.IOWriteTime, plan.SharedIOWriteTime, plan.LocalIOWriteTime, plan.TempIOWriteTime)
 }
 
 func sumFloat64Pointers(values ...*float64) *float64 {
@@ -394,8 +420,8 @@ func (ex *Explain) calculateParams() {
 	ex.TempWrittenBlocks = ex.Plan.TempWrittenBlocks
 
 	ex.TotalTime = ex.PlanningTime + ex.ExecutionTime
-	ex.IOReadTime = ex.Plan.IOReadTime
-	ex.IOWriteTime = ex.Plan.IOWriteTime
+	ex.IOReadTime = ex.Plan.totalIOReadTime()
+	ex.IOWriteTime = ex.Plan.totalIOWriteTime()
 }
 
 func (ex *Explain) processPlan(plan *Plan) {
@@ -616,21 +642,22 @@ func planCostsAndTiming(plan *Plan) string {
 	timing := "(never executed)"
 	if plan.ActualLoops != 0 {
 		timing = fmt.Sprintf("(actual time=%.3f..%.3f rows=%s loops=%d)",
-			plan.ActualStartupTime, plan.ActualTotalTime, formatActualRows(plan.ActualRows), plan.ActualLoops)
+			plan.ActualStartupTime, plan.ActualTotalTime, formatActualRows(plan), plan.ActualLoops)
 	}
 
 	return fmt.Sprintf("  %s %s", costs, timing)
 }
 
-// formatActualRows renders an actual-row count. PostgreSQL 18+ reports fractional
-// counts (averaged over loops), so print whole values as integers (pre-18 compat)
-// and fractional values with two decimals (PostgreSQL 18's text format).
-func formatActualRows(rows float64) string {
-	if rows == math.Trunc(rows) {
-		return strconv.FormatInt(int64(rows), 10)
+// formatActualRows renders an actual-row count the way the server did. PostgreSQL
+// 18+ prints every count with two decimals ("rows=1.00"), and its JSON keeps the
+// decimal point, while older servers print whole numbers. A plan built without
+// JSON falls back to the value: two decimals only when it is fractional.
+func formatActualRows(plan *Plan) string {
+	if plan.actualRowsFractional || plan.ActualRows != math.Trunc(plan.ActualRows) {
+		return strconv.FormatFloat(plan.ActualRows, 'f', 2, 64)
 	}
 
-	return strconv.FormatFloat(rows, 'f', 2, 64)
+	return strconv.FormatInt(int64(plan.ActualRows), 10)
 }
 
 // aggregateNodeType maps an Aggregate node's strategy and partial mode to the
@@ -1105,30 +1132,97 @@ func writePlanTextNodeDetails(outputFn func(string, ...interface{}) (int, error)
 		bufferCounter{"written", plan.TempWrittenBlocks})
 
 	if buffers != "" {
-		outputFn("Buffers: %s", buffers)
+		_, _ = outputFn("Buffers: %s", buffers)
 	}
 
-	if plan.WALRecords != 0 || plan.WALFPI != 0 || plan.WALBytes != 0 || plan.WALBuffersFull != 0 {
-		walLine := fmt.Sprintf("WAL: records=%d fpi=%d bytes=%d", plan.WALRecords, plan.WALFPI, plan.WALBytes)
-		if plan.WALBuffersFull != 0 { // PostgreSQL 18+
-			walLine += fmt.Sprintf(" buffers-full=%d", plan.WALBuffersFull)
+	// show_buffer_usage prints I/O Timings right after Buffers; show_wal_usage runs after it.
+	if ioTiming := formatIOTiming(plan); ioTiming != "" {
+		_, _ = outputFn("I/O Timings:%s", ioTiming)
+	}
+
+	// Like show_wal_usage, print only positive counters.
+	wal := ""
+	wal = appendPositiveCounter(wal, "records", plan.WALRecords)
+	wal = appendPositiveCounter(wal, "fpi", plan.WALFPI)
+	wal = appendPositiveCounter(wal, "bytes", plan.WALBytes)
+	wal = appendPositiveCounter(wal, "buffers full", plan.WALBuffersFull) // PostgreSQL 18+
+
+	if wal != "" {
+		_, _ = outputFn("WAL:%s", wal)
+	}
+}
+
+func appendPositiveCounter(line, label string, value uint64) string {
+	if value == 0 {
+		return line
+	}
+
+	return fmt.Sprintf("%s %s=%d", line, label, value)
+}
+
+// formatIOTiming renders the I/O Timings line body the way show_buffer_usage does
+// for the server version the JSON came from, or "" when nothing would be printed.
+// Like the server, it skips zero timings and sections without any, so a plan run
+// with track_io_timing on but no I/O gets no line. The server tests the raw
+// timing for zero while the JSON is rounded to 0.001 ms, so a sub-microsecond
+// timing that psql prints as 0.000 is dropped here.
+func formatIOTiming(plan *Plan) string {
+	type ioSection struct {
+		label       string
+		read, write *float64
+	}
+
+	var sections []ioSection
+
+	switch {
+	case plan.SharedIOReadTime != nil || plan.SharedIOWriteTime != nil ||
+		plan.LocalIOReadTime != nil || plan.LocalIOWriteTime != nil: // PostgreSQL 17+
+		sections = []ioSection{
+			{"shared", plan.SharedIOReadTime, plan.SharedIOWriteTime},
+			{"local", plan.LocalIOReadTime, plan.LocalIOWriteTime},
+			{"temp", plan.TempIOReadTime, plan.TempIOWriteTime},
 		}
 
-		_, _ = outputFn(walLine)
+	case plan.TempIOReadTime != nil || plan.TempIOWriteTime != nil: // PostgreSQL 15/16
+		sections = []ioSection{
+			{"shared", plan.IOReadTime, plan.IOWriteTime},
+			{"temp", plan.TempIOReadTime, plan.TempIOWriteTime},
+		}
+
+	default: // PostgreSQL 13/14: a single unlabeled section.
+		sections = []ioSection{{"", plan.IOReadTime, plan.IOWriteTime}}
 	}
 
-	ioTiming := ""
-	if plan.IOReadTime != nil {
-		ioTiming += fmt.Sprintf(" read=%.3f", *plan.IOReadTime)
+	var parts []string
+
+	for _, section := range sections {
+		timings := appendPositiveTiming(nil, "read", section.read)
+		timings = appendPositiveTiming(timings, "write", section.write)
+
+		if len(timings) == 0 {
+			continue
+		}
+
+		if section.label != "" {
+			timings = append([]string{section.label}, timings...)
+		}
+
+		parts = append(parts, strings.Join(timings, " "))
 	}
 
-	if plan.IOWriteTime != nil {
-		ioTiming += fmt.Sprintf(" write=%.3f", *plan.IOWriteTime)
+	if len(parts) == 0 {
+		return ""
 	}
 
-	if len(ioTiming) > 0 {
-		outputFn("I/O Timings:%s", ioTiming)
+	return " " + strings.Join(parts, ", ")
+}
+
+func appendPositiveTiming(timings []string, label string, value *float64) []string {
+	if value == nil || *value <= 0 {
+		return timings
 	}
+
+	return append(timings, fmt.Sprintf("%s=%.3f", label, *value))
 }
 
 // writeSortGroups renders one Incremental Sort group-statistics line, e.g.
