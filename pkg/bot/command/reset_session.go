@@ -10,9 +10,8 @@ import (
 
 	"github.com/pkg/errors"
 
-	"gitlab.com/postgres-ai/database-lab/v3/pkg/client/dblabapi"
-	"gitlab.com/postgres-ai/database-lab/v3/pkg/client/dblabapi/types"
-	"gitlab.com/postgres-ai/database-lab/v3/pkg/log"
+	"gitlab.com/postgres-ai/joe/pkg/dblabapi"
+	"gitlab.com/postgres-ai/joe/pkg/log"
 
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/foreword"
@@ -33,7 +32,7 @@ func ResetSession(ctx context.Context, cmd *platform.Command, msg *models.Messag
 
 	// TODO(anatoly): "zfs rollback" deletes newer snapshots. Users will be able
 	// to jump across snapshots if we solve it.
-	if err := dbLab.ResetClone(ctx, clone.ID, types.ResetCloneRequest{}); err != nil {
+	if err := dbLab.ResetClone(ctx, clone.ID, dblabapi.ResetCloneRequest{}); err != nil {
 		log.Err("Reset:", err)
 		return err
 	}
