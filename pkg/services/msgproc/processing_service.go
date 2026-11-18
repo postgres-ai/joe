@@ -334,7 +334,11 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 	}
 
 	if err != nil {
-		if _, ok := err.(*net.OpError); !ok && !errors.As(err, &runners.RunnerError{}) {
+		// Checked for any error: pgx wraps network failures (*pgconn.ConnectError) and reports a
+		// terminated user connection as *pgconn.PgError, so the error type does not tell a lost clone.
+		if clone := user.Session.Clone; clone != nil && s.cloneGone(ctx, clone.ID) {
+			s.restartClosedSession(ctx, msg, user)
+
 			if err := s.messenger.Fail(msg, err.Error()); err != nil {
 				log.Err(err)
 			}
@@ -342,23 +346,12 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 			return
 		}
 
-		if !s.isActiveSession(ctx, user.Session.Clone.ID) {
-			msg.AppendText("Session was closed by Database Lab.\n")
-			if err := s.messenger.UpdateText(msg); err != nil {
-				log.Err(fmt.Sprintf("failed to append message on session close: %+v", err))
-			}
-
-			s.stopSession(ctx, user)
-
-			im := models.IncomingMessage{
-				ChannelID: msg.ChannelID,
-				CommandID: msg.CommandID,
-			}
-
-			if err := s.runSession(ctx, user, im); err != nil {
+		if _, ok := err.(*net.OpError); !ok && !errors.As(err, &runners.RunnerError{}) {
+			if err := s.messenger.Fail(msg, err.Error()); err != nil {
 				log.Err(err)
-				return
 			}
+
+			return
 		}
 	}
 
