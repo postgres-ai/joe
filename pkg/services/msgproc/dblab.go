@@ -74,6 +74,10 @@ const (
 const (
 	maxConnLifetime = 0
 	maxConnIdleTime = 480 * time.Minute
+
+	// sessionPoolMaxConns caps the service connections of one session. Without it pgxpool
+	// sizes the pool by the host CPU count. The user connection is opened outside the pool.
+	sessionPoolMaxConns = 8
 )
 
 // runSession starts a user session if not exists.
@@ -135,6 +139,12 @@ func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.Us
 	}
 
 	if err := fwData.EnrichForewordInfo(ctx, db); err != nil {
+		if closeErr := userConn.Close(ctx); closeErr != nil {
+			log.Err("Failed to close user connection:", closeErr)
+		}
+
+		db.Close()
+
 		return err
 	}
 
@@ -183,6 +193,7 @@ func initConn(ctx context.Context, dblabClone models.Clone) (*pgxpool.Pool, *pgx
 		return nil, nil, err
 	}
 
+	connectionConfig.MaxConns = sessionPoolMaxConns
 	connectionConfig.MaxConnLifetime = maxConnLifetime
 	connectionConfig.MaxConnIdleTime = maxConnIdleTime
 	connectionConfig.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
@@ -193,15 +204,15 @@ func initConn(ctx context.Context, dblabClone models.Clone) (*pgxpool.Pool, *pgx
 		return nil, nil, err
 	}
 
-	connection, err := pool.Acquire(ctx)
+	userConn, err := usermanager.ConnectUser(ctx, pool)
 	if err != nil {
-		log.Err("Failed to acquire user connection:", err)
+		log.Err("Failed to open user connection:", err)
 		pool.Close()
 
 		return nil, nil, err
 	}
 
-	return pool, connection.Conn(), nil
+	return pool, userConn, nil
 }
 
 // createDBLabClone creates a new clone.
