@@ -83,12 +83,10 @@ func TestRenderPostgres18FractionalRows(t *testing.T) {
 
 	out := explain.RenderPlanText()
 
-	// Whole counts render as integers (back-compat with pre-18 output);
-	// fractional averages render with two decimals (matching PG18).
-	require.Contains(t, out, "rows=5 loops=1", "whole actual rows should render as an integer")
-	require.Contains(t, out, "rows=10 loops=1", "whole actual rows should render as an integer")
-	require.Contains(t, out, "rows=0.50 loops=10", "fractional actual rows should render with two decimals")
-	require.NotContains(t, out, "rows=5.00", "whole actual rows must not gain a decimal suffix")
+	// PostgreSQL 18 prints every actual row count with two decimals, whole or not.
+	require.Contains(t, out, "rows=5.00 loops=1")
+	require.Contains(t, out, "rows=10.00 loops=1")
+	require.Contains(t, out, "rows=0.50 loops=10")
 }
 
 // inputJSONPostgres18DetailFields carries PG18 per-node additions: Disabled (only
@@ -162,5 +160,6 @@ func TestRenderPostgres18DetailFields(t *testing.T) {
 	require.Equal(t, 1, strings.Count(out, "Disabled: true"), "only genuinely disabled nodes are annotated")
 	require.Contains(t, out, "Index Searches: 3")
 	require.Contains(t, out, "Storage: Memory  Maximum Storage: 17kB")
-	require.Contains(t, out, "WAL: records=6 fpi=0 bytes=369 buffers-full=2")
+	// Zero counters are omitted, as show_wal_usage does.
+	require.Contains(t, out, "WAL: records=6 bytes=369 buffers full=2")
 }

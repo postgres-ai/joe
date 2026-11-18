@@ -1,4 +1,4 @@
- Index Scan using t_items_pkey on joecap.t_items  (cost=0.27..8.29 rows=1 width=8) (actual time=0.022..0.022 rows=1 loops=1)
+ Index Scan using t_items_pkey on joecap.t_items  (cost=0.27..8.29 rows=1 width=8) (actual time=0.022..0.022 rows=1.00 loops=1)
    Index Cond: (t_items.id = 42)
    Index Searches: 1
    Buffers: shared hit=3

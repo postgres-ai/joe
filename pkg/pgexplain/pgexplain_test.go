@@ -6,6 +6,7 @@ package pgexplain
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/AlekSi/pointer"
@@ -40,7 +41,7 @@ func TestVisualize(t *testing.T) {
 		},
 		{
 			inputJson: InputJSON4Postgres17,
-			expected:  ExpectedText4,
+			expected:  ExpectedText4Postgres17,
 		},
 	}
 
@@ -1327,6 +1328,10 @@ const ExpectedText4 = ` Limit  (cost=110.74..111.85 rows=20 width=851) (actual t
          Buffers: shared hit=8 read=71 dirtied=2 written=2
          I/O Timings: read=7.150 write=0.370
 `
+
+// ExpectedText4Postgres17 is ExpectedText4 with the section label PostgreSQL 17+
+// puts on I/O Timings.
+var ExpectedText4Postgres17 = strings.ReplaceAll(ExpectedText4, "I/O Timings: read=", "I/O Timings: shared read=")
 
 const InputJSON4Postgres17 = `[
   {
