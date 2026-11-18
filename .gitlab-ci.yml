@@ -60,9 +60,11 @@ test-hypopg:
     - apt-get install -y postgresql-common gnupg
     - sh /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
     - apt-get install -y postgresql-17 postgresql-17-hypopg
-    # Initialise and start a throwaway cluster on 127.0.0.1:5432 (trust auth).
+    # Initialise and start a throwaway cluster on 127.0.0.1:5432 (trust auth). The image has no
+    # locale, so initdb would pick SQL_ASCII; the session pool tests use the simple protocol, which pgx
+    # allows only with client_encoding=UTF8.
     - chown -R postgres /tmp/pgdata 2>/dev/null || true
-    - su postgres -c "/usr/lib/postgresql/17/bin/initdb -D /tmp/pgdata --auth-host=trust --auth-local=trust"
+    - su postgres -c "/usr/lib/postgresql/17/bin/initdb -D /tmp/pgdata --encoding=UTF8 --locale=C --auth-host=trust --auth-local=trust"
     - su postgres -c "/usr/lib/postgresql/17/bin/pg_ctl -D /tmp/pgdata -o '-c listen_addresses=127.0.0.1 -p 5432' -w start"
     # Run the command integration tests against that cluster.
     - go test -tags integration ./pkg/bot/command/ -run 'Hypo|SessionPool' -v

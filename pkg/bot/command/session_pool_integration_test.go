@@ -33,6 +33,9 @@ import (
 //
 //	JOE_TEST_PG_DSN='postgres://postgres@localhost:5432/postgres?sslmode=disable' \
 //	    go test -tags integration ./pkg/bot/command/ -run SessionPool -v
+//
+// The database must use UTF8 encoding: sessions run queries over the simple protocol,
+// which pgx refuses unless client_encoding is UTF8.
 
 const testCloneID = "joe-session-pool-test"
 
