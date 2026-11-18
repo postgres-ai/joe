@@ -118,6 +118,18 @@ select cat, count(*) from items group by cat;
 -- Disk: NkB", confirming joe renders the disk-spill sort method at parity.
 select * from big order by val;
 
+-- name: io_timing_cached
+-- setup: set local track_io_timing = on
+-- I/O Timings with nothing to time: items is fully cached, so the JSON carries
+-- zero timings and psql prints no I/O Timings line; joe must not print one either.
+select count(*) from items;
+
+-- name: io_timing_temp_spill
+-- setup: set local track_io_timing = on; set local work_mem = '64kB'
+-- I/O Timings on a spilling sort: big stays in shared buffers, so psql prints
+-- only the temp section ("I/O Timings: temp read=... write=...").
+select * from big order by val;
+
 -- name: parallel_aggregate
 -- setup: set local parallel_setup_cost = 0; set local parallel_tuple_cost = 0; set local min_parallel_table_scan_size = 0; set local max_parallel_workers_per_gather = 2
 -- #210 per-worker fixture: a Gather over a Parallel Seq Scan. psql prints per-worker

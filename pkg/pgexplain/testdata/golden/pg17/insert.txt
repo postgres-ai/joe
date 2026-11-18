@@ -1,6 +1,6 @@
  Insert on joecap.t_items  (cost=0.00..0.01 rows=0 width=0) (actual time=0.251..0.251 rows=0 loops=1)
    Buffers: shared hit=48
-   WAL: records=2 fpi=0 bytes=127
+   WAL: records=2 bytes=127
    ->  Result  (cost=0.00..0.01 rows=1 width=8) (actual time=0.051..0.051 rows=1 loops=1)
          Buffers: shared hit=13
 Settings: search_path = 'joecap'

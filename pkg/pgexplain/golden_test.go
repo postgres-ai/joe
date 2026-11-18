@@ -24,22 +24,9 @@ var goldenUpdate = flag.Bool("update", false, "regenerate pkg/pgexplain golden f
 // inside a single golden file.
 const goldenSeparator = "\n--- stats ---\n"
 
-// goldenFractionalRows matches an actual-timing rows token whose value carries a
-// decimal point, e.g. "actual time=0.001..0.001 rows=0.40 loops=5". PostgreSQL 18+
-// reports per-loop-averaged Actual Rows, which can be fractional.
-var goldenFractionalRows = regexp.MustCompile(`actual[^)]*\brows=\d+\.\d+`)
-
-// goldenIntegerRows matches an actual-timing rows token with a whole value,
-// e.g. "actual time=0.016..0.019 rows=5 loops=1". A whole value is followed by a
-// space (the " loops=" that always trails it in the actual-timing token), so the
-// trailing space distinguishes it from a fractional "rows=0.40 loops=5". Go's RE2
-// has no lookahead, so the space is what keeps this from also matching a decimal.
-var goldenIntegerRows = regexp.MustCompile(`actual[^)]*\brows=\d+ `)
-
-// goldenAnyFractionalRows matches a fractional actual-row value anywhere in the
-// rendered text, e.g. "rows=0.40". It is used as a negative guard against
-// whole-number values rendering with a spurious decimal (e.g. "rows=5.00").
-var goldenAnyFractionalRows = regexp.MustCompile(`rows=\d+\.\d+`)
+// goldenActualRows captures the value of the rows token in an actual-timing
+// clause, e.g. "0.40" from "(actual time=0.001..0.001 rows=0.40 loops=5)".
+var goldenActualRows = regexp.MustCompile(`actual time=\S+ rows=(\S+) loops=`)
 
 // goldenSettingsLine matches the rendered "Settings:" line. The settings are
 // rendered from a Go map, so their order is non-deterministic across runs;
@@ -119,32 +106,37 @@ func TestGolden(t *testing.T) {
 	}
 }
 
-// TestGoldenPG18FractionalRows targets the PostgreSQL 18 fractional Actual Rows
-// behaviour directly, independent of the golden snapshots.
-func TestGoldenPG18FractionalRows(t *testing.T) {
-	const fixture = "testdata/pg18/nested_loop.json"
-
-	require.FileExists(t, fixture, "committed PG18 golden fixture %s must exist", fixture)
-
-	text := goldenRender(t, fixture)
-
-	require.Regexp(t, goldenFractionalRows, text,
-		"expected a fractional actual rows token (e.g. rows=0.40) in %s", fixture)
-	require.Regexp(t, goldenIntegerRows, text,
-		"expected a whole actual rows token rendered without a decimal (e.g. rows=5) in %s", fixture)
-
-	// Negative guard: a single-loop node's averaged Actual Rows is a whole
-	// number, so it must render WITHOUT a decimal (rows=5, never rows=5.00).
-	// This is the assertion that actually catches a regression where whole
-	// values are formatted with two decimals.
-	for _, line := range strings.Split(text, "\n") {
-		if !strings.Contains(line, "loops=1)") {
-			continue
-		}
-
-		require.NotRegexp(t, goldenAnyFractionalRows, line,
-			"single-loop node must render a whole actual rows token without a decimal in %s: %q", fixture, line)
+// TestGoldenActualRowsFormat pins how the actual row count is printed per server
+// version: PostgreSQL 18+ always prints two decimals ("rows=5.00", "rows=0.40"),
+// older servers print a whole number.
+func TestGoldenActualRowsFormat(t *testing.T) {
+	testCases := []struct {
+		fixture string
+		decimal bool
+	}{
+		{fixture: "testdata/pg17/nested_loop.json", decimal: false},
+		{fixture: "testdata/pg18/nested_loop.json", decimal: true},
 	}
+
+	for _, tc := range testCases {
+		t.Run(tc.fixture, func(t *testing.T) {
+			text := goldenRender(t, tc.fixture)
+
+			matches := goldenActualRows.FindAllStringSubmatch(text, -1)
+			require.NotEmpty(t, matches, "no actual rows tokens in %s", tc.fixture)
+
+			for _, m := range matches {
+				if tc.decimal {
+					require.Regexp(t, `^\d+\.\d{2}$`, m[1], "PostgreSQL 18 prints actual rows with two decimals")
+				} else {
+					require.Regexp(t, `^\d+$`, m[1], "pre-18 servers print whole actual rows")
+				}
+			}
+		})
+	}
+
+	// The PG18 fixture's inner Index Scan averages 0.40 rows over 5 loops.
+	require.Contains(t, goldenRender(t, "testdata/pg18/nested_loop.json"), "rows=0.40 loops=5")
 }
 
 // TestGoldenPG18Insert checks that a PostgreSQL 18 ModifyTable/Insert plan renders

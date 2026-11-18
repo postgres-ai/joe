@@ -21,7 +21,9 @@ func invariantFloat64(p *float64) float64 {
 	return *p
 }
 
-func TestNormalizeIOTiming(t *testing.T) {
+// TestIOTimingTotals checks the I/O totals in the stats summary: every buffer type
+// the server reported is summed, so Temp time counts on 15/16 as it does on 17+.
+func TestIOTimingTotals(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -52,6 +54,24 @@ func TestNormalizeIOTiming(t *testing.T) {
 			}]`,
 			wantRead:  7.0,
 			wantWrite: 3.0,
+		},
+		{
+			name: "PG15/16 aggregate and temp keys",
+			inputJSON: `[{
+				"Plan": {
+					"Node Type": "Sort",
+					"Actual Rows": 1,
+					"Actual Loops": 1,
+					"I/O Read Time": 4.0,
+					"I/O Write Time": 0.0,
+					"Temp I/O Read Time": 1.5,
+					"Temp I/O Write Time": 2.5
+				},
+				"Planning Time": 0.1,
+				"Execution Time": 0.2
+			}]`,
+			wantRead:  5.5,
+			wantWrite: 2.5,
 		},
 		{
 			name: "PG17 split keys only",
@@ -145,11 +165,15 @@ func TestNormalizeIOTiming(t *testing.T) {
 				child := &ex.Plan.Plans[0]
 
 				if tc.wantChildReadNil {
-					require.Nil(t, child.IOReadTime)
+					require.Nil(t, child.totalIOReadTime())
 				} else {
-					require.NotNil(t, child.IOReadTime)
-					require.Equal(t, tc.wantChildRead, invariantFloat64(child.IOReadTime))
+					require.NotNil(t, child.totalIOReadTime())
+					require.Equal(t, tc.wantChildRead, invariantFloat64(child.totalIOReadTime()))
 				}
+
+				// The per-node JSON fields stay as the server sent them; the text
+				// renderer needs the original per-buffer-type split.
+				require.Nil(t, child.IOReadTime)
 			}
 
 			if tc.wantStatsNA {
