@@ -15,10 +15,9 @@ import (
 	"unicode"
 
 	"github.com/pkg/errors"
-	"gitlab.com/postgres-ai/database-lab/v3/pkg/runners"
 
-	"gitlab.com/postgres-ai/database-lab/v3/pkg/client/dblabapi"
-	"gitlab.com/postgres-ai/database-lab/v3/pkg/log"
+	"gitlab.com/postgres-ai/joe/pkg/dblabapi"
+	"gitlab.com/postgres-ai/joe/pkg/log"
 
 	"gitlab.com/postgres-ai/joe/features"
 	"gitlab.com/postgres-ai/joe/features/definition"
@@ -334,7 +333,7 @@ func (s *ProcessingService) ProcessMessageEvent(ctx context.Context, incomingMes
 	}
 
 	if err != nil {
-		if _, ok := err.(*net.OpError); !ok && !errors.As(err, &runners.RunnerError{}) {
+		if _, ok := err.(*net.OpError); !ok && !errors.As(err, &pgtransmission.RunnerError{}) {
 			if err := s.messenger.Fail(msg, err.Error()); err != nil {
 				log.Err(err)
 			}

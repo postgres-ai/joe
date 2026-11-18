@@ -13,9 +13,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pkg/errors"
 
-	"gitlab.com/postgres-ai/database-lab/v3/pkg/log"
-	dblabmodels "gitlab.com/postgres-ai/database-lab/v3/pkg/models"
-	"gitlab.com/postgres-ai/database-lab/v3/pkg/util"
+	"gitlab.com/postgres-ai/joe/pkg/dblabapi"
+	"gitlab.com/postgres-ai/joe/pkg/log"
+	"gitlab.com/postgres-ai/joe/pkg/util"
 
 	"gitlab.com/postgres-ai/joe/pkg/connection"
 	"gitlab.com/postgres-ai/joe/pkg/models"
@@ -35,7 +35,7 @@ type ExecCmd struct {
 	pool      *pgxpool.Pool
 	userConn  *pgx.Conn
 	messenger connection.Messenger
-	clone     *dblabmodels.Clone
+	clone     *dblabapi.Clone
 }
 
 // NewExec return a new exec command.

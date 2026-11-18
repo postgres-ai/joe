@@ -14,7 +14,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/slack-go/slack"
 
-	"gitlab.com/postgres-ai/database-lab/v3/pkg/log"
+	"gitlab.com/postgres-ai/joe/pkg/log"
 
 	"gitlab.com/postgres-ai/joe/pkg/models"
 )
