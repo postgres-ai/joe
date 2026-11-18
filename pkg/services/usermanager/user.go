@@ -6,6 +6,7 @@
 package usermanager
 
 import (
+	"context"
 	"time"
 
 	"github.com/dustin/go-humanize/english"
@@ -40,6 +41,13 @@ type UserSession struct {
 	Pool            *pgxpool.Pool `json:"-"`
 	CloneConnection *pgx.Conn     `json:"-"`
 	DBVersion       int           `json:"-"`
+}
+
+// ConnectUser opens the session user connection with the settings of the session pool.
+// The user connection lives outside the pool: it is held for the whole session and
+// replaced on reset, so taking it from the pool would occupy a slot for good.
+func ConnectUser(ctx context.Context, pool *pgxpool.Pool) (*pgx.Conn, error) {
+	return pgx.ConnectConfig(ctx, pool.Config().ConnConfig)
 }
 
 // Quota defines a user quota for requests.

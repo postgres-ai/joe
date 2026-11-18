@@ -208,6 +208,40 @@ func (s *ProcessingService) isActiveSession(ctx context.Context, cloneID string)
 	return true
 }
 
+// cloneGone reports whether the session clone was deleted or broke on the DBLab side.
+// Unlike isActiveSession, a failed DBLab API call or a transient status (e.g. RESETTING
+// during a concurrent reset) does not count, so a healthy session survives an API blip.
+func (s *ProcessingService) cloneGone(ctx context.Context, cloneID string) bool {
+	clone, err := s.DBLab.GetClone(ctx, cloneID)
+	if err != nil {
+		var apiErr dblabapi.Error
+
+		return errors.As(err, &apiErr) && apiErr.Code == dblabapi.ErrCodeNotFound
+	}
+
+	return clone.Status.Code == dblabapi.StatusDeleting || clone.Status.Code == dblabapi.StatusFatal
+}
+
+// restartClosedSession replaces a session whose clone is gone with a new one.
+func (s *ProcessingService) restartClosedSession(ctx context.Context, msg *models.Message, user *usermanager.User) {
+	msg.AppendText("Session was closed by Database Lab.\n")
+
+	if err := s.messenger.UpdateText(msg); err != nil {
+		log.Err(fmt.Sprintf("failed to append message on session close: %+v", err))
+	}
+
+	s.stopSession(ctx, user)
+
+	im := models.IncomingMessage{
+		ChannelID: msg.ChannelID,
+		CommandID: msg.CommandID,
+	}
+
+	if err := s.runSession(ctx, user, im); err != nil {
+		log.Err(err)
+	}
+}
+
 func (s *ProcessingService) stopSession(ctx context.Context, user *usermanager.User) {
 	user.Session.Clone = nil
 	user.Session.ConnParams = models.Clone{}
@@ -217,6 +251,12 @@ func (s *ProcessingService) stopSession(ctx context.Context, user *usermanager.U
 		if err := user.Session.CloneConnection.Close(ctx); err != nil {
 			log.Err(err.Error())
 		}
+	}
+
+	if user.Session.Pool != nil {
+		// Close blocks until every acquired connection is released; a command still
+		// running on this session must not block the caller.
+		go user.Session.Pool.Close()
 	}
 
 	user.Session.CloneConnection = nil

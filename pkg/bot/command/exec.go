@@ -13,7 +13,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pkg/errors"
 
-	"gitlab.com/postgres-ai/joe/pkg/dblabapi"
 	"gitlab.com/postgres-ai/joe/pkg/log"
 	"gitlab.com/postgres-ai/joe/pkg/util"
 
@@ -32,10 +31,8 @@ const (
 type ExecCmd struct {
 	command   *platform.Command
 	message   *models.Message
-	pool      *pgxpool.Pool
 	userConn  *pgx.Conn
 	messenger connection.Messenger
-	clone     *dblabapi.Clone
 }
 
 // NewExec return a new exec command.
@@ -44,9 +41,7 @@ func NewExec(command *platform.Command, msg *models.Message, session usermanager
 	return &ExecCmd{
 		command:   command,
 		message:   msg,
-		pool:      session.Pool,
 		userConn:  session.CloneConnection,
-		clone:     session.Clone,
 		messenger: messengerSvc,
 	}
 }
@@ -57,14 +52,6 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 		return errors.New(msgExecOptionReq)
 	}
 
-	serviceConn, err := getConn(ctx, cmd.pool)
-	if err != nil {
-		log.Err("failed to get connection: ", err)
-		return err
-	}
-
-	defer serviceConn.Release()
-
 	start := time.Now()
 
 	if _, err := cmd.userConn.Exec(ctx, cmd.command.Query); err != nil {
@@ -74,17 +61,12 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 
 	totalTime := util.DurationToString(time.Since(start))
 
-	if err := serviceConn.Conn().Close(ctx); err != nil {
-		log.Err("Failed to close connection: ", err)
-		return err
-	}
-
 	result := fmt.Sprintf("The query has been executed. Duration: %s", totalTime)
 
 	cmd.command.Response = result
 	cmd.message.AppendText(result)
 
-	if err = cmd.messenger.UpdateText(cmd.message); err != nil {
+	if err := cmd.messenger.UpdateText(cmd.message); err != nil {
 		log.Err("failed to update text while running the exec command:", err)
 		return err
 	}
@@ -92,13 +74,38 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 	return nil
 }
 
-// getConn returns an acquired connection and Postgres backend PID.
+// connAcquireTimeout bounds the wait for a free session pool connection, so a
+// starved pool fails the command instead of blocking it forever.
+var connAcquireTimeout = time.Minute
+
+// errNoFreeConn is returned when the session pool has no free connection within connAcquireTimeout.
+var errNoFreeConn = errors.New("all database connections of the session are busy; " +
+	"wait for the running commands to finish and try again")
+
+// getConn acquires a connection from the session pool.
 func getConn(ctx context.Context, db *pgxpool.Pool) (*pgxpool.Conn, error) {
-	conn, err := db.Acquire(ctx)
+	acquireCtx, cancel := context.WithTimeout(ctx, connAcquireTimeout)
+	defer cancel()
+
+	conn, err := db.Acquire(acquireCtx)
 	if err != nil {
 		log.Err("failed to acquire connection: ", err)
+
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			return nil, errNoFreeConn
+		}
+
 		return nil, err
 	}
 
 	return conn, nil
+}
+
+// closeConn closes the connection instead of returning it to the pool, then releases its pool slot.
+func closeConn(ctx context.Context, conn *pgxpool.Conn) {
+	if err := conn.Conn().Close(ctx); err != nil {
+		log.Err("failed to close connection: ", err)
+	}
+
+	conn.Release()
 }

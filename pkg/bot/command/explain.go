@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pkg/errors"
 
 	"gitlab.com/postgres-ai/joe/pkg/log"
@@ -55,13 +54,17 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 		return err
 	}
 
-	defer func() {
-		if err := serviceConn.Conn().Close(ctx); err != nil {
-			log.Err("failed to close connection: ", err)
-		}
+	defer closeConn(ctx, serviceConn)
 
-		serviceConn.Release()
-	}()
+	// Acquire the lock observer before opening the transaction: waiting for it after
+	// EXPLAIN ANALYZE would hold serviceConn and an open transaction for the whole wait.
+	observeConn, err := getConn(ctx, session.Pool)
+	if err != nil {
+		log.Err("failed to get observer connection:", err)
+		return err
+	}
+
+	defer closeConn(ctx, observeConn)
 
 	tx, err := serviceConn.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -94,7 +97,7 @@ func Explain(ctx context.Context, msgSvc connection.Messenger, command *platform
 	}
 
 	// Observe query locks.
-	result, err := observeLocks(ctx, session.Pool, txPID)
+	result, err := querier.ObserveLocks(ctx, observeConn, txPID)
 	if err != nil {
 		log.Err("failed to observe locks:", err)
 	}
@@ -183,23 +186,6 @@ func analyzePrefix(dbVersionNum int) string {
 	}
 
 	return fmt.Sprintf(pgexplain.ExplainAnalyzeQuery, settingsValue)
-}
-
-func observeLocks(ctx context.Context, db *pgxpool.Pool, txPID int) ([][]string, error) {
-	observeConn, err := getConn(ctx, db)
-	if err != nil {
-		return nil, err
-	}
-
-	defer func() {
-		if err := observeConn.Conn().Close(ctx); err != nil {
-			log.Err("failed to close observer connection:", err)
-		}
-
-		observeConn.Release()
-	}()
-
-	return querier.ObserveLocks(ctx, observeConn, txPID)
 }
 
 // listHypoIndexNamesQuery returns the names of the current backend's hypothetical indexes.

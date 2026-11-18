@@ -188,7 +188,9 @@ func (a *Assistant) handleSocketEvents(ctx context.Context, incomingEvents chan 
 			log.Dbg(fmt.Sprintf("Event %s received: %+v", eventsAPIEvent.Type, eventsAPIEvent.InnerEvent.Type))
 
 			if evt.Request != nil {
-				a.client.Ack(*evt.Request)
+				if err := a.client.Ack(*evt.Request); err != nil {
+					log.Err("failed to acknowledge a Socket Mode event:", err)
+				}
 			}
 
 			switch eventsAPIEvent.Type {
