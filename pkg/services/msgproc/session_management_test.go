@@ -13,21 +13,20 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"gitlab.com/postgres-ai/database-lab/v3/pkg/client/dblabapi"
-	dblabmodels "gitlab.com/postgres-ai/database-lab/v3/pkg/models"
+	"gitlab.com/postgres-ai/joe/pkg/dblabapi"
 )
 
 func TestCloneGone(t *testing.T) {
-	cloneWithStatus := func(code dblabmodels.StatusCode) http.HandlerFunc {
+	cloneWithStatus := func(code dblabapi.StatusCode) http.HandlerFunc {
 		return func(w http.ResponseWriter, _ *http.Request) {
-			_ = json.NewEncoder(w).Encode(dblabmodels.Clone{ID: "c", Status: dblabmodels.Status{Code: code}})
+			_ = json.NewEncoder(w).Encode(dblabapi.Clone{ID: "c", Status: dblabapi.Status{Code: code}})
 		}
 	}
 
-	apiError := func(status int, code dblabmodels.ErrorCode) http.HandlerFunc {
+	apiError := func(status int, code dblabapi.ErrorCode) http.HandlerFunc {
 		return func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(status)
-			_ = json.NewEncoder(w).Encode(dblabmodels.Error{Code: code, Message: string(code)})
+			_ = json.NewEncoder(w).Encode(dblabapi.Error{Code: code, Message: string(code)})
 		}
 	}
 
@@ -36,12 +35,12 @@ func TestCloneGone(t *testing.T) {
 		handler http.HandlerFunc
 		gone    bool
 	}{
-		{name: "deleted", handler: apiError(http.StatusNotFound, dblabmodels.ErrCodeNotFound), gone: true},
-		{name: "deleting", handler: cloneWithStatus(dblabmodels.StatusDeleting), gone: true},
-		{name: "fatal", handler: cloneWithStatus(dblabmodels.StatusFatal), gone: true},
-		{name: "ok", handler: cloneWithStatus(dblabmodels.StatusOK), gone: false},
-		{name: "resetting", handler: cloneWithStatus(dblabmodels.StatusResetting), gone: false},
-		{name: "api error", handler: apiError(http.StatusInternalServerError, dblabmodels.ErrCodeInternal), gone: false},
+		{name: "deleted", handler: apiError(http.StatusNotFound, dblabapi.ErrCodeNotFound), gone: true},
+		{name: "deleting", handler: cloneWithStatus(dblabapi.StatusDeleting), gone: true},
+		{name: "fatal", handler: cloneWithStatus(dblabapi.StatusFatal), gone: true},
+		{name: "ok", handler: cloneWithStatus(dblabapi.StatusOK), gone: false},
+		{name: "resetting", handler: cloneWithStatus(dblabapi.StatusResetting), gone: false},
+		{name: "api error", handler: apiError(http.StatusInternalServerError, dblabapi.ErrCodeInternal), gone: false},
 	}
 
 	for _, tt := range tests {
@@ -58,7 +57,7 @@ func TestCloneGone(t *testing.T) {
 	}
 
 	t.Run("dblab unreachable", func(t *testing.T) {
-		srv := httptest.NewServer(cloneWithStatus(dblabmodels.StatusOK))
+		srv := httptest.NewServer(cloneWithStatus(dblabapi.StatusOK))
 		srv.Close()
 
 		client, err := dblabapi.NewClient(dblabapi.Options{Host: srv.URL})

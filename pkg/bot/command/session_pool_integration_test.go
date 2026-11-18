@@ -20,9 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
-	"gitlab.com/postgres-ai/database-lab/v3/pkg/client/dblabapi"
-	dblabmodels "gitlab.com/postgres-ai/database-lab/v3/pkg/models"
-
+	"gitlab.com/postgres-ai/joe/pkg/dblabapi"
 	"gitlab.com/postgres-ai/joe/pkg/models"
 	"gitlab.com/postgres-ai/joe/pkg/services/platform"
 	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"
@@ -65,9 +63,9 @@ func testSession(t *testing.T, ctx context.Context) *usermanager.UserSession {
 	require.NoError(t, err)
 
 	session := &usermanager.UserSession{
-		Clone: &dblabmodels.Clone{
+		Clone: &dblabapi.Clone{
 			ID:       testCloneID,
-			Snapshot: &dblabmodels.Snapshot{DataStateAt: time.Now().UTC().Format(time.RFC3339)},
+			Snapshot: &dblabapi.Snapshot{DataStateAt: time.Now().UTC().Format(time.RFC3339)},
 		},
 		ConnParams:      models.Clone{Name: cfg.ConnConfig.Database},
 		Pool:            pool,
@@ -91,9 +89,9 @@ func testDBLab(t *testing.T) *dblabapi.Client {
 			return
 		}
 
-		_ = json.NewEncoder(w).Encode(dblabmodels.Clone{
+		_ = json.NewEncoder(w).Encode(dblabapi.Clone{
 			ID:     testCloneID,
-			Status: dblabmodels.Status{Code: dblabmodels.StatusOK},
+			Status: dblabapi.Status{Code: dblabapi.StatusOK},
 		})
 	}))
 	t.Cleanup(srv.Close)

@@ -14,8 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pkg/errors"
 
-	dblabmodels "gitlab.com/postgres-ai/database-lab/v3/pkg/models"
-
+	"gitlab.com/postgres-ai/joe/pkg/dblabapi"
 	"gitlab.com/postgres-ai/joe/pkg/models"
 	"gitlab.com/postgres-ai/joe/pkg/util"
 )
@@ -37,7 +36,7 @@ type UserSession struct {
 	LastActionTs time.Time
 	IdleInterval uint
 
-	Clone           *dblabmodels.Clone
+	Clone           *dblabapi.Clone
 	ConnParams      models.Clone
 	Pool            *pgxpool.Pool `json:"-"`
 	CloneConnection *pgx.Conn     `json:"-"`

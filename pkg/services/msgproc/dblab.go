@@ -15,10 +15,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rs/xid"
 	"github.com/sethvargo/go-password/password"
-
-	"gitlab.com/postgres-ai/database-lab/v3/pkg/client/dblabapi/types"
-	"gitlab.com/postgres-ai/database-lab/v3/pkg/log"
-	dblabmodels "gitlab.com/postgres-ai/database-lab/v3/pkg/models"
+	"gitlab.com/postgres-ai/joe/pkg/dblabapi"
+	"gitlab.com/postgres-ai/joe/pkg/log"
 
 	"gitlab.com/postgres-ai/joe/pkg/foreword"
 	"gitlab.com/postgres-ai/joe/pkg/models"
@@ -175,7 +173,7 @@ func (s *ProcessingService) runSession(ctx context.Context, user *usermanager.Us
 	return nil
 }
 
-func (s *ProcessingService) buildDBLabCloneConn(dbParams dblabmodels.Database) models.Clone {
+func (s *ProcessingService) buildDBLabCloneConn(dbParams dblabapi.Database) models.Clone {
 	return models.Clone{
 		Name:     s.config.DBLab.DBName,
 		Host:     dbParams.Host,
@@ -216,16 +214,16 @@ func initConn(ctx context.Context, dblabClone models.Clone) (*pgxpool.Pool, *pgx
 }
 
 // createDBLabClone creates a new clone.
-func (s *ProcessingService) createDBLabClone(ctx context.Context, user *usermanager.User, sessionID string) (*dblabmodels.Clone, error) {
+func (s *ProcessingService) createDBLabClone(ctx context.Context, user *usermanager.User, sessionID string) (*dblabapi.Clone, error) {
 	pwd, err := password.Generate(PasswordLength, PasswordMinDigits, PasswordMinSymbols, false, true)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to generate a password to a new clone")
 	}
 
-	clientRequest := types.CloneCreateRequest{
+	clientRequest := dblabapi.CloneCreateRequest{
 		ID:        sessionID,
 		Protected: false,
-		DB: &types.DatabaseRequest{
+		DB: &dblabapi.DatabaseRequest{
 			Username:   joeUserNamePrefix + user.UserInfo.Name,
 			Password:   pwd,
 			Restricted: true,
@@ -239,7 +237,7 @@ func (s *ProcessingService) createDBLabClone(ctx context.Context, user *usermana
 	}
 
 	if clone.Snapshot == nil {
-		clone.Snapshot = &dblabmodels.Snapshot{}
+		clone.Snapshot = &dblabapi.Snapshot{}
 	}
 
 	clone.DB.Password = pwd

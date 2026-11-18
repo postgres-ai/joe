@@ -11,8 +11,8 @@ import (
 
 	"github.com/pkg/errors"
 
-	"gitlab.com/postgres-ai/database-lab/v3/pkg/log"
-	dblabmodels "gitlab.com/postgres-ai/database-lab/v3/pkg/models"
+	"gitlab.com/postgres-ai/joe/pkg/dblabapi"
+	"gitlab.com/postgres-ai/joe/pkg/log"
 
 	"gitlab.com/postgres-ai/joe/pkg/models"
 	"gitlab.com/postgres-ai/joe/pkg/services/usermanager"
@@ -98,7 +98,7 @@ func (s *ProcessingService) RestoreSessions(ctx context.Context) error {
 			continue
 		}
 
-		if clone.Status.Code != dblabmodels.StatusOK {
+		if clone.Status.Code != dblabapi.StatusOK {
 			log.Msg("DBLab is not active, stop user session. CloneID: ", user.Session.Clone.ID)
 			s.stopSession(ctx, user)
 
@@ -201,7 +201,7 @@ func (s *ProcessingService) isActiveSession(ctx context.Context, cloneID string)
 		return false
 	}
 
-	if clone.Status.Code != dblabmodels.StatusOK {
+	if clone.Status.Code != dblabapi.StatusOK {
 		return false
 	}
 
@@ -214,12 +214,12 @@ func (s *ProcessingService) isActiveSession(ctx context.Context, cloneID string)
 func (s *ProcessingService) cloneGone(ctx context.Context, cloneID string) bool {
 	clone, err := s.DBLab.GetClone(ctx, cloneID)
 	if err != nil {
-		var apiErr dblabmodels.Error
+		var apiErr dblabapi.Error
 
-		return errors.As(err, &apiErr) && apiErr.Code == dblabmodels.ErrCodeNotFound
+		return errors.As(err, &apiErr) && apiErr.Code == dblabapi.ErrCodeNotFound
 	}
 
-	return clone.Status.Code == dblabmodels.StatusDeleting || clone.Status.Code == dblabmodels.StatusFatal
+	return clone.Status.Code == dblabapi.StatusDeleting || clone.Status.Code == dblabapi.StatusFatal
 }
 
 // restartClosedSession replaces a session whose clone is gone with a new one.

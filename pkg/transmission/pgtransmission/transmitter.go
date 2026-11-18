@@ -14,8 +14,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"gitlab.com/postgres-ai/database-lab/v3/pkg/log"
-	"gitlab.com/postgres-ai/database-lab/v3/pkg/runners"
+	"gitlab.com/postgres-ai/joe/pkg/log"
 
 	"gitlab.com/postgres-ai/joe/pkg/models"
 )
@@ -45,7 +44,7 @@ func (tr Transmitter) Run(commandParam string) (string, error) {
 
 	out, err := tr.runPsql(cmdStr)
 	if err != nil {
-		if runnerError, ok := err.(runners.RunnerError); ok {
+		if runnerError, ok := err.(RunnerError); ok {
 			if runnerError.ExitStatus == 0 {
 				errMessage := runnerError.Stderr
 				if _, after, found := strings.Cut(runnerError.Stderr, "error: "); found {
@@ -165,7 +164,7 @@ func executeCommand(cmdStr string, env []string) ([]byte, error) {
 	// to treat the case as error and read proper output.
 	err := cmd.Run()
 	if err != nil || stderr.String() != "" {
-		runnerError := runners.NewRunnerError(cmdStr, stderr.String(), err)
+		runnerError := NewRunnerError(cmdStr, stderr.String(), err)
 
 		log.Err(runnerError)
 		return nil, runnerError
