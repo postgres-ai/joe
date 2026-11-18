@@ -1,5 +1,10 @@
 image: golang:1.26
 
+# Run on the postgres-ai docker runners, which take tagged jobs only. Also applies to
+# the jobs from the included templates.
+default:
+  tags: [docker, hetzner-runner]
+
 include:
   - template: Security/SAST.gitlab-ci.yml
   - project: 'postgres-ai/infra'
@@ -179,6 +184,9 @@ fidelity-pg-matrix-19:
 
 build-binary:
   stage: build-binary
+  # Pinned to a patch release: the shipped binaries carry this toolchain's stdlib,
+  # and the floating golang:1.26 tag can resolve to a stale image cached on the runner.
+  image: golang:1.26.11
   only:
     refs:
       - branches
