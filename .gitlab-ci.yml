@@ -184,6 +184,9 @@ fidelity-pg-matrix-19:
 
 build-binary:
   stage: build-binary
+  # Pinned to a patch release: the shipped binaries carry this toolchain's stdlib,
+  # and the floating golang:1.26 tag can resolve to a stale image cached on the runner.
+  image: golang:1.26.11
   only:
     refs:
       - branches
