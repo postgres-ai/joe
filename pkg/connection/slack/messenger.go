@@ -212,7 +212,7 @@ func (m *Messenger) uploadFile(title string, content string, channel string, ts 
 	name := strings.ToLower(strings.ReplaceAll(title, " ", "-"))
 	filename := fmt.Sprintf("%s.%s", name, fileType)
 
-	params := slack.UploadFileV2Parameters{
+	params := slack.UploadFileParameters{
 		Title:           title,
 		FileSize:        len(content),
 		Filename:        filename,
@@ -221,7 +221,7 @@ func (m *Messenger) uploadFile(title string, content string, channel string, ts 
 		ThreadTimestamp: ts,
 	}
 
-	fileSummary, err := m.api.UploadFileV2(params)
+	fileSummary, err := m.api.UploadFile(params)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to upload a file")
 	}
