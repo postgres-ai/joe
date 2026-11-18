@@ -92,13 +92,38 @@ func (cmd ExecCmd) Execute(ctx context.Context) error {
 	return nil
 }
 
-// getConn returns an acquired connection and Postgres backend PID.
+// connAcquireTimeout bounds the wait for a free session pool connection, so a
+// starved pool fails the command instead of blocking it forever.
+var connAcquireTimeout = time.Minute
+
+// errNoFreeConn is returned when the session pool has no free connection within connAcquireTimeout.
+var errNoFreeConn = errors.New("all database connections of the session are busy; " +
+	"wait for the running commands to finish and try again")
+
+// getConn acquires a connection from the session pool.
 func getConn(ctx context.Context, db *pgxpool.Pool) (*pgxpool.Conn, error) {
-	conn, err := db.Acquire(ctx)
+	acquireCtx, cancel := context.WithTimeout(ctx, connAcquireTimeout)
+	defer cancel()
+
+	conn, err := db.Acquire(acquireCtx)
 	if err != nil {
 		log.Err("failed to acquire connection: ", err)
+
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			return nil, errNoFreeConn
+		}
+
 		return nil, err
 	}
 
 	return conn, nil
+}
+
+// closeConn closes the connection instead of returning it to the pool, then releases its pool slot.
+func closeConn(ctx context.Context, conn *pgxpool.Conn) {
+	if err := conn.Conn().Close(ctx); err != nil {
+		log.Err("failed to close connection: ", err)
+	}
+
+	conn.Release()
 }

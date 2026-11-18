@@ -8,6 +8,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/pkg/errors"
+
 	"gitlab.com/postgres-ai/database-lab/v3/pkg/client/dblabapi"
 	"gitlab.com/postgres-ai/database-lab/v3/pkg/client/dblabapi/types"
 	"gitlab.com/postgres-ai/database-lab/v3/pkg/log"
@@ -51,14 +53,12 @@ func ResetSession(ctx context.Context, cmd *platform.Command, msg *models.Messag
 		idleConnection.Release()
 	}
 
-	cloneConn, err := session.Pool.Acquire(ctx)
+	userConn, err := usermanager.ConnectUser(ctx, session.Pool)
 	if err != nil {
-		log.Err("failed to acquire database connection:", err)
+		return errors.Wrap(err, "failed to reconnect to the clone")
 	}
 
-	if cloneConn != nil {
-		session.CloneConnection = cloneConn.Conn()
-	}
+	session.CloneConnection = userConn
 
 	sessionID := session.PlatformSessionID
 	if sessionID == "" {
